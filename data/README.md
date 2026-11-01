@@ -21,6 +21,18 @@ uv run sbc-to-markdown         # PDF -> chunk-ready Markdown
 uv run sbc-verify              # independent check of every Markdown file (needs poppler)
 ```
 
+Then build the facts bundle and the search index:
+
+```bash
+uv run sbc-build-bundle --version 2027.1                 # -> bundles/facts-2027.1.sqlite
+uv run sbc-grammar-review bundles/facts-2027.1.sqlite    # -> docs/reviews/cost-grammar-review.md
+uv run sbc-puf-check bundles/facts-2027.1.sqlite         # -> data/markdown/puf_check_2027.csv
+uv run sbc-load-qdrant bundles/facts-2027.1.sqlite --env dev   # -> Qdrant dev__sbc_chunks__2027_1
+```
+
+`sbc-load-qdrant` needs `QDRANT_URL`, `QDRANT_API_KEY_RW` and `OPENROUTER_API_KEY_BROKER` (see `.env.example`).
+Embeddings are cached in `bundles/embeddings.sqlite` by chunk hash, so a rebuild only embeds new chunk text.
+
 The downloader uses 6 parallel workers by default (`--workers`). Keep it modest and don't re-run it more
 often than needed; the portals are public services.
 

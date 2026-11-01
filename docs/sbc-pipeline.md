@@ -55,6 +55,28 @@ Results go to `data/markdown/verification_report_<year>.csv` (`PASS` / `REVIEW` 
 pass, or whose REVIEW reasons are on the signed allowlist (PLAN.md section 3.2.2), are loaded into the index;
 a `FAIL` means the Markdown must not be used until fixed.
 
+## Facts bundle and search index
+
+`sbc-build-bundle` extracts every verified Markdown file into one read-only SQLite file (the facts bundle):
+plans, Important Questions, benefit rows with parsed costs, list items, coverage examples, and the unique
+search chunks with their plan links. Plans that fail extraction go to its `quarantine` table instead. At
+runtime the bundle is read through `sbc_core.facts.SqliteFactsReader`.
+
+`sbc-load-qdrant` loads the bundle's unique chunks into a new collection, `{env}__sbc_chunks__{version}`:
+
+- `dense`: OpenRouter embeddings (`models.embeddings` in `config/base.yaml`), cosine, int8-quantized in RAM
+  with the full vectors on disk.
+- `bm25`: sparse term weights from `sbc_core.bm25`; Qdrant applies IDF.
+- Payload: `chunk_hash`, `chunk_type`, `section_path`, `text`, and the `plan_keys`, `plan_years`, `states` and
+  `markets` arrays, each indexed.
+
+The `carried_note` and `event_inferred` flags and the page numbers are not in the payload. The same chunk text
+can be flagged, or sit on a different page, in one plan and not another, so they are joined in per plan from
+the facts bundle (`FactsReader.chunk_context`).
+
+Collections are never changed after loading: the loader refuses to write into an existing one unless
+`--recreate` is passed, and it validates the point count and plan-filtered queries before finishing.
+
 ## Other years and languages
 
 Use `--year 2028` once next year's documents are posted, `--language Spanish` for Spanish SBCs, and
