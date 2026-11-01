@@ -12,17 +12,11 @@ from dataclasses import dataclass
 
 import yaml
 
+from sbc_core.template import QUESTIONS as TEMPLATE_QUESTIONS
+
 LIMITATIONS_LABEL = "Limitations, Exceptions, & Other Important Information"
 DRUG_NOTE_PREFIX = "More information about prescription drug coverage"
-QUESTIONS = (
-    "What is the overall deductible?",
-    "Are there services covered before you meet your deductible?",
-    "Are there other deductibles for specific services?",
-    "What is the out-of-pocket limit for this plan?",
-    "What is not included in the out-of-pocket limit?",
-    "Will you pay less if you use a network provider?",
-    "Do you need a referral to see a specialist?",
-)
+QUESTIONS = tuple(TEMPLATE_QUESTIONS.values())
 NARRATIVE_TITLES = (
     "Your Rights to Continue Coverage",
     "Your Grievance and Appeals Rights",
