@@ -51,8 +51,8 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "N", "PT", "RUF", "S"]
-# SBC text uses typographic quotes (e.g. "provider’s"); labels must match it exactly.
-allowed-confusables = ["‘", "’", "“", "”"]
+# SBC text uses typographic quotes and dashes (e.g. "provider’s", "Lab – Office"); labels must match exactly.
+allowed-confusables = ["‘", "’", "“", "”", "–"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
@@ -169,7 +169,7 @@ source_modules = ["sbc_ingest", "sbc_extract", "sbc_index"]
 forbidden_modules = ["sbc_api", "sbc_agent", "sbc_tools", "sbc_retrieval"]
 
 [[tool.importlinter.contracts]]
-name = "Ingest stands alone"
+name = "Ingest stands alone (it may use sbc_core)"
 type = "forbidden"
-source_modules = ["sbc_extract", "sbc_index"]
+source_modules = ["sbc_extract", "sbc_index", "sbc_core"]
 forbidden_modules = ["sbc_ingest"]

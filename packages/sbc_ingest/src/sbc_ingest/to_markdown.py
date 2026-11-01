@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pdfplumber
 
+from sbc_core.sublabels import KNOWN_SUBLABELS, merge_label_lines
 from sbc_ingest.paths import ROOT
 
 DATA = ROOT / "data"
@@ -305,7 +306,7 @@ def assign(cols, bbox):
 
 def split_labeled(cells_text, labels):
     """'Office Visit\\nNo charge\\nOther Outpatient\\nNo charge' -> 'Office Visit: No charge; Other Outpatient: No charge'."""
-    lines = [l.strip() for l in cells_text.split("\n") if l.strip()]
+    lines = merge_label_lines([l.strip() for l in cells_text.split("\n") if l.strip()])
     if not labels or not any(l in labels for l in lines):
         return None
     parts, cur_label, cur = [], None, []
@@ -360,8 +361,10 @@ def parse_cme(doc):
 
             # Event label handling
             if ev_text:
-                continuation = events and (ev_text[:1].islower() or (first_data and not has_service))
-                if continuation and first_data:
+                # A page-top event cell holding only the drug-coverage note continues the drugs event.
+                note = ev_text.startswith("More information")
+                continuation = events and (ev_text[:1].islower() or (first_data and not has_service) or note)
+                if continuation and (first_data or note):
                     events[-1]["name"] += "\n" + ev_text
                 elif events and first_data and events[-1]["name"] == "":
                     events[-1]["name"] = ev_text  # label printed on the page after its first row
@@ -440,15 +443,13 @@ def render_limits(text, labels, doc):
 def sublabels(costs):
     """Sub-benefit labels inside cost cells, e.g. 'Office Visit' / 'Other Outpatient' or 'Lab – Office'.
 
-    A label is a short capitalised line with no amount in it, directly followed by an amount line."""
-    def looks_like_label(l):
-        return len(l) < 40 and l[:1].isupper() and not COST_RE.search(l) and any(ch.isalpha() for ch in l)
-
+    A label is a known SBC sub-label (sublabels.KNOWN_SUBLABELS, re-joined if the PDF wrapped it) directly
+    followed by an amount line. Other short lines are wrapped text and stay inline."""
     labels = set()
     for text in costs.values():
-        lines = [l.strip() for l in (text or "").split("\n") if l.strip()]
+        lines = merge_label_lines([l.strip() for l in (text or "").split("\n") if l.strip()])
         for a, b in zip(lines, lines[1:]):
-            if looks_like_label(a) and not a.endswith(("-", ":")) and COST_RE.search(b):
+            if a in KNOWN_SUBLABELS and COST_RE.search(b):
                 labels.add(a)
     return labels
 

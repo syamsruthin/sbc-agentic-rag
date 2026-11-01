@@ -1337,11 +1337,15 @@ name = "sbc-extract"
 version = "0.0.0"
 source = { editable = "packages/sbc_extract" }
 dependencies = [
+    { name = "pyyaml" },
     { name = "sbc-core" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "sbc-core", editable = "packages/core" }]
+requires-dist = [
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "sbc-core", editable = "packages/core" },
+]
 
 [[package]]
 name = "sbc-index"
@@ -1365,12 +1369,14 @@ source = { editable = "packages/sbc_ingest" }
 dependencies = [
     { name = "pdfplumber" },
     { name = "requests" },
+    { name = "sbc-core" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "pdfplumber", specifier = ">=0.11" },
     { name = "requests", specifier = ">=2.31" },
+    { name = "sbc-core", editable = "packages/core" },
 ]
 
 [[package]]
