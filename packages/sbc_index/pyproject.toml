@@ -14,3 +14,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sbc_index"]
+
+[project.scripts]
+sbc-build-bundle = "sbc_index.bundle:main"
