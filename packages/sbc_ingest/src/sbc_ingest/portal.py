@@ -7,9 +7,9 @@ Sources:
     return, and HIOS plan IDs for joining with CMS rate/benefit data later.
 
 Usage:
-  python scripts/sbc_portal.py catalog                 # query portals -> data/catalog/sbc_catalog_<year>.csv
-  python scripts/sbc_portal.py download [--markets ...] # fetch PDFs listed in the catalog (resumable)
-  python scripts/sbc_portal.py manifest                # hash/verify files -> data/catalog/sbc_manifest_<year>.csv
+  sbc-portal catalog                 # query portals -> data/catalog/sbc_catalog_<year>.csv
+  sbc-portal download [--markets ...] # fetch PDFs listed in the catalog (resumable)
+  sbc-portal manifest                # hash/verify files -> data/catalog/sbc_manifest_<year>.csv
 """
 
 import argparse
@@ -27,7 +27,8 @@ from urllib.parse import urlparse
 
 import requests
 
-ROOT = Path(__file__).resolve().parent.parent
+from sbc_ingest.paths import ROOT
+
 DATA = ROOT / "data"
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) plan-info-chatbot/0.1"}
 

@@ -17,6 +17,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 - Doppler is the source of truth for secrets.
 - Appendix C adds a functional overview with sample interactions.
 - §3.2.4 now explains the chunking strategy in full, with an example chunk and the reasoning behind it.
+- §3.2.1 and §11 (approved in Phase 0): converter sub-label fix and punctuation-exact verification; the byte-identical criterion now applies to the move, and the fix's changes are listed in a diff report.
 - §10 (approved during scaffolding): CI workflows live in `.github/workflows/`, because GitHub only runs workflows from there, and environment files use `prd` to match Doppler and the Qdrant collection prefixes.
 
 ---
@@ -79,7 +80,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 | Fact | Value | Design consequence |
 |---|---|---|
 | SBCs | 9,690 (Anthem 9,433, Wellpoint 257); 18 states; 5 markets (Large Group 3,250, Small Group 2,624, Individual 1,946, ABF 1,133, MEWA 737) | Broker scope = all. Public scope = Individual, excluding discontinued and grandfathered plans = **1,468 SBCs in 17 states**. |
-| Conversion / verification | 9,690 `ok`. **9,690 REVIEW, 0 FAIL, 0 problems.** | Nothing is PASS. REVIEW reasons fall into 3 known classes: line-break joins, limitations carried across a page break, and event label not printed. These need a human-signed allowlist, and carried or inferred content must be labeled in answers. |
+| Conversion / verification | 9,690 `ok`. **9,690 REVIEW, 0 FAIL, 0 problems.** | Nothing is PASS. REVIEW reasons fall into 3 known classes: line-break joins, limitations carried across a page break, and event label not printed. These need a human-signed allowlist, and carried or inferred content must be labeled in answers. Phase 0 also found converter-inserted punctuation the verifier missed (§3.2.1). |
 | Template regularity | 7 Important Questions per SBC; 10–11 events; ~30 service rows; 3 coverage examples; **47 distinct service labels**; 12 column-layout variants (5,673 two-column, 4,017 three-column, including IHCP, Tier 1/Tier 2, "Level 1 Pharmacy") | A fixed schema covers ~90% of questions exactly. |
 | Cost strings | 707,020 cells but only **2,328 distinct strings**; **185 normalized patterns**, and the top 60 cover 98.7% | A deterministic grammar parser, reviewed by a human once per pattern. No LLM or SLM extraction needed. |
 | Deductible answers | 26 distinct shapes (for example `$N/person or $N/family for In-Network Providers. …`) | Parse into tier × individual × family amounts. |
@@ -237,6 +238,13 @@ flowchart LR
 ### 3.2 Ingestion and indexing
 
 **3.2.1 Parsing.** Keep the existing converter and verifier. They already treat tables as first-class: they read cells by row and column with the CMS template as the schema, and check each cell against a second PDF engine. Generic parsers (Docling, Unstructured, LlamaParse) were considered and rejected for SBCs. They cannot prove fidelity, whereas template parsing plus independent verification can. They return for non-template documents such as EOCs, which are out of scope for v1.
+
+**Phase 0 fix (approved).** The original verifier compared cells by letters and digits only. That hid a converter bug: when a cost cell's text wrapped in the PDF, wrapped words were sometimes taken for a sub-label, inserting `; ` and `:`. For example, "20% coinsurance, Durable Medical Equipment deductible applies" became "… Durable Medical; Equipment: deductible applies", and "Designated Specialist $50/visit" became "Designated; Specialist: $50/visit". This affected about 5,050 cells (0.7%) in 919 SBCs. In 55 SBCs, a drug-coverage note also became a fake event heading. The fix:
+
+- The converter splits only on a curated list of real SBC sub-labels (`sbc_ingest/sublabels.py`), after re-joining labels the PDF wrapped.
+- The drug note stays with the drugs event.
+- The verifier now also checks each cell's punctuation exactly (only the converter's own `Label: ` markup is allowed) and flags split sub-labels.
+- Every cell the fix changed is listed in a diff report.
 
 **3.2.2 REVIEW allowlist.** Every REVIEW reason must match a signed allowlist class. Anything else is quarantined.
 
@@ -946,7 +954,7 @@ These are calendar estimates for about 1.5 engineers.
 
 | Phase | Weeks | Deliverables | Acceptance criteria | Eval bar |
 |---|---|---|---|---|
-| **0. Foundations** | 1–2 | `git init` + CI skeleton; Doppler, Qdrant Cloud, Supabase and OpenRouter keys provisioned; scripts moved into `sbc_ingest`; REVIEW allowlist signed; `sbc_extract` (schema, cost grammar, limit parsers, validators); PUF cross-check; facts bundle builder v0; Qdrant collection loader (embeddings via OpenRouter); service taxonomy v1; golden v0 (150 hand-authored, PDF-verified) | Regenerated Markdown is byte-identical; 100% verbatim round-trip; ≥ 99.5% of cost cells parse `exact` with the rest flagged; all 185 patterns snapshot-reviewed; 0 unexplained PUF mismatches; facts bundle ≤ 300 MB; Qdrant collection fits the free tier with room for two more; embedding and rerank endpoints confirmed under the ZDR policy | Retrieval only, in all three configurations: plan filter 100%; service mapping ≥ 95%; recall@5 ≥ 0.90; rerank lift measured |
+| **0. Foundations** | 1–2 | `git init` + CI skeleton; Doppler, Qdrant Cloud, Supabase and OpenRouter keys provisioned; scripts moved into `sbc_ingest`; REVIEW allowlist signed; `sbc_extract` (schema, cost grammar, limit parsers, validators); PUF cross-check; facts bundle builder v0; Qdrant collection loader (embeddings via OpenRouter); service taxonomy v1; golden v0 (150 hand-authored, PDF-verified) | The moved pipeline regenerates the corpus byte-identically; the converter fix (§3.2.1) changes only the cells listed in its diff report, and the strict verifier passes on all 9,690 files; 100% verbatim round-trip; ≥ 99.5% of cost cells parse `exact` with the rest flagged; all 185 patterns snapshot-reviewed; 0 unexplained PUF mismatches; facts bundle ≤ 300 MB; Qdrant collection fits the free tier with room for two more; embedding and rerank endpoints confirmed under the ZDR policy | Retrieval only, in all three configurations: plan filter 100%; service mapping ≥ 95%; recall@5 ≥ 0.90; rerank lift measured |
 | **1. Broker MVP (internal alpha)** | 3–5 | FastAPI + LangGraph; fast path; tools `find_plans`, `get_plan_facts`, `search_sbc_text`, `compare_plans`, `ask_clarifying_question`; placeholders + verifier + renderer; broker app with plan picker; Supabase auth; Langfuse; **model bake-off**; deploy to `api-dev` | 3 internal users run 100+ conversations; bake-off report picks models per path; p95 lookup ≤ 10 s | MVP gating set (about 410): all **hard gates**; faithfulness ≥ 0.95; citation ≥ 0.97; behavior ≥ 90%; tool selection ≥ 90% |
 | **2. Broker beta (agentic depth)** | 6–8 | `estimate_cost`, coverage examples, `rank_plans`; multi-turn references; feedback + review queues; alerts; CI eval gates enforced; canary deploys; deterministic mode; 5–10 external brokers | 2 weeks of beta, ≥ 200 real conversations, 0 confirmed wrong-number incidents, thumbs-down ≤ 10% | v1 gating set (about 800 at this point): §5 "v1" thresholds; calculator used 100%; property tests green |
 | **3. Plan Shopper (public)** | 9–11 | Shopper app (guided state → plan flow); anonymous sessions + Turnstile; public profile (scope, tone, no recommendations); readability check; WCAG 2.1 AA; adversarial set of 120 + a red-team session; legal review of disclaimers; load test | Legal and compliance sign-off, including the BAA/PHI decision; runbook drill done; load test: 30 concurrent sessions within NFR, error rate < 1% | All hard gates; adversarial handling ≥ 98%; false refusal ≤ 3%; readability ≥ 90% |

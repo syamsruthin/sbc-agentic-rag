@@ -43,9 +43,9 @@ Arithmetic goes through a deterministic calculator, and "not mentioned in the SB
 ```mermaid
 flowchart LR
   subgraph OFF["Offline build (GitHub Actions, weekly + on demand)"]
-    PORTAL["sbc_portal.py<br/>catalog + download"] --> PDF[("SBC PDFs")]
-    PDF --> CONV["sbc_to_markdown.py<br/>pdfplumber, template-aware"]
-    CONV --> VER["verify_markdown.py<br/>poppler cross-check"]
+    PORTAL["sbc-portal<br/>catalog + download"] --> PDF[("SBC PDFs")]
+    PDF --> CONV["sbc-to-markdown<br/>pdfplumber, template-aware"]
+    CONV --> VER["sbc-verify<br/>poppler cross-check"]
     VER -->|"PASS or allow-listed REVIEW"| EXT["sbc_extract<br/>structured rows + cost grammar"]
     VER -->|"FAIL or unknown REVIEW"| Q["Quarantine<br/>(not indexed)"]
     PUFD[("CMS PUF")] --> XC["Cross-checks<br/>PUF + round-trip"]
@@ -104,7 +104,7 @@ Cloudflare Pages. PLAN.md section 4 explains each choice.
 ```
 config/        base.yaml, bots/{broker,public}.yaml, env/{local,dev,prd}.yaml
 packages/      Python workspace packages (imported as sbc_<name>)
-  sbc_ingest/    catalog, download, convert, verify SBCs   (scripts/ move here in Phase 0)
+  sbc_ingest/    catalog, download, convert, verify SBCs (sbc-portal, sbc-to-markdown, sbc-verify)
   sbc_extract/   Markdown -> structured rows, cost grammar
   sbc_index/     facts bundle + Qdrant collection builder
   core/          domain types, config loader, OpenRouter gateway
@@ -117,7 +117,6 @@ evals/         golden datasets, judge calibration, harness
 tests/         unit/, integration/, contract/, load/
 infra/         Docker, Cloud Run, Supabase migrations, Qdrant collection
 docs/          pipeline notes, ADRs, runbook
-scripts/       current SBC pipeline scripts
 data/          fetched and generated SBC data (not committed)
 ```
 

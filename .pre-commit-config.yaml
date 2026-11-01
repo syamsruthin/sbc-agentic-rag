@@ -1,6 +1,6 @@
 # Install once per clone: pre-commit install
-# The original scripts/ are left untouched until Phase 0 moves them into packages/sbc_ingest.
-exclude: ^scripts/
+# The original pipeline modules are kept byte-for-byte as moved (see pyproject.toml).
+exclude: ^packages/sbc_ingest/src/sbc_ingest/(portal|to_markdown|verify)\.py$
 
 repos:
   - repo: https://github.com/gitleaks/gitleaks
@@ -32,13 +32,13 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: uv run mypy
+        entry: uv run --no-sync mypy
         language: system
         types: [python]
         pass_filenames: false
       - id: import-linter
         name: import-linter (module boundaries)
-        entry: uv run lint-imports
+        entry: uv run --no-sync lint-imports
         language: system
         types: [python]
         pass_filenames: false
