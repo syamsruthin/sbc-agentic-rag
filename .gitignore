@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Node / frontends
+node_modules/
+.pnpm-store/
+.vite/
+*.tsbuildinfo
+.turbo/
+
+# Environment and secrets (only .env.example is committed)
+.env
+.env.*
+!.env.example
+.doppler/
+*.pem
+
+# Model weights and ML caches
+*.onnx
+*.safetensors
+*.gguf
+*.pt
+*.pth
+*.ckpt
+/models/
+/weights/
+.cache/
+
+# Facts bundles, embedding caches and local vector DB data
+/bundles/
+/embedding_cache/
+qdrant_storage/
+*.sqlite
+*.sqlite3
+*.db
+
+# SBC data is fetched or generated locally, never committed (see data/README.md)
+/data/*
+!/data/README.md
+*.pdf
+*.part
+
+# Eval run outputs (golden datasets are committed; run reports are not)
+/evals/reports/*
+!/evals/reports/.gitkeep
+
+# Logs, OS and editor files
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+.claude/settings.local.json
