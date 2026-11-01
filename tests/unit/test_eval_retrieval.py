@@ -228,7 +228,9 @@ def test_gates_and_reports(bundle: Path, reader: SqliteFactsReader, tmp_path: Pa
         scopes=SCOPES,
         run_id="retrieval-bm25_only-20270101T000000Z",
     )
+    report.bundle_version = "2027.1"
     json_path, md_path = write_reports([report], tmp_path / "reports")
+    assert json_path.name == "retrieval-2027.1-20270101T000000Z.json"
     assert json.loads(json_path.read_text())[0]["setup"] == "bm25_only"
     markdown = md_path.read_text()
     assert "| Plan-filter correctness | 1.000 |" in markdown

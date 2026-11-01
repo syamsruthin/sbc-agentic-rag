@@ -7,7 +7,8 @@ For every golden item it measures, independently of any LLM:
   resolution is a ``resolved`` result that includes a plan outside the gold plans, or any ``resolved`` result
   when gold says to clarify (a guess between look-alike plans).
 - **Service mapping**: taxonomy terms found in the question against the services named by the gold values
-  and sections. This is the synonym stage only; embedding and LLM disambiguation come with Phase 1.
+  and sections. This is the synonym stage only; embedding and LLM disambiguation come with Phase 1. Multi-turn
+  items are skipped here too, since a follow-up's service is often named in an earlier turn.
 - **Text search** under the gold plans (oracle resolution, so search quality is measured on its own):
   recall@5 and @10 and MRR@10 per (item, plan), and context precision and recall by chunk ID over the
   ``keep_per_plan`` chunks an answer would see. Context precision is rank-aware (average precision, as in
@@ -248,7 +249,9 @@ def evaluate_item(
         result.resolution_skipped = skip
 
     # Service mapping
-    gold_svc = gold_services(item, taxonomy)
+    # A follow-up turn often names its service in an earlier turn ("and urgent care?" then "the second one"),
+    # which needs the conversation; like resolution, that waits for the Phase 1 graph.
+    gold_svc = gold_services(item, taxonomy) if item.category != "multi_turn" else set()
     if gold_svc:
         plans = list(item.gold.plan_keys)
         names = [
@@ -559,9 +562,10 @@ def _failures(reports: Sequence[RunReport]) -> list[str]:
 def write_reports(reports: Sequence[RunReport], out_dir: Path) -> tuple[Path, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = reports[0].run_id.rsplit("-", 1)[-1]
-    base = out_dir / f"retrieval-{reports[0].bundle_version}-{stamp}"
+    # Not Path.with_suffix: a bundle version like "2027.1" would be taken for a suffix.
+    base = f"retrieval-{reports[0].bundle_version}-{stamp}"
     data = [asdict(r) | {"hard_gates_failed": r.hard_gates_failed} for r in reports]
-    json_path, md_path = base.with_suffix(".json"), base.with_suffix(".md")
+    json_path, md_path = out_dir / f"{base}.json", out_dir / f"{base}.md"
     json_path.write_text(json.dumps(data, indent=2, default=str) + "\n", encoding="utf-8")
     md_path.write_text(to_markdown(reports), encoding="utf-8")
     return json_path, md_path
