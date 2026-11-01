@@ -26,11 +26,13 @@ import html
 import re
 import subprocess
 import sys
+import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import pdfplumber
 
+from sbc_core.sublabels import KNOWN_SUBLABELS
 from sbc_ingest.paths import ROOT
 
 MD_ROOT = ROOT / "data" / "markdown"
@@ -65,6 +67,37 @@ def alnum(text):
     text = text.replace("(In the SBC this row's box is blank at the top of a page; this note is from the box that "
                         "continues from the previous page.)", "")
     return re.sub(r"[^0-9A-Za-z$%]", "", text).lower()
+
+
+CARRIED_NOTE = ("(In the SBC this row's box is blank at the top of a page; this note is from the box that "
+                "continues from the previous page.)")
+SUBLABEL_MARKUP_RE = re.compile(
+    r"(?:^|; )(" + "|".join(re.escape(l) for l in sorted(KNOWN_SUBLABELS, key=len, reverse=True)) + r"): ")
+
+
+def punct(text):
+    """Cell text with whitespace and the converter's own markup removed, punctuation kept.
+
+    The only markup the converter may add to a cell is "Label: " / "; Label: " around known sub-labels,
+    "none" for the --------none-------- marker, "(blank in the SBC)" and the carried-note sentence. Anything
+    else that differs (an inserted ";" or ":") changes what the reader sees, so it is a problem."""
+    text = unicodedata.normalize("NFKC", text or "")
+    text = text.replace("(blank in the SBC)", "").replace(CARRIED_NOTE, "")
+    text = NONE_MARK_RE.sub(" ", text)
+    text = SUBLABEL_MARKUP_RE.sub(lambda m: " " + m[1] + " ", text)
+    text = re.sub(r"\bnone\b", " ", text, flags=re.I)
+    text = re.sub(r"[\u00a0\uf000-\uf8ff]", "", text)
+    return re.sub(r"\s+", "", text)
+
+
+# A multi-word sub-label split by the converter, e.g. "Designated; Specialist: $50/visit". Each half can look
+# like valid markup on its own, so this is checked separately.
+SPLIT_LABELS = sorted({" ".join(w[:i]) + "; " + " ".join(w[i:]) + ": " for l in KNOWN_SUBLABELS
+                       for w in [l.split(" ")] for i in range(1, len(w))})
+
+
+def split_label(text):
+    return next((s for s in SPLIT_LABELS if s in (text or "")), None)
 
 
 def nums(text):
@@ -284,12 +317,24 @@ def check_benefits(rows, svcs, problems, review):
         for (label, val), pdf_val in zip(md_costs, r["costs"]):
             if alnum(val) != alnum(pdf_val):
                 problems.append(f"benefits[{name}][{label}]: PDF={' '.join(pdf_val.split())!r} MD={val!r}")
+            elif punct(val) != punct(pdf_val):
+                problems.append(f"benefits[{name}][{label}]: punctuation differs from the PDF: "
+                                f"PDF={' '.join(pdf_val.split())!r} MD={val!r}")
+            elif split_label(val):
+                problems.append(f"benefits[{name}][{label}]: sub-label split as {split_label(val)!r}: MD={val!r}")
         pdf_lim = alnum(r["limits"])
+        lim_punct = f"benefits[{name}][limitations]: punctuation differs from the PDF: MD={md_lim[:160]!r}"
         if alnum(md_lim) == pdf_lim and not r["limits_merged"]:
+            if punct(md_lim) != punct(r["limits"]):
+                problems.append(lim_punct)
             continue
         if r["limits_merged"] and alnum(md_lim) == alnum(owner):
+            if punct(md_lim) != punct(owner):
+                problems.append(lim_punct)
             continue  # cell spans this row and the one(s) above in the PDF
         if r["page_top"] and not pdf_lim and alnum(md_lim) == alnum(prev_owner) and "this note is from the box" in md_lim:
+            if punct(md_lim) != punct(prev_owner):
+                problems.append(lim_punct)
             review.append(f"benefits[{name}]: limitations carried over from the previous page's cell")
             continue
         problems.append(f"benefits[{name}][limitations]: PDF={' '.join(r['limits'].split())[:160]!r} "
