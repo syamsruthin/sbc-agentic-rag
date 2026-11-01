@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import json
 import sqlite3
+from collections.abc import Callable, Iterator
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,8 @@ from sbc_index.bundle import build_bundle
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sbc_minimal.md"
 
 
-def _corpus(root: Path) -> tuple[Path, Path]:
+def _corpus(root: Path, edit: Callable[[str, str], str] | None = None) -> tuple[Path, Path]:
+    """Three synthetic SBCs (c.md fails verification). ``edit(name, text)`` can change a file first."""
     text = FIXTURE.read_text(encoding="utf-8")
     md_dir = root / "data" / "markdown" / "sbc" / "2027" / "example" / "XX" / "Individual"
     md_dir.mkdir(parents=True)
@@ -27,6 +30,7 @@ def _corpus(root: Path) -> tuple[Path, Path]:
     }
     rows = []
     for name, body in plans.items():
+        body = edit(name, body) if edit else body
         (md_dir / name).write_text(body, encoding="utf-8")
         status = "FAIL" if name == "c.md" else "PASS"
         rows.append({"markdown": str((md_dir / name).relative_to(root)), "status": status, "problems": "",
@@ -39,13 +43,19 @@ def _corpus(root: Path) -> tuple[Path, Path]:
     return root / "data" / "markdown" / "sbc" / "2027", report
 
 
-@pytest.fixture
-def bundle(tmp_path: Path) -> sqlite3.Connection:
-    md_dir, report = _corpus(tmp_path)
-    out = tmp_path / "facts.sqlite"
-    stats = build_bundle(md_dir, report, out, "test.1", root=tmp_path)
+def make_bundle(root: Path, edit: Callable[[str, str], str] | None = None) -> Path:
+    """Build a two-plan test bundle under ``root`` and return its path."""
+    md_dir, report = _corpus(root, edit)
+    out = root / "facts.sqlite"
+    stats = build_bundle(md_dir, report, out, "test.1", root=root)
     assert (stats.plans, stats.quarantined) == (2, 1)
-    return sqlite3.connect(out)
+    return out
+
+
+@pytest.fixture
+def bundle(tmp_path: Path) -> Iterator[sqlite3.Connection]:
+    with closing(sqlite3.connect(make_bundle(tmp_path))) as db:
+        yield db
 
 
 def test_plans_and_quarantine(bundle: sqlite3.Connection) -> None:

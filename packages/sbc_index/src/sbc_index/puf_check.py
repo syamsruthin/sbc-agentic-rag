@@ -13,6 +13,7 @@ import json
 import re
 import sqlite3
 from collections import Counter
+from contextlib import closing
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -21,6 +22,8 @@ EXAMPLES = {"peg": "SBCHavingaBaby", "joe": "SBCHavingDiabetes", "mia": "SBCHavi
 EXAMPLE_FIELDS = {"Deductibles": "Deductible", "Copayments": "Copayment", "Coinsurance": "Coinsurance",
                   "Limits or exclusions": "Limit"}  # fmt: skip
 _MONEY_RE = re.compile(r"\$([\d,]+(?:\.\d+)?)")
+# The SBC front matter lists HIOS IDs as "A, B"; the portal catalog joins them as "A;B".
+_HIOS_SPLIT_RE = re.compile(r"[,;]")
 _LIMITS_SQL = (
     "SELECT l.kind, s.parse_json FROM plan_limit l JOIN limit_string s USING (limit_id) WHERE l.plan_id = ?"
 )
@@ -56,24 +59,30 @@ def _limit_in_net(parse_json: str) -> tuple[Decimal | None, Decimal | None]:
     return None, None
 
 
+def hios_ids(sbc_hios: str | None, catalog_json: str) -> list[str]:
+    """HIOS plan IDs printed in the SBC, or the catalog's when the SBC prints none."""
+    raw = sbc_hios or json.loads(catalog_json).get("hios_plan_ids", "")
+    return [h.strip() for h in _HIOS_SPLIT_RE.split(raw) if h.strip()]
+
+
 def check(bundle: Path, puf_csv: Path) -> tuple[list[Mismatch], Counter[str]]:
     with puf_csv.open(newline="", encoding="utf-8-sig") as f:
         puf = {r["PlanId"]: r for r in csv.DictReader(f)}
-    db = sqlite3.connect(bundle)
+    with closing(sqlite3.connect(bundle)) as db:
+        return _check(db, puf)
+
+
+def _check(db: sqlite3.Connection, puf: dict[str, dict[str, str]]) -> tuple[list[Mismatch], Counter[str]]:
     mismatches: list[Mismatch] = []
     counts: Counter[str] = Counter()
     plans = db.execute("SELECT plan_id, plan_key, hios_ids, catalog_json FROM plan").fetchall()
     for plan_id, plan_key, hios, catalog_json in plans:
-        ids = [
-            h.strip()
-            for h in (hios or json.loads(catalog_json).get("hios_plan_ids", "")).split(",")
-            if h.strip()
-        ]
-        rows = [puf[h] for h in ids if h in puf]
-        if len(rows) != 1:
-            counts["not linked" if not rows else "linked to several PUF plans (skipped)"] += 1
+        linked = [h for h in hios_ids(hios, catalog_json) if h in puf]
+        if len(linked) != 1:
+            counts["not linked" if not linked else "linked to several PUF plans (skipped)"] += 1
             continue
-        row, hios_id = rows[0], ids[[h in puf for h in ids].index(True)]
+        hios_id = linked[0]
+        row = puf[hios_id]
         counts["linked"] += 1
         prefix = "TEHB" if row.get("MedicalDrugDeductiblesIntegrated") == "Yes" else "MEHB"
         limits = dict(db.execute(_LIMITS_SQL, (plan_id,)).fetchall())

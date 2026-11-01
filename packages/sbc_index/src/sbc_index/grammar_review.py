@@ -11,6 +11,7 @@ import json
 import re
 import sqlite3
 from collections import defaultdict
+from contextlib import closing
 from pathlib import Path
 
 
@@ -38,11 +39,11 @@ def _summary(parse_json: str) -> str:
 
 
 def write_review(bundle: Path, out: Path) -> tuple[int, int]:
-    db = sqlite3.connect(bundle)
-    rows = db.execute(
-        """SELECT c.verbatim, c.status, c.parse_json, COUNT(b.cost_id)
-           FROM cost_string c LEFT JOIN plan_benefit b USING (cost_id) GROUP BY c.cost_id"""
-    ).fetchall()
+    with closing(sqlite3.connect(bundle)) as db:
+        rows = db.execute(
+            """SELECT c.verbatim, c.status, c.parse_json, COUNT(b.cost_id)
+               FROM cost_string c LEFT JOIN plan_benefit b USING (cost_id) GROUP BY c.cost_id"""
+        ).fetchall()
     groups: dict[tuple[str, str], list[tuple[str, str, int]]] = defaultdict(list)
     for verbatim, status, parse_json, cells in rows:
         groups[(_pattern(verbatim), status)].append((verbatim, parse_json, cells))
