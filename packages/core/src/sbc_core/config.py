@@ -202,6 +202,8 @@ class EnvSettings(BaseSettings):
 
     qdrant_url: str | None = None
     qdrant_api_key: SecretStr | None = None
+    qdrant_api_key_rw: SecretStr | None = None
+    """Read-write key for the index build (CI only); the API uses the read-only ``qdrant_api_key``."""
     qdrant_collection: str | None = None
 
     supabase_url: str | None = None
