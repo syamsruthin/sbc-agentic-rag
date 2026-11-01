@@ -1,0 +1,16 @@
+[project]
+name = "sbc-api"
+version = "0.0.0"
+description = "FastAPI app: auth, rate limits, SSE streaming, admin endpoints and audit."
+requires-python = ">=3.13"
+dependencies = [
+    "sbc-agent",
+    "sbc-core",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sbc_api"]

@@ -1,0 +1,17 @@
+[project]
+name = "sbc-core"
+version = "0.0.0"
+description = "Domain types, configuration loading and the OpenRouter gateway."
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.14",
+    "pydantic-settings>=2.16",
+    "pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sbc_core"]

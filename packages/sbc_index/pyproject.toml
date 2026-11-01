@@ -1,0 +1,16 @@
+[project]
+name = "sbc-index"
+version = "0.0.0"
+description = "Builds the facts bundle (SQLite) and the Qdrant collection, with diff reports."
+requires-python = ">=3.13"
+dependencies = [
+    "sbc-core",
+    "sbc-extract",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sbc_index"]
