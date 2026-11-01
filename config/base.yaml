@@ -1,0 +1,42 @@
+# Base configuration shared by both bots and every environment.
+# Layering (later wins): base.yaml -> bots/<bot>.yaml -> env/<env>.yaml -> SBC_* environment variables.
+# Secrets never go in these files; they come from environment variables (Doppler). See .env.example.
+
+models:
+  # Every model call goes through OpenRouter (PLAN.md section 3.6).
+  classify:
+    model: anthropic/claude-haiku-5.5
+    effort: low
+  agent:
+    model: anthropic/claude-sonnet-5.5
+    effort: low
+    fallbacks: [anthropic/claude-sonnet-5, anthropic/claude-haiku-5.5]
+  judge:
+    model: anthropic/claude-opus-5.5
+    effort: medium
+  embeddings:
+    model: voyageai/voyage-4-lite
+    dimensions: 1024
+  rerank:
+    model: voyageai/rerank-3-lite
+
+# Per-turn limits (PLAN.md section 3.5.6).
+budget:
+  max_llm_calls: 4
+  max_tool_calls: 8
+  max_identical_tool_calls: 3
+  recursion_limit: 12
+  wall_clock_seconds: 25
+  max_input_tokens: 30000
+
+# Hybrid search on Qdrant (PLAN.md section 3.4.3).
+retrieval:
+  prefetch_limit: 20
+  rrf_k: 60
+  rerank_candidates: 20
+  keep_per_plan: 6
+  rerank_enabled: true
+  max_plans_per_search: 6
+
+search_index:
+  collection_prefix: local

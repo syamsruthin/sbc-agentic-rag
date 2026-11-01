@@ -1,0 +1,26 @@
+# Broker Assistant: authenticated brokers and HR teams, every market (PLAN.md section 2.2).
+bot:
+  name: broker
+  auth: supabase
+  plan_scope:
+    markets: []  # empty = every market; plan status is shown, not filtered
+  tools:
+    - find_plans
+    - get_plan_facts
+    - search_sbc_text
+    - compare_plans
+    - rank_plans
+    - estimate_cost
+    - ask_clarifying_question
+    - glossary_lookup
+  allow_discovery: true
+  allow_cross_state: true
+  csv_export: true
+  compare_max_plans: 6
+  plan_recommendation_policy: rank_by_stated_criteria
+  readability_max_grade: null
+  rate_limits:
+    per_minute: 30
+    per_day: 1000
+  retention_days: 365
+  max_cost_per_turn_usd: 0.12
