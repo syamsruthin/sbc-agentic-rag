@@ -103,6 +103,14 @@ def _unique(values: list[Any], what: str) -> None:
 
 
 _SPACE_RE = re.compile(r"\s+")
+_QUOTES = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'})
+
+
+def _fold(text: str) -> str:
+    """Lowercase, straighten quotes and turn each whitespace character into a space. The result has the
+    same length as ``text`` for ordinary text, so spans found in it index the original."""
+    folded = text.translate(_QUOTES).lower()
+    return "".join(" " if c.isspace() else c for c in folded)
 
 
 def normalize(text: str) -> str:
@@ -134,6 +142,18 @@ class TermMatch:
         return bool(self.service_ids or self.drug_tags)
 
 
+@dataclass(frozen=True)
+class TermHit:
+    """One known term found inside a longer text by :meth:`Taxonomy.scan`."""
+
+    term: str
+    """The normalized term from the taxonomy, e.g. "er" or "physical therapy"."""
+    start: int
+    end: int
+    """Character span in the scanned text."""
+    match: TermMatch
+
+
 class Taxonomy:
     def __init__(self, data: _TaxonomyFile) -> None:
         self.version = data.version
@@ -151,6 +171,10 @@ class Taxonomy:
                 self._terms[normalize(term)] = TermMatch(drug_tags=(tag,))
         for term, ids in data.ambiguous_terms.items():
             self._terms[normalize(term)] = TermMatch(service_ids=ids, ambiguous=True)
+        # Longest terms first, so "ct scan" wins over "scan" at the same position. A term must stand alone
+        # (no letter or digit on either side) and may take a plural "s" ("MRIs", "x-rays").
+        alternatives = "|".join(re.escape(t) for t in sorted(self._terms, key=lambda t: (-len(t), t)))
+        self._scan_re = re.compile(rf"(?<![a-z0-9])({alternatives})s?(?![a-z0-9])")
 
     @property
     def drug_service_ids(self) -> tuple[str, ...]:
@@ -178,6 +202,15 @@ class Taxonomy:
     def match_term(self, text: str) -> TermMatch:
         """Exact match of user wording against synonyms, drug terms and ambiguous terms."""
         return self._terms.get(normalize(text), TermMatch())
+
+    def scan(self, text: str) -> list[TermHit]:
+        """Every known term in ``text``, left to right, longest match first, without overlaps.
+
+        The text is lowercased and its quotes straightened; spans refer to that same-length form, so they
+        index the original text too. Mask plan names first: they contain words like "Rx" and "Dental".
+        """
+        folded = _fold(text)
+        return [TermHit(m[1], m.start(), m.end(), self._terms[m[1]]) for m in self._scan_re.finditer(folded)]
 
 
 @cache
