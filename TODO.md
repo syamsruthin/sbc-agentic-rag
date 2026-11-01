@@ -34,22 +34,38 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [x] Existing scripts moved into `sbc_ingest` (PR #2; byte-identical regression test in place)
 - [x] Full-corpus run: strict verifier passes on all 9,690 files (0 FAIL), converter-fix diff report
       (`docs/reviews/converter-fix-2027.md`), regenerated Markdown installed
+- [x] Corpus refetched 2026-11-01: 9,692 SBCs (2 new Anthem Small Group); strict verification 9,692 REVIEW,
+      0 FAIL, 0 problems; count snapshot committed (`docs/reviews/corpus-snapshot-2027.md`, `sbc-snapshot`)
+- [ ] Converter-fix spot check: 20 random diff rows against the PDFs (`docs/reviews/converter-fix-2027.md`)
 - [ ] REVIEW allowlist signed off
 - [x] `sbc_extract`: schema, cost grammar, limit parsers, validators (PR #2)
-- [ ] Cost grammar: ≥ 99.5% of cells `exact` on the full corpus, all patterns reviewed (`sbc-grammar-review`)
+- [x] Cost grammar: ≥ 99.5% of cells `exact` on the full corpus (99.99%: 707,005 of 707,080 cells;
+      41 unparsed and 34 blank, all flagged)
+- [ ] Cost grammar: all patterns reviewed (263 patterns in `docs/reviews/cost-grammar-review.md`;
+      sign-off pending)
 - [x] PUF cross-check tool (`sbc-puf-check`)
-- [ ] PUF cross-check result: 0 unexplained mismatches on the full corpus
+- [x] PUF cross-check result: 0 unexplained mismatches on the full corpus (448 linked SBCs, 0 mismatches)
 - [x] Facts bundle builder v0 (`sbc-build-bundle`)
-- [ ] Facts bundle ≤ 300 MB on the full corpus
+- [x] Facts bundle ≤ 300 MB on the full corpus (139 MB; 9,690 plans; A3655 and A3754 quarantined;
+      30,498 unique chunks)
 - [x] Domain types, `FactsReader` / `SearchIndex` interfaces and the SQLite facts reader
 - [x] OpenRouter gateway (chat, embeddings, rerank; ZDR routing, retries, usage)
 - [x] Qdrant collection loader with embedding cache and BM25 vectors (`sbc-load-qdrant`)
 - [x] Plan-filtered hybrid search (`QdrantSearchIndex`, `TextSearcher`)
 - [ ] First collection loaded on the Qdrant free cluster; embedding and rerank confirmed under ZDR
+      (needs secrets in a new session: run `sbc-llm-smoke`, then `sbc-load-qdrant`)
 - [x] Service taxonomy v1
 - [x] Golden dataset schema and bundle consistency check
-- [ ] Golden dataset v0 (150 hand-authored, PDF-verified items)
-- [ ] Retrieval eval in three configurations
+- [x] Plan resolver in code (IDs, UI selection, name search; never guesses) and BM25 synonym expansion
+- [x] Retrieval eval harness (`evals/harness/retrieval.py`), PDF gold check (`pdf_check.py`), CI eval gate
+- [x] Golden dataset v0 drafted: 150 items in `evals/golden/0.1.0`, every value confirmed in its PDF cell by
+      the poppler check, all `pending`
+- [ ] Golden dataset v0 verified against the PDFs by a person (then items gate merges)
+- [x] Retrieval eval, BM25-only configuration: plan filter 100%, 0 confident wrong-plan, service mapping
+      97.3%, recall@5 0.878, recall@10 0.970, MRR@10 0.718
+- [ ] Retrieval eval, full and no-rerank configurations (needs the live collection); recall@5 ≥ 0.90 gate
+- [ ] Taxonomy v2 synonyms from the eval: "delivering (a baby)" is unmapped, and "pharmacy" maps to every
+      drug tier
 
 ## Phase 1: Broker MVP (PLAN.md §11)
 
