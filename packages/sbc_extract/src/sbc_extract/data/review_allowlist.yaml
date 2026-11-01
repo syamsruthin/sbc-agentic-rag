@@ -1,0 +1,25 @@
+# REVIEW reasons from sbc-verify that may still be indexed (PLAN.md section 3.2.2).
+# Any other REVIEW reason, and every FAIL, quarantines the plan.
+#
+# A release build refuses to run until sign_off is filled in by the person who reviewed these classes.
+classes:
+  - id: line_break_join
+    reason: "joined across a line break: ..."
+    seen_2027: every file (9,690)
+    treatment: >-
+      Accepted after a spot check of 50 random instances. The converter re-joined text the PDF wrapped
+      (mostly URLs and hyphenated words). No user-visible label.
+  - id: carried_note
+    reason: "benefits[<service>]: limitations carried over from the previous page's cell"
+    treatment: >-
+      Accepted. The row's limitations box is blank at the top of a page and the note comes from the box that
+      continues from the previous page. Facts and chunks carry carried_note=true and answers must say so.
+  - id: event_inferred
+    reason: "benefits[<service>]: event label not printed beside this row; MD puts it under '<event>'"
+    treatment: >-
+      Accepted. The event heading is inferred from layout. Rows carry event_inferred=true and the heading is
+      never presented as SBC text.
+
+sign_off:
+  by: null
+  on: null
