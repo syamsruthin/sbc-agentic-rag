@@ -17,3 +17,4 @@ packages = ["src/sbc_index"]
 
 [project.scripts]
 sbc-build-bundle = "sbc_index.bundle:main"
+sbc-grammar-review = "sbc_index.grammar_review:main"
