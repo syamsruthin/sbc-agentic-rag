@@ -32,7 +32,8 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [ ] Doppler, Qdrant Cloud, Supabase and OpenRouter keys provisioned (OpenRouter key and Qdrant free cluster
       exist; Doppler and Supabase not yet)
 - [x] Existing scripts moved into `sbc_ingest` (PR #2; byte-identical regression test in place)
-- [ ] Full-corpus run: strict verifier on all 9,690 files, converter-fix diff report, regenerated Markdown
+- [x] Full-corpus run: strict verifier passes on all 9,690 files (0 FAIL), converter-fix diff report
+      (`docs/reviews/converter-fix-2027.md`), regenerated Markdown installed
 - [ ] REVIEW allowlist signed off
 - [x] `sbc_extract`: schema, cost grammar, limit parsers, validators (PR #2)
 - [ ] Cost grammar: ≥ 99.5% of cells `exact` on the full corpus, all patterns reviewed (`sbc-grammar-review`)
