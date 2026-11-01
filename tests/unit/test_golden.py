@@ -76,3 +76,21 @@ def test_bundle_check_flags_disagreements(tmp_path: Path) -> None:
     problems = check_against_bundle([good, bad], bundle)
     assert len(problems) == 1
     assert "gs-000002" in problems[0]
+
+
+def test_bundle_check_reads_coverage_example_totals(tmp_path: Path) -> None:
+    from sbc_index.bundle import build_bundle
+
+    md_dir, report = _corpus(tmp_path)
+    bundle = tmp_path / "facts.sqlite"
+    build_bundle(md_dir, report, bundle, "t", root=tmp_path)
+    item = json.loads(json.dumps(ITEM))
+    item["gold"]["expected_values"] = [
+        {
+            "plan_key": "2027:100000000001",
+            "fact": "example:peg:The total Peg would pay is",
+            "verbatim": "$5,770",
+        },
+        {"plan_key": "2027:100000000001", "fact": "example:peg:Total Example Cost", "verbatim": "$12,700"},
+    ]
+    assert check_against_bundle([GoldenItem.model_validate(item)], bundle) == []
