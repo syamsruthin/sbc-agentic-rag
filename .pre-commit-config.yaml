@@ -32,13 +32,13 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: uv run mypy
+        entry: uv run --no-sync mypy
         language: system
         types: [python]
         pass_filenames: false
       - id: import-linter
         name: import-linter (module boundaries)
-        entry: uv run lint-imports
+        entry: uv run --no-sync lint-imports
         language: system
         types: [python]
         pass_filenames: false
