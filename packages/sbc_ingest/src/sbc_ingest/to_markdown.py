@@ -28,6 +28,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import pdfplumber
+from pdfplumber import utils as pdf_utils
 
 from sbc_core.sublabels import KNOWN_SUBLABELS, merge_label_lines
 from sbc_ingest.paths import ROOT
@@ -321,10 +322,25 @@ def split_labeled(cells_text, labels):
     return parts
 
 
+def limits_text(page, table, boxes, used):
+    """Text of a row's limitations, read from the union of its cells out to the table's right edge.
+
+    Limitations are the last column, so nothing to their right belongs to another cell. Some PDFs draw stray
+    rules that split this cell or cut it short, and pdfplumber then drops characters (e.g. a final ".").
+    Such tables can also report overlapping rows, so each character is read once (tracked in ``used``)."""
+    x0, top = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    x1, bottom = table.bbox[2] + 1, max(b[3] for b in boxes)
+    chars = [c for c in page.chars if x0 <= (c["x0"] + c["x1"]) / 2 < x1 and top <= (c["top"] + c["bottom"]) / 2 < bottom
+             and (c["x0"], c["top"], c["text"]) not in used]
+    used.update((c["x0"], c["top"], c["text"]) for c in chars)
+    return pdf_utils.extract_text(chars)
+
+
 def parse_cme(doc):
     events = []  # {"name": str, "services": [{"service", "costs": {label: text}, "limits"}]}
     cost_cols = []  # ordered labels seen in headers
     last_cols = None
+    used_chars = {}  # page index -> limitation characters already read
     for page_i, table, rows in doc.tables:
         if table_kind(rows) != "cme" or len(table.rows) < 2:
             continue
@@ -339,6 +355,7 @@ def parse_cme(doc):
         for r_i in range(2, len(rows)):
             row = {"event": None, "service": "", "limits": "", "costs": {}}
             event_cell_exists = False
+            limit_boxes = []
             for bbox, text in zip(table.rows[r_i].cells, rows[r_i]):
                 if bbox is None:
                     continue
@@ -351,9 +368,13 @@ def parse_cme(doc):
                     row["service"] = (row["service"] + "\n" + text).strip()
                 elif col[2] == "limits":
                     row["limits"] = (row["limits"] + "\n" + text).strip()
+                    limit_boxes.append(bbox)
                 elif col[2] == "cost":
                     key = col[3]
                     row["costs"][key] = (row["costs"].get(key, "") + "\n" + text).strip()
+            if limit_boxes:
+                row["limits"] = limits_text(doc.pages[page_i], table, limit_boxes,
+                                            used_chars.setdefault(page_i, set())).strip()
             limits_merged = all(
                 not (assign(cols, b)[2] == "limits") for b in table.rows[r_i].cells if b is not None)
             ev_text = (row["event"] or "").strip()
