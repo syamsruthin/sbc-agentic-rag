@@ -2,7 +2,8 @@
 
 How the 2027 Summary of Benefits and Coverage (SBC) corpus is collected, converted to Markdown and verified.
 Rebuild commands and the data layout are in [data/README.md](../data/README.md). The code lives in
-`scripts/` today and moves into `packages/sbc_ingest` in Phase 0.
+`packages/sbc_ingest` (`portal`, `to_markdown`, `verify`), exposed as the `sbc-portal`, `sbc-to-markdown` and
+`sbc-verify` commands.
 
 ## Corpus: 2027 SBCs
 
@@ -19,7 +20,7 @@ English only, plan documents effective 01/01/2027.
 
 ## Markdown for chunking
 
-`scripts/sbc_to_markdown.py` reads the SBC tables straight from the PDFs (pdfplumber, no OCR) and rebuilds
+`sbc-to-markdown` reads the SBC tables straight from the PDFs (pdfplumber, no OCR) and rebuilds
 each document from the CMS SBC template. Body text is verbatim from the PDF; the converter only adds
 headings, bold labels and `*Source: SBC page N*` citations.
 
@@ -39,7 +40,7 @@ The chunking strategy built on this structure is described in PLAN.md section 3.
 
 ## Verification
 
-`scripts/verify_markdown.py` re-reads every PDF with a second text engine (poppler `pdftotext`) and checks:
+`sbc-verify` re-reads every PDF with a second text engine (poppler `pdftotext`) and checks:
 
 | check | what it catches |
 |---|---|

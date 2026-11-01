@@ -13,12 +13,12 @@ All sources are public:
 From the repository root:
 
 ```bash
-uv sync                                          # installs pdfplumber and requests via sbc-ingest
-uv run python scripts/sbc_portal.py catalog      # ~5 min: query the portals, write the catalog
-uv run python scripts/sbc_portal.py download     # resumable; skips files already on disk
-uv run python scripts/sbc_portal.py manifest     # sizes and sha256 for every PDF
-uv run python scripts/sbc_to_markdown.py         # PDF -> chunk-ready Markdown
-uv run python scripts/verify_markdown.py         # independent check of every Markdown file (needs poppler)
+uv sync                        # installs the sbc_ingest package and its CLI commands
+uv run sbc-portal catalog      # ~5 min: query the portals, write the catalog
+uv run sbc-portal download     # resumable; skips files already on disk
+uv run sbc-portal manifest     # sizes and sha256 for every PDF
+uv run sbc-to-markdown         # PDF -> chunk-ready Markdown
+uv run sbc-verify              # independent check of every Markdown file (needs poppler)
 ```
 
 The downloader uses 6 parallel workers by default (`--workers`). Keep it modest and don't re-run it more
