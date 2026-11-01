@@ -205,7 +205,8 @@ class _Writer:
             [(plan_id, x.example_id, self.text(x.title), x.total_cost, x.total_pay,
               self.text(json.dumps({"subtitle": x.subtitle, "plan_terms": x.plan_terms,
                                     "services": x.services, "cost_sharing": x.cost_sharing,
-                                    "not_covered": x.not_covered})),
+                                    "not_covered": x.not_covered,
+                                    "total_pay_label": x.total_pay_label})),
               _pages(x.pages)) for x in e.examples],
         )  # fmt: skip
         self.db.executemany(

@@ -1,0 +1,294 @@
+"""Read-only access to the facts bundle (the SQLite file built by ``sbc-build-bundle``).
+
+This is the production :class:`~sbc_core.interfaces.FactsReader`. It opens the bundle read-only and only runs
+fixed, parameterized queries. The schema is owned by ``sbc_index.bundle``; a schema change there needs a
+matching change here, which the round-trip tests catch.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Any, get_args
+
+from sbc_core.template import LIMIT_QUESTIONS, LIST_TITLES, QUESTION_IDS, QUESTIONS
+from sbc_core.tiers import TierId
+from sbc_core.types import ChunkContext, Citation, Fact, PlanSummary
+
+_PLAN_COLUMNS = (
+    "plan_key, plan_year, sbc_id, contract_code, plan_name, issuer, plan_type, coverage_period, coverage_for,"
+    " state, market, network, exchange, plan_status, metal_tier, metal_tier_source, source_url, eoc_url"
+)
+_PLAN_FIELDS = [c.strip() for c in _PLAN_COLUMNS.split(",")]
+_PLAN_SELECT = ", ".join(f"p.{c}" for c in _PLAN_FIELDS)
+# Column order of the SBC benefit table (the bundle stores tiers by ID, not by column position).
+_TIER_ORDER = {t: i for i, t in enumerate(get_args(TierId))}
+_MIN_NAME_QUERY = 3  # the trigram tokenizer cannot match shorter strings
+
+
+class BundleError(Exception):
+    """The bundle is missing or not a facts bundle this code can read."""
+
+
+def _pages(text: str) -> tuple[int, ...]:
+    return tuple(int(p) for p in text.split(",") if p)
+
+
+def _in(values: Sequence[str]) -> str:
+    return ",".join("?" * len(values))
+
+
+class SqliteFactsReader:
+    def __init__(self, path: Path | str) -> None:
+        path = Path(path)
+        if not path.is_file():
+            raise BundleError(f"facts bundle not found: {path}")
+        self._db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, check_same_thread=False)
+        try:
+            meta = {k: json.loads(v) for k, v in self._db.execute("SELECT key, value FROM meta")}
+        except sqlite3.DatabaseError as exc:
+            self._db.close()
+            raise BundleError(f"not a facts bundle: {path}: {exc}") from None
+        self.meta: dict[str, Any] = meta
+        self._plan_ids: dict[str, int] = {}
+        self._plans: dict[str, PlanSummary] = {}
+
+    def close(self) -> None:
+        self._db.close()
+
+    def __enter__(self) -> SqliteFactsReader:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    @property
+    def bundle_version(self) -> str:
+        return str(self.meta["bundle_version"])
+
+    # ------------------------------------------------------------------ plans
+
+    def _load_plans(self, where: str, params: Sequence[object]) -> list[PlanSummary]:
+        rows = self._db.execute(f"SELECT p.plan_id, {_PLAN_SELECT} FROM plan p {where}", params).fetchall()  # noqa: S608 - fixed SQL fragments
+        out = []
+        for plan_id, *values in rows:
+            summary = PlanSummary(
+                **{k: v for k, v in zip(_PLAN_FIELDS, values, strict=True) if v is not None}
+            )
+            self._plan_ids[summary.plan_key] = plan_id
+            self._plans[summary.plan_key] = summary
+            out.append(summary)
+        return out
+
+    def plans(self, plan_keys: Sequence[str]) -> dict[str, PlanSummary]:
+        missing = [k for k in dict.fromkeys(plan_keys) if k not in self._plans]
+        if missing:
+            self._load_plans(f"WHERE p.plan_key IN ({_in(missing)})", missing)
+        return {k: self._plans[k] for k in plan_keys if k in self._plans}
+
+    def _plan(self, plan_key: str) -> tuple[int, PlanSummary] | None:
+        found = self.plans([plan_key])
+        if plan_key not in found:
+            return None
+        return self._plan_ids[plan_key], found[plan_key]
+
+    def find_plans_by_name(
+        self,
+        text: str,
+        *,
+        plan_year: int | None = None,
+        states: Sequence[str] = (),
+        markets: Sequence[str] = (),
+        limit: int = 10,
+    ) -> list[PlanSummary]:
+        text = " ".join(text.split())
+        if len(text) < _MIN_NAME_QUERY:
+            return []
+        where = ["plan_name_fts MATCH ?"]
+        params: list[object] = ['"' + text.replace('"', '""') + '"']
+        if plan_year is not None:
+            where.append("p.plan_year = ?")
+            params.append(plan_year)
+        if states:
+            where.append(f"p.state IN ({_in(states)})")
+            params += list(states)
+        if markets:
+            where.append(f"p.market IN ({_in(markets)})")
+            params += list(markets)
+        params.append(limit)
+        sql = (
+            "JOIN plan_name_fts f ON f.plan_key = p.plan_key WHERE "
+            + " AND ".join(where)
+            + " ORDER BY bm25(plan_name_fts), p.plan_name LIMIT ?"
+        )
+        return self._load_plans(sql, params)
+
+    # ------------------------------------------------------------------ facts
+
+    @staticmethod
+    def _citation(plan: PlanSummary, section_path: str, pages: tuple[int, ...]) -> Citation:
+        return Citation(
+            plan_key=plan.plan_key, plan_name=plan.plan_name, contract_code=plan.contract_code,
+            plan_year=plan.plan_year, section_path=section_path, pages=pages, source_url=plan.source_url,
+        )  # fmt: skip
+
+    def benefit_facts(
+        self, plan_key: str, service_ids: Sequence[str] = (), tier_ids: Sequence[str] = ()
+    ) -> list[Fact]:
+        found = self._plan(plan_key)
+        if found is None:
+            return []
+        plan_id, plan = found
+        sql = """SELECT b.service_id, b.tier_id, sl.text AS label, tl.text AS tier_label, c.verbatim,
+                        c.status, c.parse_json, lim.text AS limitations, b.limitations_kind, b.carried_note,
+                        b.event_inferred, b.pages, ch.section_path, b.row_order
+                 FROM plan_benefit b
+                 JOIN text_string sl ON sl.text_id = b.service_label_id
+                 JOIN text_string tl ON tl.text_id = b.tier_label_id
+                 JOIN text_string lim ON lim.text_id = b.limitations_id
+                 JOIN cost_string c ON c.cost_id = b.cost_id
+                 JOIN chunk ch ON ch.chunk_id = b.chunk_id
+                 WHERE b.plan_id = ?"""
+        params: list[object] = [plan_id]
+        if service_ids:
+            sql += f" AND b.service_id IN ({_in(service_ids)})"
+            params += list(service_ids)
+        if tier_ids:
+            sql += f" AND b.tier_id IN ({_in(tier_ids)})"
+            params += list(tier_ids)
+        cursor = self._db.cursor()
+        cursor.row_factory = sqlite3.Row
+        rows = cursor.execute(sql, params).fetchall()
+        rows.sort(key=lambda r: (r["row_order"], _TIER_ORDER.get(r["tier_id"], len(_TIER_ORDER))))
+        facts = []
+        for r in rows:
+            exact = r["status"] == "exact"
+            facts.append(
+                Fact(
+                    kind="benefit", key=f"benefit:{r['service_id']}:{r['tier_id']}", plan_key=plan_key,
+                    label=r["label"], verbatim=r["verbatim"],
+                    parsed=json.loads(r["parse_json"]) if exact else None, parse_status=r["status"],
+                    tier_id=r["tier_id"], tier_label=r["tier_label"],
+                    limitations=r["limitations"], limitations_kind=r["limitations_kind"],
+                    carried_note=bool(r["carried_note"]), event_inferred=bool(r["event_inferred"]),
+                    citation=self._citation(plan, r["section_path"], _pages(r["pages"])),
+                )
+            )  # fmt: skip
+        return facts
+
+    def question_facts(self, plan_key: str, question_ids: Sequence[str] = ()) -> list[Fact]:
+        found = self._plan(plan_key)
+        if found is None:
+            return []
+        plan_id, plan = found
+        rows = self._db.execute(
+            """SELECT q.question_id, a.text, w.text, q.pages FROM plan_question q
+               JOIN text_string a ON a.text_id = q.answer_id JOIN text_string w ON w.text_id = q.why_id
+               WHERE q.plan_id = ?""",
+            (plan_id,),
+        ).fetchall()
+        limits = {
+            LIMIT_QUESTIONS[kind]: (status, parse)
+            for kind, status, parse in self._db.execute(
+                """SELECT l.kind, s.status, s.parse_json FROM plan_limit l
+                   JOIN limit_string s USING (limit_id) WHERE l.plan_id = ?""",
+                (plan_id,),
+            )
+        }
+        by_id = {r[0]: r for r in rows}
+        facts = []
+        for qid in QUESTION_IDS:
+            if qid not in by_id or (question_ids and qid not in question_ids):
+                continue
+            _, answer, why, pages = by_id[qid]
+            status, parse = limits.get(qid, (None, None))
+            question = QUESTIONS[qid]
+            facts.append(
+                Fact(
+                    kind="question", key=f"question:{qid}", plan_key=plan_key, label=question,
+                    verbatim=answer,
+                    parsed=json.loads(parse) if status == "exact" else None, parse_status=status,
+                    why_this_matters=why,
+                    citation=self._citation(plan, f"Important Questions > {question}", _pages(pages)),
+                )
+            )  # fmt: skip
+        return facts
+
+    def list_facts(self, plan_key: str, list_ids: Sequence[str] = ()) -> list[Fact]:
+        found = self._plan(plan_key)
+        if found is None:
+            return []
+        plan_id, plan = found
+        rows = self._db.execute(
+            """SELECT i.list_id, i.position, t.text, i.pages FROM plan_list_item i
+               JOIN text_string t ON t.text_id = i.item_id
+               WHERE i.plan_id = ? ORDER BY i.list_id, i.position""",
+            (plan_id,),
+        ).fetchall()
+        facts = []
+        for list_id, position, item, pages in rows:
+            if list_ids and list_id not in list_ids:
+                continue
+            title = LIST_TITLES.get(list_id, list_id)
+            facts.append(
+                Fact(
+                    kind="list_item", key=f"list:{list_id}:{position}", plan_key=plan_key, label=title,
+                    verbatim=item, citation=self._citation(plan, title, _pages(pages)),
+                )
+            )  # fmt: skip
+        return facts
+
+    def example_facts(self, plan_key: str, example_ids: Sequence[str] = ()) -> list[Fact]:
+        found = self._plan(plan_key)
+        if found is None:
+            return []
+        plan_id, plan = found
+        rows = self._db.execute(
+            """SELECT e.example_id, t.text, e.total_cost, e.total_pay, d.text, e.pages FROM plan_example e
+               JOIN text_string t ON t.text_id = e.title_id JOIN text_string d ON d.text_id = e.data_id
+               WHERE e.plan_id = ?""",
+            (plan_id,),
+        ).fetchall()
+        order = {"peg": 0, "joe": 1, "mia": 2}
+        facts = []
+        for example_id, title, total_cost, total_pay, data_json, pages in sorted(
+            rows, key=lambda r: order[r[0]]
+        ):
+            if example_ids and example_id not in example_ids:
+                continue
+            data = json.loads(data_json)
+            lines = [*data["plan_terms"], ["Total Example Cost", total_cost], *data["cost_sharing"]]
+            lines += [*data["not_covered"], [data.get("total_pay_label") or "total_pay", total_pay]]
+            citation = self._citation(plan, f"Coverage Examples > {title}", _pages(pages))
+            for label, value in lines:
+                facts.append(
+                    Fact(
+                        kind="example", key=f"example:{example_id}:{label}", plan_key=plan_key, label=label,
+                        verbatim=value, citation=citation,
+                    )
+                )  # fmt: skip
+        return facts
+
+    def chunk_context(self, plan_key: str, chunk_hashes: Sequence[str]) -> dict[str, ChunkContext]:
+        found = self._plan(plan_key)
+        if found is None or not chunk_hashes:
+            return {}
+        plan_id, _ = found
+        rows = self._db.execute(
+            f"""SELECT c.chunk_hash, pc.pages, MIN(pc.position),
+                       COALESCE(MAX(b.carried_note), 0), COALESCE(MAX(b.event_inferred), 0)
+                FROM plan_chunk pc JOIN chunk c ON c.chunk_id = pc.chunk_id
+                LEFT JOIN plan_benefit b ON b.plan_id = pc.plan_id AND b.chunk_id = pc.chunk_id
+                WHERE pc.plan_id = ? AND c.chunk_hash IN ({_in(chunk_hashes)})
+                GROUP BY c.chunk_hash""",  # noqa: S608 - placeholders only
+            (plan_id, *chunk_hashes),
+        ).fetchall()
+        return {
+            h: ChunkContext(
+                plan_key=plan_key, chunk_hash=h, pages=_pages(pages), carried_note=bool(carried),
+                event_inferred=bool(inferred),
+            )
+            for h, pages, _, carried, inferred in rows
+        }  # fmt: skip

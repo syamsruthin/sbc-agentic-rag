@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Literal
 
@@ -158,13 +159,13 @@ def _bundle_value(db: sqlite3.Connection, plan_key: str, fact: str) -> str | Non
 
 def check_against_bundle(items: list[GoldenItem], bundle: Path) -> list[str]:
     """Disagreements between gold values and the bundle, for a person to resolve against the PDF."""
-    db = sqlite3.connect(bundle)
     problems = []
-    for item in items:
-        for value in item.gold.expected_values:
-            found = _bundle_value(db, value.plan_key, value.fact)
-            if found is None:
-                problems.append(f"{item.id}: {value.fact} not in bundle for {value.plan_key}")
-            elif found != value.verbatim:
-                problems.append(f"{item.id}: {value.fact} gold={value.verbatim!r} bundle={found!r}")
+    with closing(sqlite3.connect(bundle)) as db:
+        for item in items:
+            for value in item.gold.expected_values:
+                found = _bundle_value(db, value.plan_key, value.fact)
+                if found is None:
+                    problems.append(f"{item.id}: {value.fact} not in bundle for {value.plan_key}")
+                elif found != value.verbatim:
+                    problems.append(f"{item.id}: {value.fact} gold={value.verbatim!r} bundle={found!r}")
     return problems

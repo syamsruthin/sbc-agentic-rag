@@ -29,14 +29,24 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 
 ## Phase 0: Foundations (PLAN.md §11)
 
-- [ ] Doppler, Qdrant Cloud, Supabase and OpenRouter keys provisioned
-- [ ] Existing scripts moved into `sbc_ingest` (regenerated Markdown byte-identical)
+- [ ] Doppler, Qdrant Cloud, Supabase and OpenRouter keys provisioned (OpenRouter key and Qdrant free cluster
+      exist; Doppler and Supabase not yet)
+- [x] Existing scripts moved into `sbc_ingest` (PR #2; byte-identical regression test in place)
+- [ ] Full-corpus run: strict verifier on all 9,690 files, converter-fix diff report, regenerated Markdown
 - [ ] REVIEW allowlist signed off
-- [ ] `sbc_extract`: schema, cost grammar, limit parsers, validators
-- [ ] PUF cross-check (0 unexplained mismatches)
-- [ ] Facts bundle builder v0
-- [ ] Qdrant collection loader (embeddings via OpenRouter)
-- [ ] Service taxonomy v1
+- [x] `sbc_extract`: schema, cost grammar, limit parsers, validators (PR #2)
+- [ ] Cost grammar: ≥ 99.5% of cells `exact` on the full corpus, all patterns reviewed (`sbc-grammar-review`)
+- [x] PUF cross-check tool (`sbc-puf-check`)
+- [ ] PUF cross-check result: 0 unexplained mismatches on the full corpus
+- [x] Facts bundle builder v0 (`sbc-build-bundle`)
+- [ ] Facts bundle ≤ 300 MB on the full corpus
+- [x] Domain types, `FactsReader` / `SearchIndex` interfaces and the SQLite facts reader
+- [x] OpenRouter gateway (chat, embeddings, rerank; ZDR routing, retries, usage)
+- [x] Qdrant collection loader with embedding cache and BM25 vectors (`sbc-load-qdrant`)
+- [x] Plan-filtered hybrid search (`QdrantSearchIndex`, `TextSearcher`)
+- [ ] First collection loaded on the Qdrant free cluster; embedding and rerank confirmed under ZDR
+- [x] Service taxonomy v1
+- [x] Golden dataset schema and bundle consistency check
 - [ ] Golden dataset v0 (150 hand-authored, PDF-verified items)
 - [ ] Retrieval eval in three configurations
 

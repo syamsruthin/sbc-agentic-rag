@@ -11,11 +11,13 @@ import re
 from dataclasses import dataclass, field
 
 from sbc_core.taxonomy import TaxonomyError, load_taxonomy
+from sbc_core.template import LIST_TITLES, QUESTION_IDS, ListId
 from sbc_core.tiers import TierId, column_tier
 from sbc_extract.costs import CostParse, parse_cost
 from sbc_extract.limits import LimitParse, parse_limit
 from sbc_extract.markdown import (
     LIMITATIONS_LABEL,
+    ListSection,
     MarkdownFormatError,
     ParsedSbc,
     parse_markdown,
@@ -26,15 +28,6 @@ from sbc_extract.review import ReviewItem, classify, load_allowlist
 CARRIED_NOTE = (
     "(In the SBC this row's box is blank at the top of a page; this note is from the box that continues from "
     "the previous page.)"
-)
-QUESTION_IDS = (
-    "overall_deductible",
-    "services_before_deductible",
-    "other_deductibles",
-    "oop_limit",
-    "not_in_oop",
-    "network_pays_less",
-    "specialist_referral",
 )
 EXAMPLE_IDS = {"Peg": "peg", "Joe": "joe", "Mia": "mia"}
 _METAL_RE = re.compile(r"\b(Bronze|Silver|Gold|Platinum|Catastrophic)\b")
@@ -117,6 +110,7 @@ class ExampleRow:
     total_cost: str
     cost_sharing: tuple[tuple[str, str], ...]
     not_covered: tuple[tuple[str, str], ...]
+    total_pay_label: str
     total_pay: str
     pages: tuple[int, ...]
 
@@ -263,10 +257,14 @@ def _build(out: Extracted, sbc: ParsedSbc, md_text: str, status: str) -> None:
             out.quarantine_reasons.append(f"{kind} answer is blank")
 
     _benefits(out, sbc, plan_key)
-    for list_id, section in (("excluded", sbc.excluded), ("other_covered", sbc.other_covered)):
+    lists: tuple[tuple[ListId, ListSection], ...] = (
+        ("excluded", sbc.excluded),
+        ("other_covered", sbc.other_covered),
+    )
+    for list_id, section in lists:
         for pos, item in enumerate(section.items):
             out.list_items.append(ListItemRow(plan_key, list_id, pos, item, section.pages))
-        title = "Excluded Services" if list_id == "excluded" else "Other Covered Services"
+        title = LIST_TITLES[list_id]
         body = section.header + "\n" + "\n".join(f"- {i}" for i in section.items)
         _add_chunk(out, "list", title, body, section.pages)
     for n in sbc.narrative:
@@ -282,7 +280,7 @@ def _build(out: Extracted, sbc: ParsedSbc, md_text: str, status: str) -> None:
         out.examples.append(
             ExampleRow(
                 plan_key, example_id, ex.title, ex.subtitle, ex.plan_terms, ex.services, ex.total_cost,
-                ex.cost_sharing, ex.not_covered, ex.total_pay, sbc.examples_pages,
+                ex.cost_sharing, ex.not_covered, ex.total_pay_label, ex.total_pay, sbc.examples_pages,
             )
         )  # fmt: skip
         lines = [f"({ex.subtitle})"] + [f"{k}: {v}" for k, v in ex.plan_terms]
