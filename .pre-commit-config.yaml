@@ -1,6 +1,6 @@
 # Install once per clone: pre-commit install
-# The original scripts/ are left untouched until Phase 0 moves them into packages/sbc_ingest.
-exclude: ^scripts/
+# The original pipeline modules are kept byte-for-byte as moved (see pyproject.toml).
+exclude: ^packages/sbc_ingest/src/sbc_ingest/(portal|to_markdown|verify)\.py$
 
 repos:
   - repo: https://github.com/gitleaks/gitleaks

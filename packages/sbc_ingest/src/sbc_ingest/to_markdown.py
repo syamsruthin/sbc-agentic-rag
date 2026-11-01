@@ -15,9 +15,9 @@ The multilingual "Get help in your language" pages and the nondiscrimination not
 across every SBC, so they are left out.
 
 Usage:
-  python scripts/sbc_to_markdown.py                         # all PDFs in the catalog -> data/markdown/...
-  python scripts/sbc_to_markdown.py --limit 20 --force      # re-convert a few
-  python scripts/sbc_to_markdown.py path/to/file.pdf ...    # specific files
+  sbc-to-markdown                         # all PDFs in the catalog -> data/markdown/...
+  sbc-to-markdown --limit 20 --force      # re-convert a few
+  sbc-to-markdown path/to/file.pdf ...    # specific files
 """
 
 import argparse
@@ -29,7 +29,8 @@ from pathlib import Path
 
 import pdfplumber
 
-ROOT = Path(__file__).resolve().parent.parent
+from sbc_ingest.paths import ROOT
+
 DATA = ROOT / "data"
 RAW = DATA / "raw"
 OUT = DATA / "markdown"

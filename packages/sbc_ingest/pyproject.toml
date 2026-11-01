@@ -14,3 +14,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sbc_ingest"]
+
+[project.scripts]
+sbc-portal = "sbc_ingest.portal:main"
+sbc-to-markdown = "sbc_ingest.to_markdown:main"
+sbc-verify = "sbc_ingest.verify:main"

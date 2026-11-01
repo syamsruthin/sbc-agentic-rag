@@ -1,6 +1,6 @@
 """Independently verify every SBC Markdown file against its source PDF.
 
-The converter (sbc_to_markdown.py) reads text with pdfplumber. This verifier re-reads each PDF with a
+The converter (sbc_ingest.to_markdown) reads text with pdfplumber. This verifier re-reads each PDF with a
 different text engine (poppler's `pdftotext -bbox-layout`) and checks the Markdown against it:
 
   numbers      every number on the PDF's content pages appears in the Markdown at least as many times, and
@@ -15,8 +15,8 @@ Pages after the coverage examples (multilingual taglines, nondiscrimination noti
 converted and not checked.
 
 Usage:
-  python scripts/verify_markdown.py                 # every converted file -> data/markdown/verification_report_<year>.csv
-  python scripts/verify_markdown.py file.md ...     # print problems for specific files
+  sbc-verify                 # every converted file -> data/markdown/verification_report_<year>.csv
+  sbc-verify file.md ...     # print problems for specific files
 """
 
 import argparse
@@ -31,7 +31,8 @@ from pathlib import Path
 
 import pdfplumber
 
-ROOT = Path(__file__).resolve().parent.parent
+from sbc_ingest.paths import ROOT
+
 MD_ROOT = ROOT / "data" / "markdown"
 
 NUM_RE = re.compile(r"\d[\d,.]*")
