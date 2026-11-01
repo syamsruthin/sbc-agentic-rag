@@ -8,6 +8,9 @@ can be filtered by plan.
 A collection is never modified after it is validated: each bundle version gets its own
 collection, ``{prefix}__sbc_chunks__{bundle_version}``, and the API config pins the exact name.
 Validation checks the point count and that plan-filtered queries return only that plan's chunks.
+
+A BM25-only collection (no embedder) needs no API keys; the retrieval eval uses one in Qdrant's in-memory
+local mode for its BM25-only configuration (PLAN.md section 5.1).
 """
 
 from __future__ import annotations
@@ -118,14 +121,20 @@ class LoadReport:
     plan_filter_checks: int = 0
 
 
-def create_collection(client: QdrantClient, name: str, dimensions: int) -> None:
+def create_collection(client: QdrantClient, name: str, dimensions: int | None) -> None:
+    """A collection with ``dense`` and ``bm25`` vectors, or ``bm25`` only when ``dimensions`` is None."""
+    vectors: dict[str, qm.VectorParams] = {}
+    quantization = None
+    if dimensions is not None:
+        vectors[DENSE] = qm.VectorParams(size=dimensions, distance=qm.Distance.COSINE, on_disk=True)
+        quantization = qm.ScalarQuantization(
+            scalar=qm.ScalarQuantizationConfig(type=qm.ScalarType.INT8, always_ram=True)
+        )
     client.create_collection(
         name,
-        vectors_config={DENSE: qm.VectorParams(size=dimensions, distance=qm.Distance.COSINE, on_disk=True)},
+        vectors_config=vectors,
         sparse_vectors_config={SPARSE: qm.SparseVectorParams(modifier=qm.Modifier.IDF)},
-        quantization_config=qm.ScalarQuantization(
-            scalar=qm.ScalarQuantizationConfig(type=qm.ScalarType.INT8, always_ram=True)
-        ),
+        quantization_config=quantization,
         on_disk_payload=True,
     )
     for name_ in KEYWORD_FIELDS:
@@ -144,34 +153,42 @@ def load(
     bundle: Path,
     *,
     prefix: str,
-    embed: Embedder,
-    cache: EmbeddingCache,
+    embed: Embedder | None,
+    cache: EmbeddingCache | None,
     recreate: bool = False,
     filter_checks: int = 20,
     log: Callable[[str], None] = lambda _: None,
 ) -> LoadReport:
+    """Build and validate the collection. Without ``embed`` and ``cache`` it holds BM25 vectors only."""
+    if (embed is None) != (cache is None):
+        raise LoadError("pass both an embedder and an embedding cache, or neither for a BM25-only collection")
     version, records = read_chunks(bundle)
     if not records:
         raise LoadError(f"{bundle} has no chunks")
     name = collection_name(prefix, version)
-    report = LoadReport(name, version, cache.model, cache.dimensions)
+    report = LoadReport(name, version, cache.model if cache else "none", cache.dimensions if cache else 0)
     if client.collection_exists(name):
         if not recreate:
             raise LoadError(f"collection {name} already exists; collections are immutable (use --recreate)")
         client.delete_collection(name)
 
-    vectors, report.newly_embedded = cache.ensure({r.chunk_hash: r.text for r in records}, embed)
-    log(f"{len(records)} unique chunks, {report.newly_embedded} newly embedded")
+    vectors: dict[str, tuple[float, ...]] | None = None
+    if embed is not None and cache is not None:
+        vectors, report.newly_embedded = cache.ensure({r.chunk_hash: r.text for r in records}, embed)
+        log(f"{len(records)} unique chunks, {report.newly_embedded} newly embedded")
     encoder = Bm25Encoder.fit(r.text for r in records)
     report.bm25 = encoder.params()
 
-    create_collection(client, name, cache.dimensions)
+    create_collection(client, name, cache.dimensions if cache else None)
     for batch in _batches(records, UPSERT_BATCH):
         points = []
         for r in batch:
             sparse = encoder.encode_document(r.text)
-            bm25 = qm.SparseVector(indices=list(sparse.indices), values=list(sparse.values))
-            vector: dict[str, Any] = {DENSE: list(vectors[r.chunk_hash]), SPARSE: bm25}
+            vector: dict[str, Any] = {
+                SPARSE: qm.SparseVector(indices=list(sparse.indices), values=list(sparse.values))
+            }
+            if vectors is not None:
+                vector[DENSE] = list(vectors[r.chunk_hash])
             points.append(qm.PointStruct(id=point_id(r.chunk_hash), vector=vector, payload=r.payload()))
         client.upsert(name, points=points, wait=True)
     report.points = len(records)
@@ -185,16 +202,19 @@ def validate(
     client: QdrantClient,
     name: str,
     records: Sequence[ChunkRecord],
-    vectors: dict[str, tuple[float, ...]],
+    vectors: dict[str, tuple[float, ...]] | None,
     *,
     checks: int = 20,
     seed: int = 0,
 ) -> int:
-    """Point count, and plan-filtered queries for a sample of plans. Returns the number of plan checks."""
+    """Point count, and plan-filtered queries for a sample of plans. Returns the number of plan checks.
+
+    Probes use the dense vector of a chunk of the plan, or its BM25 query terms when there are no vectors."""
     count = client.count(name, exact=True).count
     if count != len(records):
         raise LoadError(f"{name}: {count} points, expected {len(records)}")
     by_plan: dict[str, set[str]] = {}
+    texts = {r.chunk_hash: r.text for r in records}
     for r in records:
         for key in r.plan_keys:
             by_plan.setdefault(key, set()).add(r.chunk_hash)
@@ -204,8 +224,14 @@ def validate(
     for plan_key in sample:
         probe = rng.choice(sorted(by_plan[plan_key]))
         flt = qm.Filter(must=[qm.FieldCondition(key="plan_keys", match=qm.MatchAny(any=[plan_key]))])
+        if vectors is not None:
+            query: Any = list(vectors[probe])
+            using = DENSE
+        else:
+            terms = Bm25Encoder.encode_query(texts[probe])
+            query, using = qm.SparseVector(indices=list(terms.indices), values=list(terms.values)), SPARSE
         hits = client.query_points(
-            name, query=list(vectors[probe]), using=DENSE, query_filter=flt, limit=50, with_payload=True
+            name, query=query, using=using, query_filter=flt, limit=50, with_payload=True
         ).points
         returned = {str((h.payload or {}).get("chunk_hash")) for h in hits}
         if not returned:
