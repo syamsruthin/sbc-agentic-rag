@@ -1,0 +1,15 @@
+[project]
+name = "sbc-retrieval"
+version = "0.0.0"
+description = "Plan resolver, service taxonomy, Qdrant hybrid search and rerank client."
+requires-python = ">=3.13"
+dependencies = [
+    "sbc-core",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sbc_retrieval"]

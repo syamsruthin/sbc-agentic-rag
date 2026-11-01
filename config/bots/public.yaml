@@ -1,0 +1,30 @@
+# Plan Shopper: anonymous public users, active Individual-market plans only (PLAN.md section 2.2).
+# The loader enforces the public restrictions; a broker-only setting here fails at startup.
+bot:
+  name: public
+  auth: anonymous
+  plan_scope:
+    markets: [Individual]
+    exclude_plan_statuses: [Discontinued]
+    exclude_exchange: [Purchased Prior to 01/01/2014]
+  tools:
+    - find_plans
+    - get_plan_facts
+    - search_sbc_text
+    - compare_plans
+    - rank_plans
+    - estimate_cost
+    - ask_clarifying_question
+    - glossary_lookup
+  allow_discovery: false
+  allow_cross_state: false
+  csv_export: false
+  compare_max_plans: 3
+  plan_recommendation_policy: tradeoffs_only
+  readability_max_grade: 8
+  rate_limits:
+    per_minute: 10
+    per_day: 60
+    per_ip_per_day: 200
+  retention_days: 30
+  max_cost_per_turn_usd: 0.05

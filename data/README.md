@@ -13,12 +13,12 @@ All sources are public:
 From the repository root:
 
 ```bash
-uv venv .venv && uv pip install --python .venv/bin/python -r requirements.txt
-.venv/bin/python scripts/sbc_portal.py catalog     # ~5 min: query the portals, write the catalog
-.venv/bin/python scripts/sbc_portal.py download    # resumable; skips files already on disk
-.venv/bin/python scripts/sbc_portal.py manifest    # sizes and sha256 for every PDF
-.venv/bin/python scripts/sbc_to_markdown.py        # PDF -> chunk-ready Markdown
-.venv/bin/python scripts/verify_markdown.py        # independent check of every Markdown file (needs poppler)
+uv sync                                          # installs pdfplumber and requests via sbc-ingest
+uv run python scripts/sbc_portal.py catalog      # ~5 min: query the portals, write the catalog
+uv run python scripts/sbc_portal.py download     # resumable; skips files already on disk
+uv run python scripts/sbc_portal.py manifest     # sizes and sha256 for every PDF
+uv run python scripts/sbc_to_markdown.py         # PDF -> chunk-ready Markdown
+uv run python scripts/verify_markdown.py         # independent check of every Markdown file (needs poppler)
 ```
 
 The downloader uses 6 parallel workers by default (`--workers`). Keep it modest and don't re-run it more

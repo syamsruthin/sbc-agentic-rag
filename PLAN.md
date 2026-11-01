@@ -17,6 +17,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 - Doppler is the source of truth for secrets.
 - Appendix C adds a functional overview with sample interactions.
 - §3.2.4 now explains the chunking strategy in full, with an example chunk and the reasoning behind it.
+- §10 (approved during scaffolding): CI workflows live in `.github/workflows/`, because GitHub only runs workflows from there, and environment files use `prd` to match Doppler and the Qdrant collection prefixes.
 
 ---
 
@@ -900,7 +901,7 @@ plan-info-chatbot/
 ├── config/
 │   ├── base.yaml                 # models per role, effort, budgets, loop limits, thresholds
 │   ├── bots/{broker,public}.yaml # scope filters, tools, tone, limits, retention
-│   └── env/{local,dev,prod}.yaml
+│   └── env/{local,dev,prd}.yaml
 ├── packages/
 │   ├── sbc_ingest/     # current scripts/ moved here unchanged: portal, to_markdown, verify (+ CLI)
 │   ├── sbc_extract/    # markdown → rows; cost grammar; deductible/OOP parsers; validators; PUF cross-check
@@ -925,13 +926,13 @@ plan-info-chatbot/
 │   ├── contract/       # schemathesis against OpenAPI
 │   └── load/           # k6 scripts
 ├── infra/
-│   ├── docker/Dockerfile  cloudrun/*.yaml  supabase/migrations/  qdrant/collection.yaml  doppler.yaml
-│   └── github/workflows/{ci,eval,build-index,deploy,backup}.yml
+│   └── docker/Dockerfile  cloudrun/*.yaml  supabase/migrations/  qdrant/collection.yaml  doppler.yaml
+├── .github/workflows/  # ci, eval, build-index, deploy, backup (GitHub only runs workflows from here)
 ├── docs/               # runbook.md, ADRs (one per major decision above)
 └── data/               # unchanged layout; raw/ and reference/ stay git-ignored; bundles and embedding caches in GCS
 ```
 
-**Module boundaries.** `core` depends on nothing internal. `sbc_extract` → `core`. `sbc_index` → `sbc_extract`, `core`. `retrieval` and `tools` → `core`. They read facts only through a `FactsReader` interface and search only through a `SearchIndex` interface (a Qdrant implementation, plus an in-memory fake for unit tests). `agent` → `tools`, `retrieval`, `core`. `api` → `agent`. No package imports `api`. The packages that build the bundle are never imported at runtime.
+**Module boundaries.** `core` depends on nothing internal. `sbc_extract` → `core`. `sbc_index` → `sbc_extract`, `core`. `retrieval` and `tools` → `core`. They read facts only through a `FactsReader` interface and search only through a `SearchIndex` interface (a Qdrant implementation, plus an in-memory fake for unit tests). Import names carry an `sbc_` prefix (`packages/core` is imported as `sbc_core`), so generic names like `core` or `api` never shadow third-party modules. import-linter enforces these rules in CI. `agent` → `tools`, `retrieval`, `core`. `api` → `agent`. No package imports `api`. The packages that build the bundle are never imported at runtime.
 
 **Config.** `pydantic-settings` merges `base` → `bot` → `env` → environment variables, with secrets coming only from the environment. The config is validated at startup (fails fast). Its `config_hash` is logged on every trace. Prompts live in git and are versioned. Runtime prompt editing (for example Langfuse prompt management) is deliberately not used, so every prompt change passes the CI eval gates.
 

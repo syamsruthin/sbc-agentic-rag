@@ -5,7 +5,7 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 ## Checkpoints
 
 - [x] 1. Repository created and first push
-- [ ] 2. Scaffolding done and CI green
+- [x] 2. Scaffolding done and CI green (PR #1)
 - [ ] 3. Phase 1 acceptance criteria met, with eval results against the golden dataset
 
 ## Repository setup
@@ -20,11 +20,12 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 
 ## Scaffolding (PLAN.md §10)
 
-- [ ] uv workspace with the `packages/` layout and module boundaries
-- [ ] `config/` (base, bot profiles, environments) loaded with pydantic-settings
-- [ ] ruff, mypy, pytest and pre-commit hooks
-- [ ] GitHub Actions CI: lint, type check, unit tests, eval-gate placeholder
-- [ ] README rewrite: overview, architecture diagram, setup, status
+- [x] uv workspace with the `packages/` layout; module boundaries enforced by import-linter
+- [x] `config/` (base, bot profiles, environments) loaded with pydantic-settings, with unit tests
+- [x] ruff, mypy, pytest and pre-commit hooks
+- [x] GitHub Actions CI: lint, type check, unit tests, secret scan, eval-gate placeholder
+- [x] README rewrite: overview, architecture diagram, setup, status
+- [x] PLAN.md §10 fixes approved: `.github/workflows/`, `prd` environment name
 
 ## Phase 0: Foundations (PLAN.md §11)
 

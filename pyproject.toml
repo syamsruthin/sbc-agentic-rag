@@ -1,0 +1,160 @@
+[project]
+name = "sbc-agentic-rag"
+version = "0.0.0"
+description = "Agentic RAG chatbots over U.S. health plan Summary of Benefits and Coverage (SBC) documents"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "sbc-agent",
+    "sbc-api",
+    "sbc-core",
+    "sbc-extract",
+    "sbc-index",
+    "sbc-ingest",
+    "sbc-retrieval",
+    "sbc-tools",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170",
+    "import-linter>=2.15",
+    "mypy>=2.4",
+    "pytest>=9.2",
+    "pytest-cov>=7.1",
+    "ruff>=0.17.3",
+    "types-pyyaml>=6.0.12",
+]
+
+[tool.uv]
+# The root only manages the workspace environment; it is not built or installed.
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+sbc-agent = { workspace = true }
+sbc-api = { workspace = true }
+sbc-core = { workspace = true }
+sbc-extract = { workspace = true }
+sbc-index = { workspace = true }
+sbc-ingest = { workspace = true }
+sbc-retrieval = { workspace = true }
+sbc-tools = { workspace = true }
+
+# --- Lint and format ---
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+# The original scripts/ move into packages/sbc_ingest in Phase 0, where they get linted.
+extend-exclude = ["scripts"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "N", "PT", "RUF", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "sbc_agent",
+    "sbc_api",
+    "sbc_core",
+    "sbc_extract",
+    "sbc_index",
+    "sbc_ingest",
+    "sbc_retrieval",
+    "sbc_tools",
+]
+
+# --- Type checking ---
+
+[tool.mypy]
+python_version = "3.13"
+files = ["packages", "tests"]
+plugins = ["pydantic.mypy"]
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unused_configs = true
+strict_equality = true
+
+# PLAN.md section 10: strict typing for core, extract and tools.
+[[tool.mypy.overrides]]
+module = ["sbc_core.*", "sbc_extract.*", "sbc_tools.*"]
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+disallow_untyped_defs = true
+extra_checks = true
+no_implicit_reexport = true
+warn_return_any = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# --- Tests ---
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+markers = [
+    "integration: needs local services such as a Qdrant container",
+    "contract: API contract tests",
+]
+
+[tool.coverage.run]
+source = ["packages"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+# --- Module boundaries (PLAN.md section 10) ---
+
+[tool.importlinter]
+root_packages = [
+    "sbc_agent",
+    "sbc_api",
+    "sbc_core",
+    "sbc_extract",
+    "sbc_index",
+    "sbc_ingest",
+    "sbc_retrieval",
+    "sbc_tools",
+]
+
+[[tool.importlinter.contracts]]
+name = "Runtime layers: api > agent > (tools | retrieval) > core"
+type = "layers"
+layers = ["sbc_api", "sbc_agent", "sbc_tools | sbc_retrieval", "sbc_core"]
+
+[[tool.importlinter.contracts]]
+name = "Build layers: index > extract > core"
+type = "layers"
+layers = ["sbc_index", "sbc_extract", "sbc_core"]
+
+[[tool.importlinter.contracts]]
+name = "Runtime code never imports build-time packages"
+type = "forbidden"
+source_modules = ["sbc_api", "sbc_agent", "sbc_tools", "sbc_retrieval", "sbc_core"]
+forbidden_modules = ["sbc_ingest", "sbc_extract", "sbc_index"]
+
+[[tool.importlinter.contracts]]
+name = "Build-time code never imports runtime packages"
+type = "forbidden"
+source_modules = ["sbc_ingest", "sbc_extract", "sbc_index"]
+forbidden_modules = ["sbc_api", "sbc_agent", "sbc_tools", "sbc_retrieval"]
+
+[[tool.importlinter.contracts]]
+name = "Ingest stands alone"
+type = "forbidden"
+source_modules = ["sbc_extract", "sbc_index"]
+forbidden_modules = ["sbc_ingest"]
