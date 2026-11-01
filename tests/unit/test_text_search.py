@@ -153,3 +153,25 @@ def test_keep_per_plan_counts_shared_hits_for_each_plan() -> None:
         ("h1", ("2027:1",)),
         ("h2", ("2027:2",)),
     ]
+
+
+def test_query_expansion_adds_sbc_labels() -> None:
+    from sbc_core.taxonomy import load_taxonomy
+    from sbc_retrieval.text_search import expand_query
+
+    tax = load_taxonomy()
+    assert expand_query("How much is an MRI?", tax) == "How much is an MRI? Imaging (CT/PET scans, MRIs)"
+    assert expand_query("Specialist visit", tax) == "Specialist visit"  # already the SBC's wording
+    assert expand_query("acupuncture", tax) == "acupuncture"
+
+
+def test_bm25_query_is_expanded_unless_disabled() -> None:
+    stub = StubIndex([])
+    TextSearcher(stub, SETTINGS).search(["2027:1"], "MRI")
+    off = SETTINGS.model_copy(update={"synonym_expansion": False})
+    TextSearcher(stub, off).search(["2027:1"], "MRI")
+    expanded, plain = (q.sparse for q in stub.queries)
+    assert expanded is not None
+    assert plain is not None
+    assert set(plain.indices) < set(expanded.indices)
+    assert stub.queries[0].text == "MRI"  # the dense/rerank text stays the user's

@@ -1,6 +1,8 @@
 """Plan-filtered hybrid text search, the engine behind the ``search_sbc_text`` tool (PLAN.md 3.4.3).
 
-1. Embed the query (OpenRouter) and encode BM25 terms locally.
+1. Embed the query (OpenRouter) and encode BM25 terms locally. BM25 matches exact tokens, so the BM25 query
+   also gets the SBC's own label for each service the query names ("MRI" adds "Imaging (CT/PET scans,
+   MRIs)"), from the service taxonomy (PLAN.md 3.4.4). The dense query and the rerank see the user's text.
 2. Search the index under the mandatory plan filter (dense + BM25, fused with RRF).
 3. Rerank the top candidates (OpenRouter), then keep the best ``keep_per_plan`` chunks per plan.
 
@@ -17,6 +19,7 @@ from sbc_core.bm25 import Bm25Encoder
 from sbc_core.config import Models, Retrieval
 from sbc_core.interfaces import SearchIndex
 from sbc_core.llm import GatewayError, OpenRouterClient
+from sbc_core.taxonomy import Taxonomy, load_taxonomy
 from sbc_core.types import ChunkType, SearchHit, SearchQuery
 
 QueryEmbedder = Callable[[str], Sequence[float]]
@@ -92,7 +95,8 @@ class TextSearcher:
             result.degraded.append("embedding_disabled")
         # Enough candidates for every plan to fill its quota, and at least the rerank window.
         limit = min(100, max(self.settings.rerank_candidates, self.settings.keep_per_plan * len(plans)))
-        sparse = Bm25Encoder.encode_query(query)
+        bm25_text = expand_query(query, load_taxonomy()) if self.settings.synonym_expansion else query
+        sparse = Bm25Encoder.encode_query(bm25_text)
         candidates = self.index.search(
             SearchQuery(
                 plan_keys=plans,
@@ -114,6 +118,17 @@ class TextSearcher:
                 result.degraded.append(f"rerank_failed: {exc}")
         result.hits = keep_per_plan(candidates, plans, self.settings.keep_per_plan)
         return result
+
+
+def expand_query(text: str, taxonomy: Taxonomy) -> str:
+    """``text`` plus the SBC labels of the services it names, each once, for the BM25 query."""
+    labels: list[str] = []
+    for hit in taxonomy.scan(text):
+        for service_id in hit.match.service_ids:
+            labels.extend(taxonomy.services[service_id].labels)
+    folded = text.lower()
+    extra = [label for label in dict.fromkeys(labels) if label.lower() not in folded]
+    return " ".join([text, *extra])
 
 
 def keep_per_plan(hits: Sequence[SearchHit], plan_keys: Sequence[str], keep: int) -> list[SearchHit]:
