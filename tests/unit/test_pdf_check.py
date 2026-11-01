@@ -96,3 +96,35 @@ def test_top_aligned_rows_run_to_the_next_label() -> None:
                       align="top")  # fmt: skip
     assert grid.cell(words, "What is the overall deductible?", "Answers") == ["$500/person. $1,000/family."]
     assert grid.cell(words, "Are there other deductibles?", "Answers") == ["No."]  # stops at the wide line
+
+
+def test_a_repeated_label_returns_one_cell_per_occurrence_top_to_bottom() -> None:
+    words: list[Word] = []
+    words += _line("Services You May Need", 100, 50, 0)
+    words += _line("Network Provider", 400, 50, 1)
+    words += _line("Physician/surgeon fees", 100, 100, 2)  # outpatient surgery
+    words += _line("No charge", 400, 100, 3)
+    words += _line("Facility fee", 100, 140, 4)
+    words += _line("$200/visit", 400, 140, 5)
+    words += _line("Physician/surgeon fees", 100, 180, 6)  # hospital stay
+    words += _line("40% coinsurance", 400, 180, 7)
+    words += _line("Urgent care", 100, 220, 8)
+    columns = columns_from_headers(words, ["Services You May Need", "Network Provider"])
+    assert columns is not None
+    grid = Grid.build(words, columns, ["Physician/surgeon fees", "Facility fee", "Urgent care"])
+    assert grid.cell(words, "Physician/surgeon fees", "Network Provider") == ["No charge", "40% coinsurance"]
+    assert grid.cell(words, "Urgent care", "Network Provider") == [""]
+
+
+def test_headers_that_wrap_or_nest_are_found() -> None:
+    words: list[Word] = []
+    words += _line("Services You May Need", 100, 50, 0)
+    words += _line("Tier 1 In-Network Provider", 300, 50, 1, width=4)  # contains "In-Network Provider"
+    words += _line("In-", 420, 50, 2)  # "In-Network Provider" wrapped onto two lines
+    words += _line("Network Provider", 420, 63.5, 3, width=3)
+    words += _line("Specialist visit", 100, 100, 4)
+    columns = columns_from_headers(words, ["Services You May Need", "Tier 1 In-Network Provider",
+                                           "In-Network Provider"])  # fmt: skip
+    assert columns is not None
+    bands = {name: (left, right) for name, left, right in columns}
+    assert bands["Tier 1 In-Network Provider"][1] <= 420 <= bands["In-Network Provider"][1]

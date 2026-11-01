@@ -49,6 +49,8 @@ _IQ_HEADERS = ("Important Questions", "Answers", "Why This Matters:")
 _EVENT_HEADER = "Common Medical Event"
 _SERVICE_HEADER = "Services You May Need"
 _LIMITATIONS_HEADER = "Limitations, Exceptions, &"
+_HEADER_ROW_SLACK = 30.0
+"""Points a header may sit above or below the header row (headers wrap onto two or three lines)."""
 _CELL_GAP = 0.25
 """Points of vertical gap that separate two cells; a cell's own lines are set flush (gap 0)."""
 _EXAMPLE_TITLES = {
@@ -97,17 +99,21 @@ def pdf_pages(pdf: Path) -> tuple[tuple[Word, ...], ...]:
     return tuple(pages)
 
 
+_QUOTES = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'})
+
+
 def find_phrase(words: Sequence[Word], phrase: str, start: int = 0) -> list[tuple[int, int]]:
     """(first, last) word indexes of every run of consecutive words whose characters, ignoring spaces,
-    spell ``phrase``. Spaces are ignored so a phrase wrapped at a slash still matches."""
-    target = "".join(phrase.split())
+    spell ``phrase``. Spaces are ignored so a phrase wrapped at a slash still matches, and so is the quote
+    style, since this finds labels and headers (values are compared exactly, by :func:`compare`)."""
+    target = "".join(phrase.split()).translate(_QUOTES)
     found = []
     for i in range(start, len(words)):
-        if not target.startswith(words[i].text):
+        if not target.startswith(words[i].text.translate(_QUOTES)):
             continue
         acc = ""
         for j in range(i, len(words)):
-            acc += words[j].text
+            acc += words[j].text.translate(_QUOTES)
             if acc == target:
                 found.append((i, j))
                 break
@@ -132,13 +138,30 @@ def columns_from_headers(words: Sequence[Word], headers: Sequence[str]) -> Colum
     fewest words of the table (at or below the header row) cover: the gutter. Lines wider than a third of the
     page (headings, footnotes) don't count.
     """
+    exact = {h: find_phrase(words, h) for h in headers}
+    found = [_box(words, spans[0]) for spans in exact.values() if spans]
+    if not found:
+        return None
+    anchor = sorted(b.y0 for b in found)[len(found) // 2]  # the header row
     centers = []
     header_top = 1e9
-    for header in headers:
-        spans = find_phrase(words, header)
-        if not spans:
-            return None
-        box = _box(words, spans[0])
+    used: set[int] = set()
+    # Longest first, never reusing words: "In-Network Provider" must not match inside "Tier 1 In-Network
+    # Provider". Matches must sit on the header row, not in text above the table.
+    for header in sorted(headers, key=len, reverse=True):
+        spans = [sp for sp in exact[header] if abs(_box(words, sp).y0 - anchor) <= _HEADER_ROW_SLACK
+                 and not used & set(range(sp[0], sp[1] + 1))]  # fmt: skip
+        if spans:
+            span = min(spans, key=lambda sp: abs(_box(words, sp).y0 - anchor))
+        else:
+            # A header in a narrow column wraps, and poppler reads the header row across columns line by line,
+            # so match the header's first line: the longest run on one line that spells a prefix of it.
+            found_span = _header_prefix(words, header, anchor, used)
+            if found_span is None:
+                return None
+            span = found_span
+        used |= set(range(span[0], span[1] + 1))
+        box = _box(words, span)
         centers.append(((box.x0 + box.x1) / 2, header))
         header_top = min(header_top, box.y0)
     centers.sort()
@@ -173,6 +196,31 @@ def columns_from_headers(words: Sequence[Word], headers: Sequence[str]) -> Colum
         bounds.append((best[0] + best[1]) / 2)
     edges = [0.0, *bounds, 1e9]
     return [(header, edges[k], edges[k + 1]) for k, (_, header) in enumerate(centers)]
+
+
+def _header_prefix(
+    words: Sequence[Word], header: str, anchor: float, used: set[int]
+) -> tuple[int, int] | None:
+    """The longest run of unused words on one line, on the header row, spelling a prefix of ``header`` (at
+    least 6 characters, ignoring spaces)."""
+    target = "".join(header.split())
+    best: tuple[int, float, tuple[int, int]] | None = None
+    for i, first in enumerate(words):
+        if i in used or abs(first.y0 - anchor) > _HEADER_ROW_SLACK or not target.startswith(first.text):
+            continue
+        acc, j = "", i
+        while (
+            j < len(words) and j not in used and words[j].line == first.line
+            and target.startswith(acc + words[j].text)
+        ):  # fmt: skip
+            acc += words[j].text
+            j += 1
+        if len(acc) < 6:
+            continue
+        key = (len(acc), -abs(first.y0 - anchor))
+        if best is None or key > best[:2]:
+            best = (key[0], key[1], (i, j - 1))
+    return best[2] if best else None
 
 
 @dataclass
@@ -238,7 +286,8 @@ class Grid:
         return zones
 
     def cell(self, words: Sequence[Word], row: str, column: str) -> list[str]:
-        """Texts of each candidate cell (a label can occur twice on a page, e.g. "Physician/surgeon fees")."""
+        """The cell text for each occurrence of the row label, top to bottom ("" for an empty cell). A label
+        can occur twice on a page: "Physician/surgeon fees" for outpatient surgery and for a hospital stay."""
         col = next((c for c in self.columns if c[0] == column), None)
         if col is None or not self.rows:
             return []
@@ -275,10 +324,10 @@ class Grid:
                 if z0 <= y < z1:
                     cells.setdefault(k, []).extend(unit)
         out = []
-        for k, (label, _) in enumerate(self.rows):
-            if label == row and k in cells:
-                ws = sorted(cells[k], key=lambda w: (round(w.y0), w.x0))
-                out.append(" ".join(w.text for w in ws))
+        for k in sorted((k for k, (label, _) in enumerate(self.rows) if label == row),
+                        key=lambda k: self.rows[k][1].y0):  # fmt: skip
+            ws = sorted(cells.get(k, []), key=lambda w: (round(w.y0), w.x0))
+            out.append(" ".join(w.text for w in ws))
         return out
 
 
@@ -344,6 +393,9 @@ class PlanContext:
     question_pages: tuple[int, ...]
     example_pages: tuple[int, ...]
     page_services: dict[int, list[str]] = field(default_factory=dict)
+    """Distinct service labels printed on each page."""
+    page_rows: dict[int, list[str]] = field(default_factory=dict)
+    """Service IDs on each page, in SBC row order."""
 
 
 def plan_context(db: sqlite3.Connection, plan_key: str, root: Path) -> PlanContext | None:
@@ -361,6 +413,7 @@ def plan_context(db: sqlite3.Connection, plan_key: str, root: Path) -> PlanConte
     services: dict[str, tuple[str, str, tuple[int, ...]]] = {}
     tiers: dict[str, str] = {}
     page_services: dict[int, list[str]] = {}
+    page_rows: dict[int, list[str]] = {}
     for service_id, _, label, pages, tier_label, tier_id, path in rows:
         p = tuple(int(x) for x in pages.split(",") if x)
         services[service_id] = (path.split(" > ")[0], label, p)
@@ -368,13 +421,15 @@ def plan_context(db: sqlite3.Connection, plan_key: str, root: Path) -> PlanConte
         for page in p:
             if label not in page_services.setdefault(page, []):
                 page_services[page].append(label)
+            if service_id not in page_rows.setdefault(page, []):
+                page_rows[page].append(service_id)
     q = db.execute("SELECT pages FROM plan_question WHERE plan_id = ? LIMIT 1", (plan_id,)).fetchone()
     e = db.execute("SELECT pages FROM plan_example WHERE plan_id = ? LIMIT 1", (plan_id,)).fetchone()
     return PlanContext(
         pdf=root / source_pdf, tier_labels=list(dict.fromkeys(tiers.values())), service_rows=services,
         tiers=tiers, question_pages=tuple(int(x) for x in (q[0] if q else "").split(",") if x),
         example_pages=tuple(int(x) for x in (e[0] if e else "").split(",") if x),
-        page_services=page_services,
+        page_services=page_services, page_rows=page_rows,
     )  # fmt: skip
 
 
@@ -397,9 +452,14 @@ def check_benefit(
             grid = Grid.build(
                 words, columns, ctx.page_services.get(page, [label]), label_column=_SERVICE_HEADER
             )
-            status = _best(grid.cell(words, label, ctx.tiers[tier_id]), verbatim)
-            if status:
-                return status, page
+            # The n-th printing of a repeated label is the n-th row with that label in SBC order. If the
+            # counts disagree the row can't be told apart, so nothing is confirmed.
+            same = [s for s in ctx.page_rows.get(page, [service_id]) if ctx.service_rows[s][1] == label]
+            cells = grid.cell(words, label, ctx.tiers[tier_id])
+            if service_id in same and len(cells) == len(same):
+                status = compare(cells[same.index(service_id)], verbatim)
+                if status:
+                    return status, page
         if text_page is None and _on_page(words, verbatim):
             text_page = page
     return ("text_only", text_page) if text_page else ("not_found", None)
