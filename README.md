@@ -164,7 +164,7 @@ if any secret it needs is missing.
 | Milestone | Status |
 |---|---|
 | Repository setup and public-repo hygiene | Done |
-| Scaffolding: workspace, config, lint, types, tests, CI | In review |
+| Scaffolding: workspace, config, lint, types, tests, CI | Done (PR #1) |
 | Phase 0: extraction, facts bundle, Qdrant loader, golden dataset v0 | Next |
 | Phase 1: Broker Assistant MVP (internal alpha) | Planned |
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |

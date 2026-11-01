@@ -5,7 +5,7 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 ## Checkpoints
 
 - [x] 1. Repository created and first push
-- [ ] 2. Scaffolding done and CI green
+- [x] 2. Scaffolding done and CI green (PR #1)
 - [ ] 3. Phase 1 acceptance criteria met, with eval results against the golden dataset
 
 ## Repository setup
