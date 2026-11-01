@@ -17,9 +17,16 @@ uv sync                        # installs the sbc_ingest package and its CLI com
 uv run sbc-portal catalog      # ~5 min: query the portals, write the catalog
 uv run sbc-portal download     # resumable; skips files already on disk
 uv run sbc-portal manifest     # sizes and sha256 for every PDF
+uv run sbc-snapshot            # counts per portal/state/market -> docs/reviews/corpus-snapshot-<year>.md
 uv run sbc-to-markdown         # PDF -> chunk-ready Markdown
 uv run sbc-verify              # independent check of every Markdown file (needs poppler)
 ```
+
+`sbc-snapshot` rewrites a committed file, so `git diff docs/reviews/corpus-snapshot-2027.md` shows which counts
+moved since the last run. The 2026-11-01 run listed 9,692 SBCs (6.55 GB), 2 more Anthem Small Group SBCs than
+the 9,690 documented in PLAN.md section 1.2.
+
+On a 4-CPU machine the download takes about 25 minutes, conversion about 55 and verification about 55.
 
 Then build the facts bundle and the search index:
 
@@ -32,6 +39,13 @@ uv run sbc-load-qdrant bundles/facts-2027.1.sqlite --env dev   # -> Qdrant dev__
 
 `sbc-load-qdrant` needs `QDRANT_URL`, `QDRANT_API_KEY_RW` and `OPENROUTER_API_KEY_BROKER` (see `.env.example`).
 Embeddings are cached in `bundles/embeddings.sqlite` by chunk hash, so a rebuild only embeds new chunk text.
+
+The retrieval eval and the PDF check of the golden dataset read the bundle (see `evals/README.md`):
+
+```bash
+uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.1.0 --setup bm25_only
+uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.1.0
+```
 
 The downloader uses 6 parallel workers by default (`--workers`). Keep it modest and don't re-run it more
 often than needed; the portals are public services.
