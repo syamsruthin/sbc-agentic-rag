@@ -1,0 +1,212 @@
+# Service taxonomy v1 (PLAN.md section 3.4.2).
+#
+# Maps every event and service label printed in the 2027 SBCs to a canonical ID, and user wording to those IDs.
+# Labels must match the SBC text exactly, including curly apostrophes. A label missing from this file fails the
+# facts-bundle build, so new SBC wording is noticed instead of silently dropped.
+version: 1
+
+events:
+  - id: office_visit
+    label: "If you visit a health care provider’s office or clinic"
+  - id: test
+    label: "If you have a test"
+  - id: drugs
+    label: "If you need drugs to treat your illness or condition"
+  - id: outpatient_surgery
+    label: "If you have outpatient surgery"
+  - id: immediate_care
+    label: "If you need immediate medical attention"
+  - id: hospital_stay
+    label: "If you have a hospital stay"
+  - id: mental_health
+    label: "If you need mental health, behavioral health, or substance abuse services"
+  - id: pregnancy
+    label: "If you are pregnant"
+  - id: recovery
+    label: "If you need help recovering or have other special health needs"
+  - id: child_dental_eye
+    label: "If your child needs dental or eye care"
+
+services:
+  - id: primary_care_visit
+    event: office_visit
+    labels: ["Primary care visit to treat an injury or illness"]
+    synonyms: [primary care, primary care visit, pcp, pcp visit, family doctor, general practitioner, gp visit,
+               sick visit, doctor visit for an illness]
+  - id: specialist_visit
+    event: office_visit
+    labels: ["Specialist visit"]
+    synonyms: [specialist, specialist visit, seeing a specialist, cardiologist, dermatologist, orthopedist,
+               neurologist, allergist, endocrinologist, gastroenterologist, oncologist, ent doctor]
+  - id: preventive_care
+    event: office_visit
+    labels: ["Preventive care/screening/immunization"]
+    synonyms: [preventive care, preventive, preventive visit, annual physical, physical exam, wellness visit,
+               well visit, checkup, check-up, screening, immunization, immunizations, vaccine, vaccination,
+               flu shot, screening mammogram, screening colonoscopy]
+  - id: diagnostic_test
+    event: test
+    labels: ["Diagnostic test (x-ray, blood work)"]
+    synonyms: [diagnostic test, lab, labs, lab work, lab test, blood work, blood test, x-ray, xray]
+  - id: imaging
+    event: test
+    labels: ["Imaging (CT/PET scans, MRIs)"]
+    synonyms: [imaging, mri, ct scan, ct, cat scan, pet scan, pet ct, advanced imaging]
+  - id: outpatient_facility
+    event: outpatient_surgery
+    labels: ["Facility fee (e.g., ambulatory surgery center)"]
+    synonyms: [outpatient surgery, outpatient surgery facility, ambulatory surgery center, surgery center, asc,
+               outpatient facility fee, same-day surgery]
+  - id: outpatient_surgeon
+    event: outpatient_surgery
+    labels: ["Physician/surgeon fees"]
+    synonyms: [outpatient surgeon, outpatient surgeon fee, outpatient physician fee]
+  - id: emergency_room
+    event: immediate_care
+    labels: ["Emergency room care"]
+    synonyms: [emergency room, er, er visit, emergency department, ed visit, emergency care]
+  - id: emergency_transport
+    event: immediate_care
+    labels: ["Emergency medical transportation"]
+    synonyms: [ambulance, air ambulance, ground ambulance, emergency transportation, emergency medical transportation]
+  - id: urgent_care
+    event: immediate_care
+    labels: ["Urgent care"]
+    synonyms: [urgent care, urgent care center, walk-in clinic, minute clinic]
+  - id: inpatient_facility
+    event: hospital_stay
+    labels: ["Facility fee (e.g., hospital room)"]
+    synonyms: [hospital stay, hospitalization, inpatient stay, inpatient care, hospital room, hospital admission,
+               admitted to the hospital, inpatient hospital]
+  - id: inpatient_physician
+    event: hospital_stay
+    labels: ["Physician/surgeon fees"]
+    synonyms: [inpatient surgeon, inpatient surgeon fee, inpatient physician fee, hospital doctor fees]
+  - id: mental_health_outpatient
+    event: mental_health
+    labels: ["Outpatient services"]
+    synonyms: [therapy, therapist, talk therapy, counseling, counselor, psychologist visit, psychiatrist visit,
+               mental health visit, outpatient mental health, behavioral health visit,
+               outpatient substance abuse treatment]
+  - id: mental_health_inpatient
+    event: mental_health
+    labels: ["Inpatient services"]
+    synonyms: [inpatient mental health, psychiatric hospitalization, inpatient behavioral health,
+               residential treatment, inpatient substance abuse treatment, inpatient detox]
+  - id: pregnancy_office_visits
+    event: pregnancy
+    labels: ["Office visits"]
+    synonyms: [prenatal visit, prenatal care, postnatal visit, postpartum visit, ob visit, obgyn visit,
+               pregnancy office visit]
+  - id: childbirth_professional
+    event: pregnancy
+    labels: ["Childbirth/delivery professional services"]
+    synonyms: [delivery doctor, obstetrician delivery fee, childbirth professional services,
+               delivery professional services, anesthesia for delivery]
+  - id: childbirth_facility
+    event: pregnancy
+    labels: ["Childbirth/delivery facility services"]
+    synonyms: [delivery, childbirth, giving birth, labor and delivery, hospital delivery, c-section, cesarean,
+               childbirth facility services]
+  - id: home_health
+    event: recovery
+    labels: ["Home health care"]
+    synonyms: [home health, home health care, home nurse, home nursing, visiting nurse]
+  - id: rehabilitation
+    event: recovery
+    labels: ["Rehabilitation services"]
+    synonyms: [rehabilitation, rehab, physical therapy, pt, occupational therapy, ot, speech therapy, cardiac rehab]
+  - id: habilitation
+    event: recovery
+    labels: ["Habilitation services"]
+    synonyms: [habilitation, habilitative services, developmental therapy, aba therapy, autism therapy]
+  - id: skilled_nursing
+    event: recovery
+    labels: ["Skilled nursing care"]
+    synonyms: [skilled nursing, skilled nursing care, skilled nursing facility, snf]
+  - id: durable_medical_equipment
+    event: recovery
+    labels: ["Durable medical equipment"]
+    synonyms: [durable medical equipment, dme, medical equipment, wheelchair, crutches, walker, cpap,
+               glucose meter, hospital bed]
+  - id: hospice
+    event: recovery
+    labels: ["Hospice services"]
+    synonyms: [hospice, hospice care, end of life care]
+  - id: child_eye_exam
+    event: child_dental_eye
+    labels: ["Children’s eye exam"]
+    synonyms: [children's eye exam, child eye exam, kids eye exam, pediatric eye exam, pediatric vision exam]
+  - id: child_glasses
+    event: child_dental_eye
+    labels: ["Children’s glasses"]
+    synonyms: [children's glasses, child glasses, kids glasses, pediatric glasses, pediatric eyewear]
+  - id: child_dental_checkup
+    event: child_dental_eye
+    labels: ["Children’s dental check-up"]
+    synonyms: [children's dental check-up, children's dental, child dental checkup, kids dental, pediatric dental,
+               pediatric dental cleaning]
+
+# Drug rows: the service ID is rx_tier_<tier>. What a tier holds differs by plan (Tier 2 is "generic" on some
+# plans and "preferred brand" on others), so each label carries tags and user wording maps to tags.
+drug_labels:
+  - {label: "Typically Generic (Tier 1)", tier: "1", tags: [generic]}
+  - {label: "Typically Generic Drugs (Tier 1)", tier: "1", tags: [generic]}
+  - {label: "Generic drugs (Tier 1)", tier: "1", tags: [generic]}
+  - {label: "Preventive Care Drugs (Tier 1)", tier: "1", tags: [preventive]}
+  - {label: "Typically Lower Cost Generic (Tier 1a)", tier: "1a", tags: [generic, lower_cost_generic]}
+  - {label: "Typically Generic (Tier 1b)", tier: "1b", tags: [generic]}
+  - {label: "Typically Generic (Tier 2)", tier: "2", tags: [generic]}
+  - {label: "Typically Preferred Brand (Tier 2)", tier: "2", tags: [preferred_brand]}
+  - {label: "Preferred brand drugs (Tier 2)", tier: "2", tags: [preferred_brand]}
+  - {label: "Typically Preferred Brand & Non-Preferred Generic Drugs (Tier 2)", tier: "2",
+     tags: [preferred_brand, non_preferred_generic]}
+  - {label: "Typically Preferred Brand & Non-Preferred Generic Drugs (Tier 3)", tier: "3",
+     tags: [preferred_brand, non_preferred_generic]}
+  - {label: "Typically Non-Preferred Brand (Tier 3)", tier: "3", tags: [non_preferred_brand]}
+  - {label: "Non-preferred brand drugs (Tier 3)", tier: "3", tags: [non_preferred_brand]}
+  - {label: "Typically Non-Preferred Brand and Generic drugs (Tier 3)", tier: "3",
+     tags: [non_preferred_brand, non_preferred_generic]}
+  - {label: "Typically Non-Preferred Brand (Tier 4)", tier: "4", tags: [non_preferred_brand]}
+  - {label: "Typically Non-Preferred Brand and Generic drugs (Tier 4)", tier: "4",
+     tags: [non_preferred_brand, non_preferred_generic]}
+  - {label: "Specialty drugs (Tier 4)", tier: "4", tags: [specialty]}
+  - {label: "Typically Specialty (brand and generic) (Tier 4)", tier: "4", tags: [specialty]}
+  - {label: "Typically Preferred Specialty (brand and generic) (Tier 4)", tier: "4",
+     tags: [specialty, preferred_specialty]}
+  - {label: "Typically Specialty (brand and generic) (Tier 5)", tier: "5", tags: [specialty]}
+  - {label: "Typically Preferred Specialty (brand and generic) (Tier 5)", tier: "5",
+     tags: [specialty, preferred_specialty]}
+  - {label: "Typically Non-Preferred Specialty (brand and generic) (Tier 5)", tier: "5",
+     tags: [specialty, non_preferred_specialty]}
+
+# User wording for drug tags. "any_drug" means every drug tier on the plan.
+drug_terms:
+  any_drug: [prescription, prescriptions, prescription drugs, drugs, medication, medications, medicine, rx,
+             pharmacy]
+  generic: [generic, generics, generic drug, generic drugs, generic medication, generic prescription]
+  lower_cost_generic: [lower cost generic, low cost generic]
+  preferred_brand: [brand, brand name, brand-name drugs, brand name drugs, preferred brand, preferred brand drugs]
+  non_preferred_brand: [non-preferred brand, non preferred brand, non-preferred brand drugs]
+  non_preferred_generic: [non-preferred generic, non preferred generic]
+  specialty: [specialty, specialty drug, specialty drugs, specialty medication, biologics, specialty pharmacy]
+  preventive: [preventive drugs, preventive care drugs, preventive medications]
+
+# Wording that covers more than one service. The resolver shows every match (or asks), never picks one.
+ambiguous_terms:
+  office visit: [primary_care_visit, specialist_visit]
+  doctor visit: [primary_care_visit, specialist_visit]
+  doctor: [primary_care_visit, specialist_visit]
+  surgery: [outpatient_facility, outpatient_surgeon, inpatient_facility, inpatient_physician]
+  surgeon: [outpatient_surgeon, inpatient_physician]
+  physician fees: [outpatient_surgeon, inpatient_physician]
+  hospital: [inpatient_facility, inpatient_physician]
+  mental health: [mental_health_outpatient, mental_health_inpatient]
+  behavioral health: [mental_health_outpatient, mental_health_inpatient]
+  substance abuse: [mental_health_outpatient, mental_health_inpatient]
+  pregnancy: [pregnancy_office_visits, childbirth_professional, childbirth_facility]
+  maternity: [pregnancy_office_visits, childbirth_professional, childbirth_facility]
+  having a baby: [pregnancy_office_visits, childbirth_professional, childbirth_facility]
+  kids eye care: [child_eye_exam, child_glasses]
+  pediatric vision: [child_eye_exam, child_glasses]
+  scan: [imaging, diagnostic_test]
