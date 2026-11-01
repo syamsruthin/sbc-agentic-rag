@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Builds the facts bundle (SQLite) and the Qdrant collection, with diff reports."
 requires-python = ">=3.13"
 dependencies = [
+    "qdrant-client>=1.20",
     "sbc-core",
     "sbc-extract",
 ]
@@ -19,3 +20,4 @@ packages = ["src/sbc_index"]
 sbc-build-bundle = "sbc_index.bundle:main"
 sbc-grammar-review = "sbc_index.grammar_review:main"
 sbc-puf-check = "sbc_index.puf_check:main"
+sbc-load-qdrant = "sbc_index.qdrant_loader:main"

@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Plan resolver, service taxonomy, Qdrant hybrid search and rerank client."
 requires-python = ">=3.13"
 dependencies = [
+    "qdrant-client>=1.20",
     "sbc-core",
 ]
 
