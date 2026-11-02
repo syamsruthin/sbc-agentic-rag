@@ -95,7 +95,7 @@ flowchart LR
 ```
 
 **Stack:** Python 3.13, uv workspace, LangGraph, FastAPI, SQLite (facts and search index in one file), OpenRouter (Claude Haiku 5.5,
-Sonnet 5.5 and Opus 5.5; Voyage embeddings and rerank), Supabase, Upstash, Langfuse, Doppler, Cloud Run,
+Sonnet 5.5 and Opus 5.5; bge-m3 embeddings and Qwen3 rerank), Supabase, Upstash, Langfuse, Doppler, Cloud Run,
 Cloudflare Pages. PLAN.md section 4 explains each choice.
 
 ## Repository layout

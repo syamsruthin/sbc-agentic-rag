@@ -15,10 +15,10 @@ models:
     model: anthropic/claude-opus-5.5
     effort: medium
   embeddings:
-    model: voyageai/voyage-4-lite
+    model: baai/bge-m3  # ZDR via Parasail and DeepInfra; Voyage has no ZDR endpoint (PLAN.md 8)
     dimensions: 1024
   rerank:
-    model: voyageai/rerank-3-lite
+    model: qwen/qwen3-reranker-8b  # only ZDR reranker on OpenRouter (Fireworks); eval-gated (PLAN.md 3.4.3)
 
 # Per-turn limits (PLAN.md section 3.5.6).
 budget:

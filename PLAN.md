@@ -10,7 +10,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 
 **Revision 2 changes (from review):**
 
-- Every model call goes through OpenRouter: LLMs, embeddings (`voyageai/voyage-4-lite`) and reranker (`voyageai/rerank-3-lite`). PII detection is the one exception and stays local (§3.8).
+- Every model call goes through OpenRouter: LLMs, embeddings and reranker (Voyage in revision 2; `baai/bge-m3` and `qwen/qwen3-reranker-8b` since 2026-11-02, below). PII detection is the one exception and stays local (§3.8).
 - No SLM or vLLM; this is now a firm decision.
 - ~~Qdrant Cloud holds the text-search index.~~ Superseded on 2026-11-02 (below): the text-search index lives in the SQLite facts bundle with the structured facts, shipped inside the API image.
 - Hosting stays on Cloud Run. Hugging Face Spaces was evaluated and rejected (§1.3).
@@ -20,6 +20,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 - §3.2.1 and §11 (approved in Phase 0): converter sub-label fix and punctuation-exact verification; the byte-identical criterion now applies to the move, and the fix's changes are listed in a diff report.
 - §10 (approved during scaffolding): CI workflows live in `.github/workflows/`, because GitHub only runs workflows from there, and environment files use `prd` to match Doppler.
 - **Search index back in SQLite (approved 2026-11-02).** Qdrant Cloud is dropped. Every plan-filtered search scores at most about 370 chunks (about 61 per plan, up to 6 plans), and even broker discovery scans only about 30K chunks, so no approximate-nearest-neighbour service is needed. The bundle now holds BM25 term weights and float16 embeddings next to the facts (about 60 MB more), so code, facts and index ship and roll back as one file, with no network hop per search, no free-cluster suspension risk, no collection pinning and no Qdrant keys. A vector service is reconsidered only if a much larger corpus arrives (for example EOCs). Sections 0, 1.3, 2.3, 3, 4, 7, 8, 9, 10, 11, 12 and the appendices are updated.
+- **Embedding and rerank models replaced for ZDR (approved 2026-11-02).** The Phase 0 smoke test found that OpenRouter has no zero-data-retention endpoint for `voyageai/voyage-4-lite`, `voyageai/rerank-3-lite` or the listed alternative `cohere/rerank-4-fast`, so §8 rules them out. Embeddings are now `baai/bge-m3` (the listed alternative: 1024 dimensions, ZDR through Parasail and DeepInfra, $0.01 per 1M tokens). Rerank is `qwen/qwen3-reranker-8b`, the only ZDR reranker on OpenRouter (Fireworks), and stays eval-gated (§3.4.3). Sections 0, 1.3, 3.4.3, 3.6 and 4 are updated.
 
 ---
 
@@ -40,7 +41,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
   - **Text search:** the same bundle holds the unique chunks (about 30–38K) with their BM25 term weights and dense embeddings. Every search is filtered to the resolved plans in SQL and scored exactly in the API process; there is no separate search service.
 - **All models go through OpenRouter:**
   - LLMs: Claude Haiku 5.5 for routing, rewriting and guard classification; Claude Sonnet 5.5 for the agent and answer composition; Claude Opus 5.5 as the offline judge.
-  - Embeddings: `voyageai/voyage-4-lite`. Reranker: `voyageai/rerank-3-lite`.
+  - Embeddings: `baai/bge-m3`. Reranker: `qwen/qwen3-reranker-8b` (both on zero-data-retention endpoints).
   - The Phase 1 bake-off decides whether Haiku 5.5 can take the fast path; that changes cost by roughly 10×.
 - **No SLM or vLLM.** This is a firm decision: the cost strings parse deterministically, hosted Haiku routing costs about $0.0003 per query, and GPU hosting would break the free-deployment constraint (§3.6).
 - **Free deployment stack:**
@@ -102,7 +103,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 | Premiums | Cost-sharing only | Rankings use deductible, OOP max, copays and coverage-example totals, always with a "premiums not included" statement. |
 | Hosting | **OpenRouter for LLM calls; free deployment options** | All models go through OpenRouter. Infrastructure uses free tiers (§4, §9), with the first paid upgrades named. |
 | Host everything on Supabase? | **No; keep the current split** | Supabase handles broker auth and the operational Postgres only. Edge Functions are TypeScript/Deno with 256 MB memory and a 20 MB size cap, so they can't run the Python agent with the in-image index and ONNX models. An all-Supabase setup would need a TypeScript rewrite and an index in Postgres (likely Supabase Pro). The Python API runs on Cloud Run. |
-| Models via OpenRouter (revision 2) | **LLMs, embeddings and reranker all through OpenRouter** | Embeddings `voyageai/voyage-4-lite`, rerank `voyageai/rerank-3-lite`; no model weights in the container (§3.6). PII detection stays local, because finding PII by sending raw text to an external model would defeat the purpose (§3.8). |
+| Models via OpenRouter (revision 2) | **LLMs, embeddings and reranker all through OpenRouter** | Embeddings `baai/bge-m3`, rerank `qwen/qwen3-reranker-8b` (Voyage until 2026-11-02, replaced for ZDR); no model weights in the container (§3.6). PII detection stays local, because finding PII by sending raw text to an external model would defeat the purpose (§3.8). |
 | Qdrant Cloud for the read store (revision 2) | Yes, for the search index only; **reversed on 2026-11-02** | Plan-filtered candidate sets are a few hundred chunks, so exact scoring inside the API is faster and simpler than a network search service. The search index now lives in the SQLite facts bundle with the facts (§3.2.4, §3.4.3). |
 | Hugging Face for API hosting (revision 2) | Asked for; **rejected after review, Cloud Run kept** | Docker Spaces now require a paid HF plan (PRO, $9/month). Spaces can only make outbound connections on ports 80, 443 and 8080. That blocks Qdrant Cloud's documented API ports (6333/6334) and Supabase Postgres (5432/6543). |
 | Doppler for secrets (revision 2) | **Yes** | Doppler is the source of truth. It syncs to GCP Secret Manager for Cloud Run and to GitHub Actions for CI, so the API has no runtime dependency on Doppler (§8). |
@@ -367,14 +368,14 @@ Limitations, Exceptions, & Other Important Information: Copayment waived if admi
 **3.4.3 Hybrid search (`search_sbc_text`).** Search runs in the API process over the facts bundle (`sbc_core.search.SqliteSearchIndex`); the query embedding and the rerank go through OpenRouter.
 
 - **Plan-filtered (the default and required case):**
-  1. Embed the query with `voyageai/voyage-4-lite` via OpenRouter (cached by normalized query text) and compute BM25 sparse terms locally.
+  1. Embed the query with `baai/bge-m3` via OpenRouter (cached by normalized query text) and compute BM25 sparse terms locally.
   2. Select the resolved plans' chunks in SQL (a join through `plan_chunk` on the resolved `plan_key`s; this is the mandatory plan filter). Candidate sets are tiny (about 61 chunks per plan), so every candidate is scored exactly: cosine over the stored embeddings (top 20) and BM25 (top 20), fused with Reciprocal Rank Fusion.
-  3. Rerank the top 20 with `voyageai/rerank-3-lite` via OpenRouter, then keep the top 6 per plan.
+  3. Rerank the top 20 with `qwen/qwen3-reranker-8b` via OpenRouter, then keep the top 6 per plan.
   - The tool builds the filter in code, never the LLM. Before results are returned, code checks that every hit belongs to one of the requested `plan_key`s. A violation fails the request closed and raises a P1 alert. Unit tests on a synthetic bundle and the CI eval gate check the filter on every PR.
 - **Discovery (broker only)**, for example "which plans list fertility preservation":
   - Prefer structured list items.
   - Otherwise search the chunks of every plan in scope (plan year, state, market filters in SQL). The whole corpus is about 30K chunks (about 60 MB of float16 vectors), so an exact scan takes tens of milliseconds. Group by plan and return plans with evidence.
-- **Rerank is gated by eval.** The retrieval eval runs with and without rerank. If RRF alone meets recall@5 ≥ 0.95 on plan-filtered queries, rerank runs only in discovery mode, saving about 0.2–0.3 s per search. `cohere/rerank-4-fast` is the bake-off alternative, subject to the ZDR policy (§8).
+- **Rerank is gated by eval.** The retrieval eval runs with and without rerank. If RRF alone meets recall@5 ≥ 0.95 on plan-filtered queries, rerank runs only in discovery mode, saving about 0.2–0.3 s per search. Alternatives must meet the ZDR policy (§8); on 2026-11-02 no other reranker on OpenRouter did.
 - **Fallbacks:** if the OpenRouter embedding call fails, search runs on BM25 sparse only. If rerank fails, RRF order is used. Both are recorded on the trace.
 
 **3.4.4 Query rewriting for vague questions.** The Haiku classifier also emits a normalized *query spec*. "Cheapest plan for a family" becomes:
@@ -500,8 +501,8 @@ Nothing else in the plan depends on an SLM. Reopening the question would take a 
 | classify, rewrite, reference resolution, guard | `anthropic/claude-haiku-5.5` | $0.10 / $0.50 / $0.01 | low | Structured output, about 300 ms, negligible cost | `openai/gpt-5-nano`, `google/gemini-3.1-flash-lite` |
 | Agent loop + compose | `anthropic/claude-sonnet-5.5` | $2.00 / $10.00 / $0.10 | low to medium | Strong tool use and instruction following. Numbers are placeholders, so the model mostly *selects and explains* | `anthropic/claude-opus-5.5` ($4 / $20; quality ceiling), `anthropic/claude-haiku-5.5` (cost floor) |
 | Offline LLM-as-judge | `anthropic/claude-opus-5.5` | $4 / $20 / $0.20 | medium | Most capable judge; batch variants are 50% off | Cross-family check: `openai/gpt-5.6-sol` on the calibration set to measure self-preference bias |
-| Embeddings (index build + queries) | `voyageai/voyage-4-lite`, 1024 dimensions | $0.02 per 1M input tokens; embedding all 38K unique chunks costs about $0.10 once | Strong retrieval for the price; Matryoshka dimensions allow a drop to 512 if the bundle gets too large | `voyageai/voyage-4` ($0.06/M), `baai/bge-m3` ($0.01/M) |
-| Rerank | `voyageai/rerank-3-lite` | OpenRouter's model list doesn't show rerank prices. Voyage bills rerank per token upstream, so a 20-chunk rerank should cost well under $0.001; confirm on the first invoice. | Latency-optimized; same vendor as the embeddings; eval-gated (§3.4.3) | `cohere/rerank-4-fast`, `voyageai/rerank-3` |
+| Embeddings (index build + queries) | `baai/bge-m3`, 1024 dimensions | $0.01 per 1M input tokens; embedding all 30K unique chunks costs a few cents once | Strong open retrieval model; ZDR through two providers (Parasail, DeepInfra). Voyage was the revision 2 default and has no ZDR endpoint | `qwen/qwen3-embedding-8b` (ZDR, $0.01/M), `openai/text-embedding-3-small` (ZDR via Azure) |
+| Rerank | `qwen/qwen3-reranker-8b` | About $0.20 per 1M tokens as measured by the Phase 0 smoke test (331 tokens cost $0.000066), so a 20-chunk rerank costs about $0.0005 | The only ZDR reranker on OpenRouter (Fireworks, a single provider; RRF order is the fallback); eval-gated (§3.4.3) | None with ZDR on 2026-11-02 (`cohere/rerank-4-fast` and Voyage have no ZDR endpoint) |
 
 OpenRouter's free (`:free`) models, such as the Nemotron embedding and rerank models, are excluded. They are rate-limited, and their providers may retain or train on prompts.
 
@@ -553,8 +554,8 @@ Free-tier quotas are as of 2026-11; check them at signup.
 | Language and tooling | Python 3.13, `uv` workspace, ruff, mypy (strict for core, extract and tools) | Matches the existing code; fast, reproducible locks | Poetry (slower, no workspace story) |
 | LLM gateway | OpenRouter (your constraint), thin `llm` module on the OpenAI-compatible API | One key; model fallbacks; usage cost returned; ZDR routing | Direct Anthropic API (needed if a BAA is required) |
 | LLMs | Haiku 5.5 (router and guards), Sonnet 5.5 (agent and compose), Opus 5.5 (judge) | §3.6 | GPT-5.x or Gemini 3.x families (bake-off candidates) |
-| Embeddings | `voyageai/voyage-4-lite` (1024-d) via OpenRouter | One gateway for every model (revision 2); about $0.10 to embed the corpus; no model weights in the container | Local `bge-small-en-v1.5` via fastembed (revision 1: free and no network hop, but lower quality) |
-| Reranker | `voyageai/rerank-3-lite` via OpenRouter, eval-gated | Same gateway; no reranking CPU load on Cloud Run | Local MiniLM cross-encoder (revision 1); `cohere/rerank-4-fast` |
+| Embeddings | `baai/bge-m3` (1024-d) via OpenRouter, ZDR endpoints only | One gateway for every model (revision 2); a few cents to embed the corpus; no model weights in the container | Local `bge-small-en-v1.5` via fastembed (revision 1: free and no network hop, but lower quality) |
+| Reranker | `qwen/qwen3-reranker-8b` via OpenRouter, eval-gated | Same gateway; no reranking CPU load on Cloud Run; the only ZDR reranker available | Local MiniLM cross-encoder (revision 1); `voyageai/rerank-3-lite` and `cohere/rerank-4-fast` (no ZDR endpoint) |
 | Search index | **Inside the SQLite facts bundle** (since 2026-11-02): BM25 term weights and float16 embeddings per unique chunk; plan filter in SQL; exact scoring with numpy and RRF fusion in the API process | Candidate sets are a few hundred chunks per search, so no ANN index is needed; no network hop; no extra service, keys or free-tier suspension; rolls back with the code | Qdrant Cloud free tier (revision 2: managed hybrid search, but a network hop, a P1 dependency and collection pinning for no gain at this size); sqlite-vec; Postgres + pgvector on Supabase |
 | Structured facts store | SQLite facts bundle in the image, opened read-only; FTS5 trigram over plan names for plan resolution | Exact SQL lookups, joins and ranking with no network hop; rolls back with the code; 139 MB for `2027.1` before embeddings, about 200 MB with them | Qdrant payloads (no joins or constraints, an extra hop on every lookup; rejected in review) |
 | Operational DB | Supabase Postgres free (500 MB): sessions and LangGraph checkpoints, feedback, audit log, kill-switch tables | Postgres plus Auth in one free project | Neon free (no auth) + Firebase Auth |
@@ -832,7 +833,7 @@ Alerts go out by email plus a Slack webhook.
 | AuthN | Brokers: Supabase Auth (invite-only, email + TOTP MFA, 12 h session, refresh rotation). Public: anonymous session JWT (HS256, 24 h) issued after Turnstile verification. Both verified in FastAPI middleware. |
 | AuthZ | `role` claim (`broker`, `admin`); the bot profile is selected by route *and* checked against the claim. Admin endpoints (kill switches, quarantine) require `admin` and are audited. Postgres row-level security keeps brokers to their own conversations. |
 | Secrets | Doppler is the source of truth: project `plan-info-chatbot`, configs `dev`, `ci` and `prd`. Doppler syncs `dev` and `prd` to GCP Secret Manager, which Cloud Run mounts as environment variables, and `ci` to GitHub Actions. Local dev uses `doppler run`. No secrets live in the repo, the images or plain Cloud Run env vars. Each environment and bot has its own OpenRouter key with a credit limit. Keys rotate quarterly in Doppler. `gitleaks` runs in CI. The free plan keeps 3 days of activity logs; the Team plan ($21/user/month) keeps 90 days if a secret-change audit trail becomes a requirement. |
-| LLM data handling | OpenRouter account prompt logging off. Provider routing is restricted to zero-data-retention endpoints with no data collection, for chat, embedding and rerank requests alike. Only redacted text is sent. Phase 0 confirms the chosen embedding and rerank endpoints meet that policy; if one doesn't, the bake-off alternative replaces it. |
+| LLM data handling | OpenRouter account prompt logging off. Provider routing is restricted to zero-data-retention endpoints with no data collection, for chat, embedding and rerank requests alike. Only redacted text is sent. Phase 0 confirmed the embedding and rerank endpoints meet that policy (`sbc-llm-smoke`, 2026-11-02); Voyage didn't, so it was replaced. Any model change re-runs the smoke test. |
 | PII / PHI | Redaction before LLM, logs and traces (§3.8). The UI warns: "Don't share personal or health information." No identity is ever requested. **BAA decision before GA** (assumption 1.4.2). |
 | Retention | Public: redacted content 30 days. Broker: 365 days. Audit metadata: 2 years. Langfuse: 30 days. Deletion runs as a daily job. Brokers can delete their own history. |
 | Audit log | Append-only table: timestamp, actor (user ID or anonymous session hash), bot, request ID, `plan_keys`, tools called, verifier result, answer hash, bundle, model and prompt versions, admin actions. Insert-only database role. |

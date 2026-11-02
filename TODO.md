@@ -59,8 +59,8 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
       orders ties arbitrarily, the bundle index by chunk id); the eval runs in 2 s instead of about 5 min
 - [x] `sbc-llm-smoke` run (2026-11-02): chat passes; `voyageai/voyage-4-lite` and `voyageai/rerank-3-lite` are
       refused under ZDR (no ZDR endpoint on OpenRouter; `cohere/rerank-4-fast` has none either)
-- [ ] Decide the ZDR replacements (PLAN.md 8): proposed `baai/bge-m3` embeddings; rerank measured as RRF-only
-      vs `qwen/qwen3-reranker-8b`, the only ZDR reranker on OpenRouter
+- [x] ZDR replacements approved and in config (PLAN.md 8): `baai/bge-m3` embeddings, `qwen/qwen3-reranker-8b`
+      rerank (the only ZDR reranker on OpenRouter); `sbc-llm-smoke` passes all four checks on them
 - [ ] Embeddings added to bundle `2027.1` (`sbc-embed-bundle`) and the smoke test passing on the chosen models
 - [x] Service taxonomy v1
 - [x] Golden dataset schema and bundle consistency check
