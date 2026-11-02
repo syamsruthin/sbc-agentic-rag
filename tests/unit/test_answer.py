@@ -77,6 +77,8 @@ def test_placeholders_must_name_this_turns_ids(turn: Turn) -> None:
     assert "needs a field" in (problems[3] or "")
     assert "not returned by a tool" in (problems[4] or "")
     assert "not a field" in (problems[5] or "")
+    deductible_tier = find_placeholders("{{F1.tier}}")[0]  # F1 is an Important Questions answer
+    assert "no provider column" in (problem(deductible_tier, turn) or "")
 
 
 # ------------------------------------------------------------------ verify

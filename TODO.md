@@ -102,7 +102,13 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [x] Phase 1 gate scope decided (2026-11-02): gated on the 353 golden 0.2.0 items that don't need Phase 2
       features; the 57 that do (`estimate_cost` 24, `rank_plans` 8, multi-turn 25) are reported separately
 
-- [ ] FastAPI + LangGraph graph with fast path
+- [x] LangGraph graph with fast path (`sbc_agent.graph`, `docs/agent-graph.md`): PII redaction, Haiku classify,
+      plan resolution in code with interrupt-based clarification, fast path and agent loop, verify with one
+      retry, template fallback; `sbc-ask` dev CLI. Live checks on BTCU8/0JF1 lookups, a comparison, a coverage
+      check and four adversarial golden questions: about $0.003 per fast-path turn, $0.02-0.04 per agent turn
+- [ ] Generation eval harness on golden 0.2.0 (answers, not just retrieval) with recorded responses
+- [ ] FastAPI with SSE, PostgresSaver checkpoints on Supabase
+- [ ] Presidio NER for names and addresses (regex recognizers for SSN, member ID, phone, email, dates are in)
 - [x] Tools: `find_plans`, `get_plan_facts`, `search_sbc_text`, `compare_plans`, `ask_clarifying_question`
       (`sbc_tools`, `docs/agent-tools.md`): Pydantic I/O, plan gate and scope checks in code, per-turn
       F/S/P placeholder IDs, `Toolbox` with profile filtering, JSON schemas and turn limits

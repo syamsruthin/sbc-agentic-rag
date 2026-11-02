@@ -52,6 +52,8 @@ def problem(ph: Placeholder, turn: Turn) -> str | None:
         return f"{{{{{ph.id}}}}} needs a field: {sorted(PLAN_FIELDS)}"
     if ph.field is not None and ph.field not in allowed:
         return f"{{{{{ph.id}.{ph.field}}}}} is not a field of {ph.kind} placeholders"
+    if ph.kind == "F" and ph.field == "tier" and not turn.facts[ph.id].tier_label:
+        return f"{{{{{ph.id}.tier}}}}: this fact has no provider column"
     return None
 
 
