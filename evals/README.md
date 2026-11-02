@@ -27,11 +27,11 @@ uv run python -m evals.harness.ci_gate
 ```
 
 ```bash
-uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.1.0 --setup bm25_only
+uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0 --setup bm25_only
 ```
 
 ```bash
-uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.1.0
+uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0
 ```
 
 - `bm25_only` builds an in-memory Qdrant collection from the bundle and needs no keys (about 5 minutes for the full corpus).

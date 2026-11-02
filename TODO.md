@@ -60,12 +60,15 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [x] Retrieval eval harness (`evals/harness/retrieval.py`), PDF gold check (`pdf_check.py`), CI eval gate
 - [x] Golden dataset v0 drafted: 150 items in `evals/golden/0.1.0`, every value confirmed in its PDF cell by
       the poppler check, all `pending`
-- [ ] Golden dataset v0 verified against the PDFs by a person (then items gate merges)
-- [x] Retrieval eval, BM25-only configuration: plan filter 100%, 0 confident wrong-plan, service mapping
-      97.3%, recall@5 0.878, recall@10 0.970, MRR@10 0.718
+- [x] MVP gating set drafted: golden 0.2.0, 410 items at the PLAN.md 6.2 MVP targets (0.1.0 plus 260 new);
+      553 of 557 values confirmed in their PDF cell by the poppler check, the other 4 by reading the page;
+      all `pending`
+- [ ] Golden dataset verified against the PDFs by a person (then items gate merges; 0.2.0 is the set to review)
+- [x] Retrieval eval, BM25-only configuration on golden 0.2.0: plan filter 100%, 0 confident wrong-plan,
+      service mapping 98.0%, recall@5 0.847, recall@10 0.952, MRR@10 0.713
 - [ ] Retrieval eval, full and no-rerank configurations (needs the live collection); recall@5 ≥ 0.90 gate
-- [ ] Taxonomy v2 synonyms from the eval: "delivering (a baby)" is unmapped, and "pharmacy" maps to every
-      drug tier
+- [ ] Taxonomy v2 synonyms from the eval: "delivering (a baby)" is unmapped, "pharmacy" maps to every drug
+      tier, and "hospital" (an ambiguous term) adds inpatient rows to a delivery question
 
 ## Phase 1: Broker MVP (PLAN.md §11)
 
