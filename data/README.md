@@ -43,8 +43,8 @@ Embeddings are cached in `bundles/embeddings.sqlite` by chunk hash, so a rebuild
 The retrieval eval and the PDF check of the golden dataset read the bundle (see `evals/README.md`):
 
 ```bash
-uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.1.0 --setup bm25_only
-uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.1.0
+uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0 --setup bm25_only
+uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0
 ```
 
 The downloader uses 6 parallel workers by default (`--workers`). Keep it modest and don't re-run it more
