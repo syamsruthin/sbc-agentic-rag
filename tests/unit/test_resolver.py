@@ -54,6 +54,12 @@ def test_id_shared_by_two_plans_is_ambiguous(resolver: PlanResolver) -> None:
     assert {p.plan_key for p in r.ambiguities[0].candidates} == {SILVER, GOLD}
 
 
+def test_a_selected_plan_settles_a_shared_id(resolver: PlanResolver) -> None:
+    """The answer to "which ZZ01?" arrives as a UI selection; the same message must not ask again."""
+    r = resolver.resolve("deductible on ZZ01", ui_selected=[GOLD])
+    assert (r.status, r.plan_keys, r.sources) == ("resolved", (GOLD,), {GOLD: "ui"})
+
+
 def test_ui_selection_resolves_and_unknown_selection_is_refused(resolver: PlanResolver) -> None:
     assert resolver.resolve("this plan", ui_selected=[SILVER]).plan_keys == (SILVER,)
     r = resolver.resolve("this plan", ui_selected=["2027:999999999999"])

@@ -2,8 +2,9 @@
 
 Order, first match wins for each way a plan can be named:
 
-1. **Explicit IDs** in the user's text: contract code, HIOS plan id, SBC id, each looked up exactly.
-2. **UI-selected plans** (picker chips), authoritative for the turn.
+1. **UI-selected plans** (picker chips, or the answer to a clarifying question), authoritative for the turn:
+   an ID or name that matches several plans is settled when one of them is selected.
+2. **Explicit IDs** in the user's text: contract code, HIOS plan id, SBC id, each looked up exactly.
 3. Session references ("the silver one"): needs the classifier's reference spec, added with the graph.
 4. **Name search** for each plan mention, inside the bot's scope.
 
@@ -109,17 +110,7 @@ class PlanResolver:
         ambiguities: list[Ambiguity] = []
         not_found: list[str] = []
 
-        for token in id_tokens(text):
-            every = self.reader.find_plans_by_identifier(token, plan_year=plan_year)
-            matches = [p for p in every if self.in_scope(p, plan_year=plan_year, states=states)]
-            if len(matches) == 1:
-                keys.setdefault(matches[0].plan_key, "id")
-            elif len(matches) > 1:
-                ambiguities.append(self._ambiguity(token, matches))
-            elif every:
-                not_found.append(token)  # a real plan, but outside this bot's scope
-            # A token that matches no plan at all is an ordinary word or number, not a failed lookup.
-
+        # UI selections first: they are authoritative, and settle an ID or name that matches several plans.
         if ui_selected:
             found = self.reader.plans(ui_selected)
             for key in ui_selected:
@@ -128,6 +119,19 @@ class PlanResolver:
                     keys.setdefault(key, "ui")
                 else:
                     not_found.append(key)  # a selection outside scope is never honored
+
+        for token in id_tokens(text):
+            every = self.reader.find_plans_by_identifier(token, plan_year=plan_year)
+            matches = [p for p in every if self.in_scope(p, plan_year=plan_year, states=states)]
+            if any(m.plan_key in keys for m in matches):
+                continue  # the user already picked one of these plans
+            if len(matches) == 1:
+                keys.setdefault(matches[0].plan_key, "id")
+            elif len(matches) > 1:
+                ambiguities.append(self._ambiguity(token, matches))
+            elif every:
+                not_found.append(token)  # a real plan, but outside this bot's scope
+            # A token that matches no plan at all is an ordinary word or number, not a failed lookup.
 
         for mention in mentions:
             limit = self.max_options + 1
