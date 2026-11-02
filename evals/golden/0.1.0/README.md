@@ -1,5 +1,8 @@
 # Golden dataset 0.1.0 (draft, pending human verification)
 
+> **Superseded by [0.2.0](../0.2.0/README.md)**, which contains these 150 items unchanged plus 260 more (the
+> full MVP gating set). Review and verify 0.2.0; this version is kept for the record.
+
 150 items across the PLAN.md section 6.2 categories, scaled from the MVP targets (about 410) to 150. Schema:
 `evals/harness/golden.py` (PLAN.md 6.3), one JSONL file per category.
 
