@@ -14,19 +14,22 @@ answer  -> clarify (the agent asked) | end
 | `ingress` | Caps the message at 2,000 characters and redacts PII (SSNs, member IDs, phone numbers, emails, dates) before any model, log or trace sees it. Plan IDs are kept. |
 | `classify` | One Haiku 5.5 call with a JSON schema: intent, plan mentions, Important Questions, service terms, tiers, state, and risk flags. If it fails, the turn goes to the agent loop. |
 | `refuse` | Fixed, code-written replies for out-of-scope requests, abuse and greetings. |
-| `resolve` | `PlanResolver` in code: UI selections, then IDs, then name search. A follow-up with no plan named reuses the previous turn's plan only when there was exactly one. |
+| `resolve` | `PlanResolver` in code: UI selections, then IDs, then name search. References such as "this plan" aren't treated as names. A question that needs a plan (by intent, or because it names services or Important Questions) asks for one when none is resolved. A follow-up with no plan named reuses the previous turn's plan only when there was exactly one. |
 | `clarify` | Pauses the turn with `interrupt()`: several plans match, a plan wasn't found, or the question needs a plan. The user's choice resumes at `resolve`. After two in a row the plan picker opens. |
 | `answer` | Fast path or agent loop, then verify and render (`respond.py`, `docs/answer-path.md`). |
 
 ## Answer node
 
-- **Fast path:** a lookup, or a follow-up lookup on a known plan, whose every service term maps to the taxonomy.
+- **Fast path:** a lookup, or a follow-up lookup on a known plan, whose every service term maps to the taxonomy
+  (exact match, or a scan of the term that also takes plurals).
   Facts are fetched in code with `get_plan_facts`, then one Sonnet 5.5 call composes the answer.
 - **Agent loop:** everything else. Sonnet 5.5 calls the tools (their schemas list the valid service IDs and
   aspects), and its final message is the draft. A clarifying question from the agent pauses the turn.
 - At most `budget.max_llm_calls` model calls per turn, after classification. A draft that fails the firewall
   is retried once with the violations as feedback; a second failure, running out of calls or a model outage
   gives the template answer.
+- The agent prompt asks for an amount (and points to the coverage examples) instead of estimating a cost, and
+  answers "which plans list X" through `find_plans` discovery.
 - Bot profile rules: the public bot never recommends a plan. Medical-advice and plan-recommendation questions
   get a fixed opening sentence from code before the answer.
 

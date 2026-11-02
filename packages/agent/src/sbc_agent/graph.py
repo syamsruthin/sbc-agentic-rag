@@ -13,6 +13,7 @@ across a clarifying question. Tool results and facts live only inside the answer
 from __future__ import annotations
 
 import dataclasses
+import re
 from collections.abc import Iterator, Mapping
 from typing import Any, Literal, TypedDict
 
@@ -30,6 +31,16 @@ from sbc_tools.context import Clarification, ClarifyOption, Turn
 
 MAX_MESSAGE_CHARS = 2000
 NEEDS_PLAN = frozenset({"lookup", "compare", "coverage_check", "scenario"})
+# "this plan", "my plan", "the plans": references, not names. The UI selection or the session answers them.
+_GENERIC_MENTION = re.compile(r"^(?:this|that|my|our|the|these|those|your)(?: \w+)? plans?$", re.IGNORECASE)
+
+
+def _needs_plan(cls: Classification) -> bool:
+    """A plan question: by intent, or because it asks about services or Important Questions."""
+    if cls.intent in NEEDS_PLAN:
+        return True
+    return cls.intent in ("other", "follow_up") and bool(cls.service_terms or cls.question_ids)
+
 
 OUT_OF_SCOPE = (
     "I can only answer questions about what health plans' Summaries of Benefits and Coverage (SBCs) say: "
@@ -99,6 +110,7 @@ def _answer_reply(answer: RenderedAnswer | str) -> dict[str, Any]:
         "kind": "answer", "markdown": answer.markdown, "mode": answer.mode,
         "citations": [dataclasses.asdict(c) for c in answer.citations], "plan_keys": list(answer.plan_keys),
         "value_ids": list(answer.value_ids),
+        "grounding": {"body": answer.body, "grounded": list(answer.grounded)},
     }  # fmt: skip
 
 
@@ -118,7 +130,11 @@ def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver[Any] | None = None
             return Command(goto="refuse", update={"reply": _message_reply(TOO_LONG)})
         result, call, error = classify(deps.chat, deps.config.models.classify, state["message"],
                                        state.get("history", []))  # fmt: skip
-        trace = {**state.get("trace", {}), "classify_error": error}
+        trace = {
+            **state.get("trace", {}),
+            "classify_error": error,
+            "classification": result.model_dump(mode="json"),
+        }
         if call is not None:
             trace["classify_usage"] = call.usage.model_dump()
         update: dict[str, Any] = {"classification": result.model_dump(mode="json"), "trace": trace}
@@ -135,7 +151,8 @@ def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver[Any] | None = None
         user_state = state.get("user_state")
         states = [user_state] if user_state and not bot.allow_cross_state else []
         resolution = resolver.resolve(
-            state["message"], ui_selected=state.get("ui_selected", []), mentions=cls.plan_mentions,
+            state["message"], ui_selected=state.get("ui_selected", []),
+            mentions=[m for m in cls.plan_mentions if not _GENERIC_MENTION.match(m.strip())],
             plan_year=deps.plan_year, states=states,
         )  # fmt: skip
         keys = list(resolution.plan_keys)
@@ -146,7 +163,7 @@ def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver[Any] | None = None
         ):
             keys = list(state["last_plan_keys"])  # a follow-up about the one plan of the previous turn
         elif resolution.status in ("ambiguous", "not_found") or (
-            resolution.status == "missing" and cls.intent in NEEDS_PLAN
+            resolution.status == "missing" and _needs_plan(cls)
         ):
             clarification = _clarification_for(resolution, cls.intent == "compare")
             return Command(goto="clarify", update={"clarification": clarification.model_dump(mode="json")})
@@ -180,6 +197,8 @@ def build_graph(deps: Deps, checkpointer: BaseCheckpointSaver[Any] | None = None
                 update={"clarification": outcome.clarification.model_dump(mode="json"), "trace": trace},
             )
         reply = _answer_reply(outcome.answer or "")
+        if "grounding" in reply:
+            trace["grounding"] = reply.pop("grounding")
         history = [
             *state.get("history", []),
             {"role": "user", "content": state["message"]},

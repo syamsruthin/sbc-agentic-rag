@@ -180,13 +180,16 @@ class Responder:
         services: list[str] = []
         drug_tags: list[str] = []
         for term in c.service_terms:
-            match = self.deps.taxonomy.match_term(term)
-            if not match or match.ambiguous:
+            # Exact match first; otherwise scan the term, which also takes plurals ("PCP visits").
+            exact = self.deps.taxonomy.match_term(term)
+            matches = [exact] if exact else [hit.match for hit in self.deps.taxonomy.scan(term)]
+            if not matches or any(m.ambiguous for m in matches):
                 return None  # an unmapped or ambiguous term needs the agent
-            services += match.service_ids
-            drug_tags += [t for t in match.drug_tags if t != "any_drug"]
-            if "any_drug" in match.drug_tags:
-                services += self.deps.taxonomy.drug_service_ids
+            for match in matches:
+                services += match.service_ids
+                drug_tags += [t for t in match.drug_tags if t != "any_drug"]
+                if "any_drug" in match.drug_tags:
+                    services += self.deps.taxonomy.drug_service_ids
         if not (services or drug_tags or c.question_ids):
             return None
         tiers = (IN_NETWORK_TIERS if "in_net" in c.tiers else ()) + (
