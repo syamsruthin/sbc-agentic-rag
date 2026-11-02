@@ -167,7 +167,11 @@ def _check_services(ctx: ToolContext, service_ids: Sequence[str], drug_tags: Seq
     tags = {t for d in ctx.taxonomy.drug_labels.values() for t in d.tags}
     unknown += [t for t in drug_tags if t not in tags]
     if unknown:
-        raise ToolError("invalid_arguments", f"unknown service IDs or drug tags: {unknown}")
+        raise ToolError(
+            "invalid_arguments",
+            f"unknown service IDs or drug tags: {unknown}. Use only the listed IDs; for anything else, check "
+            "list_ids (excluded, other_covered) or search_sbc_text.",
+        )
 
 
 def _check_plan_count(ctx: ToolContext, plans: Sequence[PlanSummary]) -> None:
