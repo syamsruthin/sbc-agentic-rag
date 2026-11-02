@@ -106,7 +106,11 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
       plan resolution in code with interrupt-based clarification, fast path and agent loop, verify with one
       retry, template fallback; `sbc-ask` dev CLI. Live checks on BTCU8/0JF1 lookups, a comparison, a coverage
       check and four adversarial golden questions: about $0.003 per fast-path turn, $0.02-0.04 per agent turn
-- [ ] Generation eval harness on golden 0.2.0 (answers, not just retrieval) with recorded responses
+- [x] Generation eval harness (`evals/harness/generation.py`): golden items through the graph, hard gates
+      (exact match, ungrounded numbers, plan filter, wrong plan, errors), behavior and tool selection
+- [ ] Full Phase 1 gating run (353 items): blocked by the OpenRouter key's $5 total limit
+- [ ] Recorded model responses for replaying the generation eval in CI without keys
+- [ ] LLM judge for faithfulness and citation accuracy, after the calibration set (PLAN.md 5.4)
 - [ ] FastAPI with SSE, PostgresSaver checkpoints on Supabase
 - [ ] Align the Supabase settings with its current key model: publishable and secret keys instead of anon and
       service-role, and JWT verification through the project's JWKS URL instead of `SUPABASE_JWT_SECRET`

@@ -16,6 +16,7 @@ Offline evaluation (PLAN.md sections 5 and 6).
 | `golden.py` | Record schema (PLAN.md 6.3), loader, and `check_against_bundle`: every gold value must equal the facts bundle's, or someone reads the PDF to find out which is wrong. |
 | `pdf_check.py` | Independent check of gold values against the PDF with poppler word coordinates (not pdfplumber, which built the bundle). Each value must be found in its own cell: tier column and service row, the Answers column, or the coverage example line. |
 | `retrieval.py` | Retrieval and plan-resolution eval (PLAN.md 5.1): plan-filter correctness, resolution accuracy and confident wrong-plan resolutions, service mapping, recall@5/@10, MRR@10, and context precision and recall by chunk ID. Three setups: `full`, `no_rerank`, `bm25_only`. |
+| `generation.py` | Generation eval (PLAN.md 5.2-5.3): golden items through the whole agent graph, scored with deterministic checks (below). Needs OpenRouter. |
 | `ci_gate.py` | The deterministic CI gate: validates every committed golden dataset and runs the BM25-only eval on the synthetic fixture bundle; any hard-gate failure fails the `eval-gate` job. |
 
 ### Running
@@ -37,6 +38,35 @@ uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --
 - `bm25_only` searches the bundle's BM25 index and needs no keys.
 - `full` and `no_rerank` need a bundle embedded with `sbc-embed-bundle` (using the configured embedding model) and `OPENROUTER_API_KEY_BROKER` for the query embedding and rerank. Pass `--setup` more than once to run several setups into one report; with both `full` and `no_rerank` the report shows the rerank lift.
 - Reports go to `evals/reports/retrieval-<bundle>-<time>.{json,md}`. `--fail-on-hard-gates` exits non-zero on a hard-gate failure.
+
+### Generation eval
+
+```bash
+uv run python -m evals.harness.generation --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0 --sample 24
+```
+
+- Each item's user turns go to its bot (`both` runs as the broker) with its UI selection and, for the public
+  bot, its state. By default it runs the Phase 1 gating items: golden 0.2.0 without the items that need
+  Phase 2 features (`estimate_cost`, `rank_plans`, multi-turn session references). `--phase 2` or `all`
+  runs those too, reported separately.
+- **Hard gates:**
+  - numeric exact match: every expected value is in the answer, normalized only for `$1,500` = `$1500` and
+    whitespace;
+  - no ungrounded numbers: no digit in the answer body that an expanded placeholder doesn't account for;
+  - plan filter: every plan whose values are shown is a gold plan;
+  - no confident wrong-plan answers: no answer about a non-gold plan, and no answer when gold says the plan
+    itself is unclear;
+  - no errors.
+- **90% gates:** correct behavior (answer, clarify or refuse; `partial` counts as answered) and tool
+  selection (expected tools called with at least the gold arguments, no forbidden tool; a clarifying question
+  the graph asks in code counts as `ask_clarifying_question`).
+- **Reported:** disclaimer, must include and must not include, clarify options, fast-path and fallback rates,
+  model calls, latency and cost.
+- Faithfulness and citation accuracy for prose need the LLM judge, which joins once it is calibrated
+  (PLAN.md 5.4).
+- `--sample N` takes a seeded sample across categories. `--workers` runs items in parallel, and `--max-cost`
+  stops the run once model calls pass that many dollars. A full gating run costs about $5. For the eval, the
+  public bot uses the broker key when `OPENROUTER_API_KEY_PUBLIC` isn't set.
 
 ### What the metrics mean
 
