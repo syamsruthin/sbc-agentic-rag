@@ -273,6 +273,11 @@ def test_toolbox_offers_only_implemented_profile_tools(reader: SqliteFactsReader
     params = schemas[1]["function"]["parameters"]
     assert {"plan_keys", "question_ids", "service_ids", "include_examples"} <= set(params["properties"])
     assert set(TOOLS) == set(box.names)
+    service_items = params["properties"]["service_ids"]["items"]
+    assert "emergency_room" in service_items["enum"]
+    assert "acupuncture" not in service_items["enum"]  # not an SBC service row: lists or text search
+    aspects = schemas[3]["function"]["parameters"]["properties"]["aspects"]["items"]["enum"]
+    assert {"oop_limit", "emergency_room", "generic", "everyday_care"} <= set(aspects)
 
 
 def test_toolbox_validates_and_reports_errors(reader: SqliteFactsReader) -> None:

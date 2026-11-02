@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from sbc_core.config import TurnBudget
+from sbc_core.template import QUESTIONS
 from sbc_tools import tools as t
 from sbc_tools.context import ToolContext, ToolError
 
@@ -111,7 +112,24 @@ class Toolbox:
         return tuple(n for n in self.ctx.profile.tools if n in TOOLS)
 
     def schemas(self) -> list[dict[str, Any]]:
-        return [TOOLS[n].schema() for n in self.names]
+        """Function definitions, with the taxonomy's IDs as enums so the model can only pick real ones."""
+        tax = self.ctx.taxonomy
+        services = sorted([*tax.services, *tax.drug_service_ids])
+        tags = sorted({t for d in tax.drug_labels.values() for t in d.tags})
+        enums = {
+            ("get_plan_facts", "service_ids"): services,
+            ("get_plan_facts", "drug_tags"): tags,
+            ("compare_plans", "aspects"): sorted([*QUESTIONS, *services, *tags, *t.PRESETS]),
+        }
+        schemas = []
+        for name in self.names:
+            schema = TOOLS[name].schema()
+            properties = schema["function"]["parameters"]["properties"]
+            for (tool, field_name), values in enums.items():
+                if tool == name:
+                    properties[field_name]["items"] = {"type": "string", "enum": values}
+            schemas.append(schema)
+        return schemas
 
     def call(self, name: str, arguments: str | dict[str, Any]) -> ToolResult:
         try:
