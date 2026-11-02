@@ -85,9 +85,14 @@ rerank see the user's text unchanged.
 ## Plan resolution
 
 `sbc_retrieval.resolver.PlanResolver` decides which plans a turn is about, in code (PLAN.md section 3.4.1):
-contract codes, HIOS plan IDs and SBC IDs typed in the question (looked up exactly in the bundle's
-`plan_identifier` table), then plans selected in the UI, then name search on the plan names the classifier
-found. A name or ID that matches more than one plan comes back `ambiguous` with the candidates for a
+
+1. Plans selected in the UI, including the answer to a clarifying question. They are authoritative: an ID or
+   name in the message that matches several plans is settled when one of those plans is selected.
+2. Contract codes, HIOS plan IDs and SBC IDs typed in the question, looked up exactly in the bundle's
+   `plan_identifier` table.
+3. Name search on the plan names the classifier found.
+
+Otherwise, a name or ID that matches more than one plan comes back `ambiguous` with the candidates for a
 clarifying question; it is never guessed. Plans outside the bot's scope can't be resolved, even by exact ID.
 
 ## Other years and languages
