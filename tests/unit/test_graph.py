@@ -92,6 +92,16 @@ def test_fast_path_lookup_is_classify_plus_one_compose(reader: SqliteFactsReader
     assert chat.requests[1]["tools"] == ()  # compose can't call tools
 
 
+def test_plural_service_terms_take_the_fast_path(reader: SqliteFactsReader) -> None:
+    chat = ScriptedChat(
+        classified(intent="lookup", plan_mentions=["Example Gold"], service_terms=["specialist visits"]),
+        reply("{{F1}}"),
+    )
+    out = agent(reader, chat).ask("t1p", "Specialist visits on Example Gold?")
+    assert out.trace["path"] == "fast"
+    assert out.trace["classification"]["service_terms"] == ["specialist visits"]
+
+
 def test_a_rejected_draft_is_retried_once(reader: SqliteFactsReader) -> None:
     chat = ScriptedChat(
         classified(intent="lookup", plan_mentions=["Example Gold"], service_terms=["specialist"]),
@@ -145,6 +155,20 @@ def test_a_lookup_without_a_plan_opens_the_picker(reader: SqliteFactsReader) -> 
     assert out.kind == "clarify"
     assert out.clarification is not None
     assert out.clarification.open_plan_picker
+
+
+def test_a_generic_plan_reference_uses_the_selection(reader: SqliteFactsReader) -> None:
+    chat = ScriptedChat(
+        classified(intent="lookup", plan_mentions=["this plan"], question_ids=["oop_limit"]), reply("{{F1}}")
+    )
+    out = agent(reader, chat).ask("t3b", "What's the OOP max on this plan?", ui_selected=(GOLD,))
+    assert (out.kind, out.plan_keys) == ("answer", (GOLD,))
+
+
+def test_a_service_question_without_a_plan_asks_for_one(reader: SqliteFactsReader) -> None:
+    chat = ScriptedChat(classified(intent="other", service_terms=["acupuncture"]))
+    out = agent(reader, chat).ask("t3c", "Is acupuncture covered?")
+    assert out.kind == "clarify"
 
 
 def test_a_follow_up_keeps_the_previous_single_plan(reader: SqliteFactsReader) -> None:

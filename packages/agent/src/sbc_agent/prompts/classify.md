@@ -13,7 +13,7 @@ Fields:
   - `other`: any other question about plans or SBCs.
   - `out_of_scope`: premiums, claims, eligibility, enrollment, subsidies, provider or drug-formulary lookups, or anything that isn't about plan benefits.
   - `chitchat`: greetings and thanks.
-- `plan_mentions`: plan names exactly as the user wrote them, without IDs. Contract codes, HIOS and SBC IDs are found in code; leave them out. Empty when no plan is named.
+- `plan_mentions`: plan names exactly as the user wrote them, without IDs. Contract codes, HIOS and SBC IDs are found in code; leave them out. References such as "this plan" or "my plan" are not names; leave them out. Empty when no plan is named.
 - `question_ids`: Important Questions asked about: `overall_deductible`, `services_before_deductible`, `other_deductibles`, `oop_limit` (out-of-pocket maximum), `not_in_oop`, `network_pays_less`, `specialist_referral`.
 - `service_terms`: each service or kind of care the user asks about, in the user's own words ("ER", "MRI", "physical therapy", "generic drugs", "having a baby").
 - `tiers`: `in_net` or `out_net` when the user asks about network status; empty otherwise.

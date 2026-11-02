@@ -48,6 +48,10 @@ class RenderedAnswer:
     value_ids: tuple[str, ...]
     """Fact and chunk IDs whose values the answer shows, for the audit log and the eval."""
     mode: AnswerMode
+    body: str = ""
+    """The answer text with placeholders expanded, before notes, citations and the disclaimer."""
+    grounded: tuple[str, ...] = ()
+    """Every text a placeholder expanded to; the eval checks every number in ``body`` comes from one."""
 
 
 def _citation_label(citation: Citation, inferred_heading: bool) -> str:
@@ -99,6 +103,7 @@ def render(draft: str, turn: Turn, *, mode: AnswerMode = "composed") -> Rendered
     plans: dict[str, PlanSummary] = {}
     shown_facts: dict[str, tuple[Fact, int]] = {}
     value_ids: list[str] = []
+    grounded: list[str] = []
     body, last = [], 0
     for ph in find_placeholders(draft):
         body.append(draft[last : ph.start])
@@ -106,6 +111,7 @@ def render(draft: str, turn: Turn, *, mode: AnswerMode = "composed") -> Rendered
         plan = _plan_of(turn, ph.kind, ph.id)
         plans.setdefault(plan.plan_key, plan)
         text = expand(ph, turn)
+        grounded.append(text)
         if ph.kind == "F" and ph.field is None:
             fact = turn.facts[ph.id]
             n = cite(fact.citation, fact.event_inferred)
@@ -156,4 +162,6 @@ def render(draft: str, turn: Turn, *, mode: AnswerMode = "composed") -> Rendered
         plan_keys=tuple(plans),
         value_ids=tuple(dict.fromkeys(value_ids)),
         mode=mode,
+        body=text,
+        grounded=tuple(dict.fromkeys(grounded)),
     )
