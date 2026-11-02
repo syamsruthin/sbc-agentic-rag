@@ -36,13 +36,15 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
       (`docs/reviews/converter-fix-2027.md`), regenerated Markdown installed
 - [x] Corpus refetched 2026-11-01: 9,692 SBCs (2 new Anthem Small Group); strict verification 9,692 REVIEW,
       0 FAIL, 0 problems; count snapshot committed (`docs/reviews/corpus-snapshot-2027.md`, `sbc-snapshot`)
-- [ ] Converter-fix spot check: 20 random diff rows against the PDFs (`docs/reviews/converter-fix-2027.md`)
-- [ ] REVIEW allowlist signed off
+- [x] Converter-fix spot check: 20 random diff rows against the PDFs (`docs/reviews/converter-fix-2027.md`;
+      Syamsruthin Kaliki, 2026-11-02)
+- [x] REVIEW allowlist signed off (Syamsruthin Kaliki, 2026-11-02). The bundle `2027.1` was built before the
+      sign-off; rebuild with `sbc-build-bundle --release` for a release bundle
 - [x] `sbc_extract`: schema, cost grammar, limit parsers, validators (PR #2)
 - [x] Cost grammar: ≥ 99.5% of cells `exact` on the full corpus (99.99%: 707,005 of 707,080 cells;
       41 unparsed and 34 blank, all flagged)
-- [ ] Cost grammar: all patterns reviewed (263 patterns in `docs/reviews/cost-grammar-review.md`;
-      sign-off pending)
+- [x] Cost grammar: all patterns reviewed (263 patterns in `docs/reviews/cost-grammar-review.md`;
+      Syamsruthin Kaliki, 2026-11-02)
 - [x] PUF cross-check tool (`sbc-puf-check`)
 - [x] PUF cross-check result: 0 unexplained mismatches on the full corpus (448 linked SBCs, 0 mismatches)
 - [x] Facts bundle builder v0 (`sbc-build-bundle`)
@@ -72,7 +74,8 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [x] MVP gating set drafted: golden 0.2.0, 410 items at the PLAN.md 6.2 MVP targets (0.1.0 plus 260 new);
       553 of 557 values confirmed in their PDF cell by the poppler check, the other 4 by reading the page;
       all `pending`
-- [ ] Golden dataset verified against the PDFs by a person (then items gate merges; 0.2.0 is the set to review)
+- [x] Golden 0.2.0 verified against the PDFs by a person (all 410 items, Syamsruthin Kaliki, 2026-11-02);
+      its items now gate. 0.1.0 is superseded and stays pending
 - [x] Retrieval eval, BM25-only configuration on golden 0.2.0: plan filter 100%, 0 confident wrong-plan,
       service mapping 98.0%, recall@5 0.847, recall@10 0.952, MRR@10 0.712 (0.713 with Qdrant's tie order)
 - [x] Retrieval eval, all three configurations on golden 0.2.0 (2026-11-02, 0 degraded searches). Phase 0 bar

@@ -37,4 +37,4 @@ punctuation exactly, allowing only the converter's own `Label: ` markup around k
 
 ## Reviewer spot check
 
-- [ ] 20 random rows from `converter_fix_diff_2027.csv` checked against their PDFs (reviewer, date)
+- [x] 20 random rows from `converter_fix_diff_2027.csv` checked against their PDFs (Syamsruthin Kaliki, 2026-11-02)

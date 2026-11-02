@@ -1,13 +1,14 @@
-# Golden dataset 0.2.0 (draft, pending human verification)
+# Golden dataset 0.2.0 (verified)
 
 The MVP gating set: 410 items across the PLAN.md section 6.2 categories, each at its MVP target. Items
 gs-000001 to gs-000150 are golden 0.1.0 unchanged (only `dataset_version` differs); gs-000151 to gs-000410
 are new, drafted the same way with new wording and fresh plans. Supersedes 0.1.0. Schema:
 `evals/harness/golden.py` (PLAN.md 6.3), one JSONL file per category.
 
-**Status: every item is `verified_against: "pending"`, so none gates a merge yet.** An item becomes gating
-when a person has checked it against the SBC PDF and filled in `reviewed_by` and `reviewed_at`. Checkpoint 3
-needs the hard gates to pass on this set once it is verified.
+**Status: verified.** Syamsruthin Kaliki reviewed all 410 items against the SBC PDFs on 2026-11-02
+(`verified_against: "pdf"`, with `reviewed_by` and `reviewed_at`), so every item gates. Checkpoint 3 is gated
+on the 353 items that don't need Phase 2 features (PLAN.md section 11); the other 57 are reported
+separately.
 
 ## Contents
 
