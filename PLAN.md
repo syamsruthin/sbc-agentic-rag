@@ -23,6 +23,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 - **Embedding and rerank models replaced for ZDR (approved 2026-11-02).** The Phase 0 smoke test found that OpenRouter has no zero-data-retention endpoint for `voyageai/voyage-4-lite`, `voyageai/rerank-3-lite` or the listed alternative `cohere/rerank-4-fast`, so §8 rules them out. Embeddings are now `baai/bge-m3` (the listed alternative: 1024 dimensions, ZDR through Parasail and DeepInfra, $0.01 per 1M tokens). Rerank is `qwen/qwen3-reranker-8b`, the only ZDR reranker on OpenRouter (Fireworks), and stays eval-gated (§3.4.3). Sections 0, 1.3, 3.4.3, 3.6 and 4 are updated.
 - **Phase 1 gate scope (approved 2026-11-02).** Golden 0.2.0 has 57 items that need Phase 2 features: 24 expect `estimate_cost`, 8 expect `rank_plans`, and 25 multi-turn items need session references. Phase 1 (checkpoint 3) is gated on the other 353 items; the 57 are run and reported separately, and gate Phase 2. Section 11 is updated.
 - **SBC links for preview-only documents (approved 2026-11-02).** 1,383 SBCs (1,071 Small Group, 310 Individual) are served only through the Anthem portal's preview form, so they have no public PDF URL to cite. The API gets an endpoint, `GET /sbc/{plan_key}.pdf`, that fetches the PDF from the portal on request (the same preview call `sbc-portal download` uses), checks its sha256 against the bundle's manifest, caches it briefly and streams it. Citations of those plans link there with `#page=N`. The insurer stays the source and no PDFs are hosted. Section 3.7 is updated.
+- **Plan resolution order (approved 2026-11-02).** UI selections, including the answer to a clarifying question, are applied before IDs in the message, so a selection settles an ID or name that matches several plans. Before this, answering "which ZZ01?" with a plan asked the same question again. Section 3.4.1 is updated.
 
 ---
 
@@ -359,8 +360,8 @@ Limitations, Exceptions, & Other Important Information: Copayment waived if admi
 
 **3.4.1 Plan resolution.** This is the most important retrieval step, because a wrong plan is the worst failure. It runs in code; the LLM only proposes.
 
-1. **Explicit IDs win.** Regexes for contract code (`[0-9A-Z]{4,5}`, checked against the catalog), HIOS (`\d{5}[A-Z]{2}\d{7}(-\d{2})?`) and `sbc_id` (`\d{12}`).
-2. **UI-selected plans** (picker chips) are authoritative for the turn.
+1. **UI-selected plans** (picker chips, or the user's answer to a clarifying question) are authoritative for the turn. An ID or name in the message that matches several plans is settled when one of them is selected, so answering "which ZZ01?" doesn't ask again.
+2. **Explicit IDs.** Regexes for contract code (`[0-9A-Z]{4,5}`, checked against the catalog), HIOS (`\d{5}[A-Z]{2}\d{7}(-\d{2})?`) and `sbc_id` (`\d{12}`), each looked up exactly. An ID that matches one plan resolves it; plans named by ID and plans selected in the UI are all used.
 3. **Session references** ("the silver one", "the second plan", "that HMO") are resolved against the session shortlist. Haiku emits a reference spec such as `{metal: Silver}` or `{ordinal: 2}`, and code matches attributes. Exactly one match resolves; zero or several triggers a clarification.
 4. **Name search** within bot scope and any known filters (state, market) uses FTS5 trigram over plan names and aliases. One candidate resolves. Several candidates produce `ask_clarifying_question` with up to 5 options showing the attributes that tell them apart (contract code, network, exchange, deductible, metal, coverage period), plus "open plan picker".
 5. **Never guess.** No similarity threshold is ever allowed to replace a clarification.
