@@ -42,10 +42,9 @@ node_modules/
 /weights/
 .cache/
 
-# Facts bundles, embedding caches and local vector DB data
+# Facts bundles and embedding caches
 /bundles/
 /embedding_cache/
-qdrant_storage/
 *.sqlite
 *.sqlite3
 *.db

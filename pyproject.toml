@@ -120,7 +120,7 @@ warn_required_dynamic_aliases = true
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
 markers = [
-    "integration: needs local services such as a Qdrant container",
+    "integration: needs local services or the real corpus",
     "contract: API contract tests",
 ]
 

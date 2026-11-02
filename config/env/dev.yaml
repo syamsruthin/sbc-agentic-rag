@@ -1,3 +1,2 @@
 # Shared dev environment (Cloud Run api-dev, Supabase project 1).
-search_index:
-  collection_prefix: dev
+# Nothing overrides base.yaml here yet.

@@ -1,3 +1,2 @@
 # Production (Cloud Run api-prod, Supabase project 2).
-search_index:
-  collection_prefix: prd
+# Nothing overrides base.yaml here yet.

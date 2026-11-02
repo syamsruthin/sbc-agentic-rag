@@ -18,7 +18,11 @@ def config_dir() -> Path:
 
 @pytest.fixture(autouse=True)
 def _isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep variables from a developer shell or CI runner out of the tests."""
+    """Keep variables from a developer shell, CI runner or local ``.env`` file out of the tests.
+
+    Without the ``.env`` part, a developer's real OpenRouter key reaches tests that expect none, and the
+    smoke-test tests make live, billed calls."""
     for name in list(os.environ):
         if name.startswith("SBC_") or name in _ENV_SETTINGS_NAMES:
             monkeypatch.delenv(name)
+    monkeypatch.setitem(EnvSettings.model_config, "env_file", None)

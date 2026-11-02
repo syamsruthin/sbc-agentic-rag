@@ -2,7 +2,7 @@
 
 Chunk hashes are content addresses, so a cached vector is valid for as long as the model and dimension
 setting stay the same. Only chunks missing from the cache are sent to OpenRouter. The cache file is archived
-with each bundle, so a lost Qdrant cluster can be rebuilt without re-embedding.
+with each bundle, so a bundle can be rebuilt without re-embedding.
 """
 
 from __future__ import annotations

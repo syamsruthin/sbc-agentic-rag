@@ -3,7 +3,7 @@
 1. Embed the query (OpenRouter) and encode BM25 terms locally. BM25 matches exact tokens, so the BM25 query
    also gets the SBC's own label for each service the query names ("MRI" adds "Imaging (CT/PET scans,
    MRIs)"), from the service taxonomy (PLAN.md 3.4.4). The dense query and the rerank see the user's text.
-2. Search the index under the mandatory plan filter (dense + BM25, fused with RRF).
+2. Search the facts bundle under the mandatory plan filter (dense + BM25, fused with RRF).
 3. Rerank the top candidates (OpenRouter), then keep the best ``keep_per_plan`` chunks per plan.
 
 Degraded modes are explicit and recorded on the result: if the embedding call fails the search runs on BM25

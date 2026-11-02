@@ -1,8 +1,8 @@
 """The two ways runtime code reads SBC data (PLAN.md section 10, module boundaries).
 
 Tools and retrieval read structured facts only through :class:`FactsReader` and search text only through
-:class:`SearchIndex`. Production uses the SQLite facts bundle and Qdrant; tests use the same bundle code on a
-small synthetic bundle and an in-memory search index.
+:class:`SearchIndex`. Production reads both from the SQLite facts bundle (``sbc_core.facts`` and
+``sbc_core.search``); tests use the same code on a small synthetic bundle, or stubs.
 """
 
 from __future__ import annotations

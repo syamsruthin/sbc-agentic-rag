@@ -33,7 +33,7 @@ def _edit(path: Path, update: dict[str, Any]) -> None:
 
 
 def _env(**values: str) -> EnvSettings:
-    # model_validate skips the environment and .env sources, so tests see only these values.
+    # The conftest clears the environment and turns off the .env file, so tests see only these values.
     return EnvSettings.model_validate(values)
 
 
@@ -43,7 +43,6 @@ def test_repo_config_loads_for_every_bot_and_env(config_dir: Path, bot: BotName,
     config = load_config(bot, env, config_dir)
     assert config.bot.name is bot
     assert config.env is env
-    assert config.search_index.collection_prefix == env.value
 
 
 def test_layers_merge_in_order(tmp_path: Path, config_dir: Path) -> None:
@@ -83,7 +82,7 @@ def test_unknown_yaml_key_is_rejected(tmp_path: Path, config_dir: Path) -> None:
 )
 def test_secret_like_yaml_key_is_rejected(tmp_path: Path, config_dir: Path, key: str) -> None:
     root = _copy_config(config_dir, tmp_path)
-    _edit(root / "env" / "local.yaml", {"search_index": {key: "value"}})
+    _edit(root / "env" / "local.yaml", {"retrieval": {key: "value"}})
     with pytest.raises(ConfigError, match="environment variable"):
         load_config("broker", "local", root)
 
@@ -177,14 +176,14 @@ def test_local_settings_need_no_secrets(config_dir: Path) -> None:
 
 
 def test_dev_settings_fail_fast_and_name_only_missing_variables(config_dir: Path) -> None:
-    env = _env(app_env="dev", qdrant_api_key="super-secret-value")
+    env = _env(app_env="dev", langfuse_secret_key="super-secret-value")  # noqa: S106 - a fake value
     with pytest.raises(ConfigError) as excinfo:
         load_settings("broker", config_dir, env)
     message = str(excinfo.value)
     missing = message.split(": ", 1)[1].split(", ")
     assert "OPENROUTER_API_KEY_BROKER" in missing
     assert "SUPABASE_JWT_SECRET" in missing
-    assert "QDRANT_API_KEY" not in missing
+    assert "LANGFUSE_SECRET_KEY" not in missing
     assert "TURNSTILE_SECRET_KEY" not in missing
     assert "super-secret-value" not in message
 
@@ -217,10 +216,10 @@ def test_secrets_are_masked_in_repr() -> None:
 
 def test_env_settings_read_process_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "prd")
-    monkeypatch.setenv("QDRANT_COLLECTION", "prd__sbc_chunks__2027_1")
+    monkeypatch.setenv("FACTS_BUNDLE_PATH", "bundles/facts-2027.1.sqlite")
     env = EnvSettings(_env_file=None)
     assert env.app_env is Env.PRD
-    assert env.qdrant_collection == "prd__sbc_chunks__2027_1"
+    assert env.facts_bundle_path == "bundles/facts-2027.1.sqlite"
 
 
 def test_deep_merge_leaves_inputs_unchanged() -> None:

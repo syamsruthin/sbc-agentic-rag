@@ -1,12 +1,12 @@
-"""BM25 sparse vectors for Qdrant's ``bm25`` named vector (PLAN.md sections 3.2.4 and 3.4.3).
+"""BM25 sparse vectors for the bundle's text search (PLAN.md sections 3.2.4 and 3.4.3).
 
 Term weights come from this local tokenizer, not an ML model. Documents get the BM25 term-frequency part
-(saturated by ``k1`` and length-normalized by ``b`` against the corpus average length); Qdrant applies the
-IDF part itself through the collection's ``Modifier.IDF``. Queries get weight 1 per distinct term, so the
-score of a query against a chunk is the usual BM25 sum.
+(saturated by ``k1`` and length-normalized by ``b`` against the corpus average length); the search applies
+the IDF part from the bundle's document frequencies (``sbc_core.search``). Queries get weight 1 per distinct
+term, so the score of a query against a chunk is the usual BM25 sum.
 
 Both the index build and the runtime query path use this module, so they always tokenize the same way.
-Bump :data:`TOKENIZER_VERSION` whenever tokenization changes; the collection must then be rebuilt.
+Bump :data:`TOKENIZER_VERSION` whenever tokenization changes; the bundle must then be rebuilt.
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ def tokenize(text: str) -> list[str]:
 
 
 def token_id(token: str) -> int:
-    """Stable 32-bit index for a token (Qdrant sparse indices are uint32)."""
+    """Stable 32-bit index for a token (stored as uint32)."""
     return int.from_bytes(hashlib.blake2b(token.encode(), digest_size=4).digest(), "little")
 
 

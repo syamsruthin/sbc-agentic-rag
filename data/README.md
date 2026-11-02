@@ -28,17 +28,18 @@ the 9,690 documented in PLAN.md section 1.2.
 
 On a 4-CPU machine the download takes about 25 minutes, conversion about 55 and verification about 55.
 
-Then build the facts bundle and the search index:
+Then build the facts bundle, which also holds the search index:
 
 ```bash
-uv run sbc-build-bundle --version 2027.1                 # -> bundles/facts-2027.1.sqlite
+uv run sbc-build-bundle --version 2027.1                 # -> bundles/facts-2027.1.sqlite (facts + BM25 index)
 uv run sbc-grammar-review bundles/facts-2027.1.sqlite    # -> docs/reviews/cost-grammar-review.md
 uv run sbc-puf-check bundles/facts-2027.1.sqlite         # -> data/markdown/puf_check_2027.csv
-uv run sbc-load-qdrant bundles/facts-2027.1.sqlite --env dev   # -> Qdrant dev__sbc_chunks__2027_1
+uv run sbc-embed-bundle bundles/facts-2027.1.sqlite      # adds the chunk embeddings to the bundle
 ```
 
-`sbc-load-qdrant` needs `QDRANT_URL`, `QDRANT_API_KEY_RW` and `OPENROUTER_API_KEY_BROKER` (see `.env.example`).
-Embeddings are cached in `bundles/embeddings.sqlite` by chunk hash, so a rebuild only embeds new chunk text.
+`sbc-embed-bundle` needs `OPENROUTER_API_KEY_BROKER` (see `.env.example`) and uses the embedding model in
+`config/base.yaml`. Embeddings are cached in `bundles/embeddings.sqlite` by chunk hash, so a rebuild only
+embeds new chunk text. Without this step the bundle still supports BM25-only search.
 
 The retrieval eval and the PDF check of the golden dataset read the bundle (see `evals/README.md`):
 
