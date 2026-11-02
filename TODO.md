@@ -103,7 +103,11 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [x] Tools: `find_plans`, `get_plan_facts`, `search_sbc_text`, `compare_plans`, `ask_clarifying_question`
       (`sbc_tools`, `docs/agent-tools.md`): Pydantic I/O, plan gate and scope checks in code, per-turn
       F/S/P placeholder IDs, `Toolbox` with profile filtering, JSON schemas and turn limits
-- [ ] Fact placeholders, verifier and renderer
+- [x] Fact placeholders, verifier and renderer (`sbc_agent.answer`, `docs/answer-path.md`): number, placeholder,
+      link and advice firewall; header, SBC wording, page citations, required limitation notes, carried-note and
+      inferred-heading labels, disclaimer; deterministic template fallback through the same checks
+- [ ] Decide how to link the 1,383 SBCs that have no public PDF URL (portal preview form only): an API
+      endpoint that fetches the PDF, or hosting the PDFs. Until then their citations link to the portal
 - [ ] Broker web app with plan picker
 - [ ] Supabase auth
 - [ ] Langfuse tracing
