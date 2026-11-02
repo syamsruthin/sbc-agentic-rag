@@ -35,6 +35,24 @@ class FactsReader(Protocol):
         """Plans whose SBC or catalog name, or contract code, contains ``text``. Best match first."""
         ...
 
+    def filter_plans(
+        self,
+        *,
+        name: str | None = None,
+        plan_year: int | None = None,
+        states: Sequence[str] = (),
+        markets: Sequence[str] = (),
+        plan_types: Sequence[str] = (),
+        metal_tiers: Sequence[str] = (),
+        exclude_plan_statuses: Sequence[str] = (),
+        exclude_exchanges: Sequence[str] = (),
+        limit: int = 10,
+    ) -> tuple[list[PlanSummary], int]:
+        """Plans matching every given filter, and how many match in all. With ``name``, best name match
+        first; otherwise by state, market and plan name. ``limit`` caps the list, not the count. A plan type
+        matches by prefix: "PPO" matches "PPO + HSA"."""
+        ...
+
     def find_plans_by_identifier(self, identifier: str, *, plan_year: int | None = None) -> list[PlanSummary]:
         """Plans whose contract code, SBC id or HIOS plan id equals ``identifier`` exactly.
 

@@ -96,15 +96,17 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 
 ## Phase 1: Broker MVP (PLAN.md §11)
 
-- [ ] Decide the Phase 1 gate scope: 32 golden 0.2.0 items expect Phase 2 tools (`estimate_cost` 24,
-      `rank_plans` 8) and 25 multi-turn items need session references
+- [x] Phase 1 gate scope decided (2026-11-02): gated on the 353 golden 0.2.0 items that don't need Phase 2
+      features; the 57 that do (`estimate_cost` 24, `rank_plans` 8, multi-turn 25) are reported separately
 
 - [ ] FastAPI + LangGraph graph with fast path
-- [ ] Tools: `find_plans`, `get_plan_facts`, `search_sbc_text`, `compare_plans`, `ask_clarifying_question`
+- [x] Tools: `find_plans`, `get_plan_facts`, `search_sbc_text`, `compare_plans`, `ask_clarifying_question`
+      (`sbc_tools`, `docs/agent-tools.md`): Pydantic I/O, plan gate and scope checks in code, per-turn
+      F/S/P placeholder IDs, `Toolbox` with profile filtering, JSON schemas and turn limits
 - [ ] Fact placeholders, verifier and renderer
 - [ ] Broker web app with plan picker
 - [ ] Supabase auth
 - [ ] Langfuse tracing
 - [ ] Model bake-off report
 - [ ] Deployed to `api-dev`
-- [ ] MVP gating set (about 410 items) passing all hard gates
+- [ ] MVP gating set (353 items of golden 0.2.0) passing all hard gates; the other 57 reported

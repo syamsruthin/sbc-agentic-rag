@@ -85,11 +85,8 @@ class PlanResolver:
     def in_scope(
         self, plan: PlanSummary, *, plan_year: int | None = None, states: Sequence[str] = ()
     ) -> bool:
-        s = self.scope
         return (
-            (not s.markets or plan.market in s.markets)
-            and (plan.plan_status or "") not in s.exclude_plan_statuses
-            and (plan.exchange or "") not in s.exclude_exchange
+            self.scope.allows(plan)
             and (plan_year is None or plan.plan_year == plan_year)
             and (not states or plan.state in states)
         )
