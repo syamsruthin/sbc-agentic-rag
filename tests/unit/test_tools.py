@@ -307,3 +307,19 @@ def test_toolbox_enforces_turn_limits(reader: SqliteFactsReader) -> None:
     over = box.call("find_plans", {"state": "XX"})
     assert over.error is not None
     assert over.error["error"] == "limit_reached"
+
+
+def test_discovery_by_list_item(reader: SqliteFactsReader) -> None:
+    ctx = make_ctx(reader, resolved=())
+    out = t.find_plans(ctx, t.FindPlansInput(state="XX", list_item="acupuncture"))
+    assert (out.total, out.usable) == (2, True)
+    excluded = t.find_plans(ctx, t.FindPlansInput(list_item="Cosmetic", list_id="excluded"))
+    assert excluded.total == 2
+    none = t.find_plans(ctx, t.FindPlansInput(list_item="Acupuncture care", list_id="excluded"))
+    assert none.total == 0
+    assert "closest items" in none.note
+    assert "Cosmetic surgery" not in none.note  # shares no word with the request
+    public = make_ctx(reader, "public", resolved=(), user_state="XX")
+    with pytest.raises(ToolError) as exc:
+        t.find_plans(public, t.FindPlansInput(list_item="Acupuncture"))
+    assert exc.value.code == "out_of_scope"

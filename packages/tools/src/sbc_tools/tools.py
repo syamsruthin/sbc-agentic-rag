@@ -9,6 +9,7 @@ row's limitations.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Literal, Self
 
@@ -57,11 +58,18 @@ class FindPlansInput(_Input):
     metal_tier: MetalTier | None = Field(
         default=None, description="From the plan listing, not the SBC; most group plans have none."
     )
-    limit: int = Field(default=5, ge=1, le=10)
+    list_item: str | None = Field(
+        default=None, min_length=3, max_length=80,
+        description="Discovery (broker only): plans whose list names this, in the SBC's wording, e.g. "
+        '"Dental care (Adult)", "Routine eye care (Adult)", "Bariatric surgery".',
+    )  # fmt: skip
+    list_id: ListId = Field(default="other_covered", description="Which list list_item must be on.")
+    limit: int = Field(default=5, ge=1, le=25)
 
     @model_validator(mode="after")
     def _something(self) -> Self:
-        if self.text is None and not (self.state or self.market or self.plan_type or self.metal_tier):
+        filters = (self.state, self.market, self.plan_type, self.metal_tier, self.list_item)
+        if self.text is None and not any(filters):
             raise ValueError("give a plan name or ID, or at least one filter")
         return self
 
@@ -96,9 +104,11 @@ def find_plans(ctx: ToolContext, args: FindPlansInput) -> FindPlansOutput:
             and (not args.metal_tier or plan.metal_tier == args.metal_tier)
         )
 
+    if args.list_item and not ctx.profile.allow_discovery:
+        raise ToolError("out_of_scope", "searching plans by what their lists name isn't available here.")
     plans: list[PlanSummary] = []
     total = 0
-    if args.text is not None:
+    if args.text is not None and args.list_item is None:
         plans = [
             p for p in ctx.reader.find_plans_by_identifier(args.text, plan_year=ctx.plan_year) if wanted(p)
         ]
@@ -110,7 +120,7 @@ def find_plans(ctx: ToolContext, args: FindPlansInput) -> FindPlansOutput:
             plan_types=[args.plan_type] if args.plan_type else [],
             metal_tiers=[args.metal_tier] if args.metal_tier else [],
             exclude_plan_statuses=scope.exclude_plan_statuses, exclude_exchanges=scope.exclude_exchange,
-            limit=args.limit,
+            list_item=(args.list_id, args.list_item) if args.list_item else None, limit=args.limit,
         )  # fmt: skip
         plans = [p for p in plans if wanted(p)]
     plans = plans[: args.limit]
@@ -118,7 +128,11 @@ def find_plans(ctx: ToolContext, args: FindPlansInput) -> FindPlansOutput:
     usable = bool(plans) and (args.text is None or total == 1)
     if usable:
         ctx.turn.listed_plan_keys.update(p.plan_key for p in plans)
-    if not plans:
+    if not plans and args.list_item:
+        note = "No plan matches. List items use the SBC's wording; closest items: " + "; ".join(
+            _closest_items(ctx, args.list_id, args.list_item)
+        )
+    elif not plans:
         note = "No plan available to this assistant matches."
     elif not usable:
         note = "Several plans match this name. Don't pick one: ask_clarifying_question with them as options."
@@ -128,6 +142,17 @@ def find_plans(ctx: ToolContext, args: FindPlansInput) -> FindPlansOutput:
         note = ""
     refs = tuple(PlanRef.of(p, ctx.turn) for p in plans)
     return FindPlansOutput(plans=refs, total=total, usable=usable, note=note)
+
+
+def _closest_items(ctx: ToolContext, list_id: str, wanted: str, n: int = 8) -> list[str]:
+    """List wordings sharing the most words with ``wanted``, shortest first among equals."""
+    words = set(re.findall(r"[a-z]{3,}", wanted.lower()))
+    scored = [
+        (len(words & set(re.findall(r"[a-z]{3,}", item.lower()))), item)
+        for item in ctx.reader.list_item_texts(list_id)
+    ]
+    best = sorted((s for s in scored if s[0]), key=lambda s: (-s[0], len(s[1]), s[1]))
+    return [item for _, item in best[:n]]
 
 
 # ------------------------------------------------------------------ get_plan_facts and compare_plans

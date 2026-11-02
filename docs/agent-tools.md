@@ -4,7 +4,7 @@ The tools the agent loop can call (PLAN.md section 3.5.4), in `packages/tools` (
 
 | Tool | What it returns |
 |---|---|
-| `find_plans` | Plans by name, contract code, HIOS id or SBC id, or a listing by state, market, plan type and metal tier |
+| `find_plans` | Plans by name, contract code, HIOS id or SBC id, or a listing by state, market, plan type and metal tier. Broker discovery: plans whose Excluded or Other Covered Services list names an item, in the SBC's wording (`list_item`, `list_id`); with no match it suggests the closest list wordings |
 | `get_plan_facts` | Exact SBC values: Important Questions, benefit rows (by service ID or drug tag) with their limitations, coverage examples, the Excluded and Other Covered Services lists |
 | `compare_plans` | One table of the same aspects across 2 or more plans; aspects are question IDs, service IDs, drug tags or presets (`costs_overview`, `everyday_care`, `hospital`) |
 | `search_sbc_text` | Plan-filtered hybrid search over the SBC text, for anything outside the template fields |

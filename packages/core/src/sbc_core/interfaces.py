@@ -46,11 +46,17 @@ class FactsReader(Protocol):
         metal_tiers: Sequence[str] = (),
         exclude_plan_statuses: Sequence[str] = (),
         exclude_exchanges: Sequence[str] = (),
+        list_item: tuple[str, str] | None = None,
         limit: int = 10,
     ) -> tuple[list[PlanSummary], int]:
         """Plans matching every given filter, and how many match in all. With ``name``, best name match
         first; otherwise by state, market and plan name. ``limit`` caps the list, not the count. A plan type
-        matches by prefix: "PPO" matches "PPO + HSA"."""
+        matches by prefix: "PPO" matches "PPO + HSA". ``list_item`` is ``(list_id, text)``: plans whose
+        Excluded or Other Covered Services list has an item containing ``text`` (case-insensitive)."""
+        ...
+
+    def list_item_texts(self, list_id: str) -> list[str]:
+        """Every distinct item wording of one list across the bundle (Excluded or Other Covered Services)."""
         ...
 
     def find_plans_by_identifier(self, identifier: str, *, plan_year: int | None = None) -> list[PlanSummary]:

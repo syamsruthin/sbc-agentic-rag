@@ -191,6 +191,7 @@ class SqliteFactsReader:
         metal_tiers: Sequence[str] = (),
         exclude_plan_statuses: Sequence[str] = (),
         exclude_exchanges: Sequence[str] = (),
+        list_item: tuple[str, str] | None = None,
         limit: int = 10,
     ) -> tuple[list[PlanSummary], int]:
         joins, where, params = "", list[str](), list[object]()
@@ -215,11 +216,28 @@ class SqliteFactsReader:
             if values:
                 where.append(f"COALESCE({column}, '') NOT IN ({_in(values)})")
                 params += list(values)
+        if list_item is not None:
+            list_id, item = list_item
+            where.append(
+                "p.plan_id IN (SELECT i.plan_id FROM plan_list_item i"
+                " JOIN text_string t ON t.text_id = i.item_id"
+                " WHERE i.list_id = ? AND t.text LIKE ? ESCAPE '\\')"
+            )
+            escaped = item.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            params += [list_id, f"%{escaped}%"]
         clause = joins + ("WHERE " + " AND ".join(where) if where else "")
         (total,) = self._db.execute(f"SELECT COUNT(*) FROM plan p {clause}", params).fetchone()  # noqa: S608
         order = "bm25(plan_name_fts), p.plan_name" if name is not None else "p.state, p.market, p.plan_name"
         plans = self._load_plans(f"{clause} ORDER BY {order}, p.plan_key LIMIT ?", [*params, limit])
         return plans, int(total)
+
+    def list_item_texts(self, list_id: str) -> list[str]:
+        rows = self._db.execute(
+            """SELECT DISTINCT t.text FROM plan_list_item i JOIN text_string t ON t.text_id = i.item_id
+               WHERE i.list_id = ? ORDER BY t.text""",
+            (list_id,),
+        )
+        return [r[0] for r in rows]
 
     def find_plans_by_identifier(self, identifier: str, *, plan_year: int | None = None) -> list[PlanSummary]:
         identifier = identifier.strip()
