@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # PLAN.md section 5.5, deterministic suite: validates every committed golden dataset and runs the
-      # retrieval eval (BM25-only, in-memory Qdrant) on the synthetic fixture bundle; any hard-gate failure
+      # retrieval eval (BM25-only, the bundle's own index) on the synthetic fixture bundle; any hard-gate failure
       # (plan filter below 100%, a confident wrong-plan resolution) fails the job. CI has no SBC corpus, so
       # the real-corpus eval runs where the facts bundle is built. The LLM smoke set joins in Phase 1.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

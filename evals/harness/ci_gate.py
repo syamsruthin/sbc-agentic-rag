@@ -20,7 +20,7 @@ from collections import Counter
 from pathlib import Path
 
 from evals.harness.golden import GoldenItem, load_golden
-from evals.harness.retrieval import RunReport, Scopes, bm25_memory_searcher, run
+from evals.harness.retrieval import RunReport, Scopes, bm25_searcher, run
 from sbc_core.config import BotName, load_config
 from sbc_core.facts import SqliteFactsReader
 
@@ -69,7 +69,7 @@ def item_problems(item: GoldenItem, version: str) -> list[str]:
 def synthetic_items(bundle: Path) -> list[GoldenItem]:
     """One item per (plan, searchable chunk) of a bundle, asked with the plan selected in the UI, plus an
     item naming a contract code the fixture's two plans share (must clarify)."""
-    from sbc_index.qdrant_loader import read_chunks
+    from sbc_index.search_build import read_chunks
 
     _, records = read_chunks(bundle)
     items: list[GoldenItem] = []
@@ -128,7 +128,7 @@ def fixture_eval(tmp: Path) -> RunReport:
         return run(
             synthetic_items(bundle),
             reader,
-            bm25_memory_searcher(bundle),
+            bm25_searcher(bundle),
             settings,
             setup="bm25_only",
             scopes=Scopes.from_config(REPO / "config"),

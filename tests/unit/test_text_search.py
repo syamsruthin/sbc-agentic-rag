@@ -1,25 +1,19 @@
-"""Plan-filtered hybrid search: Qdrant index (in-memory local mode) and the TextSearcher pipeline."""
+"""Plan-filtered hybrid search: the bundle's SQLite index and the TextSearcher pipeline."""
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Iterator, Sequence
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from qdrant_client import QdrantClient
 
 from sbc_core.config import Retrieval
 from sbc_core.llm import GatewayError
+from sbc_core.search import SqliteSearchIndex
 from sbc_core.types import SearchHit, SearchQuery
-from sbc_index.embed_cache import EmbeddingCache
-from sbc_index.qdrant_loader import load
-from sbc_retrieval.qdrant_search import PlanFilterViolationError, QdrantSearchIndex, checked_hits
 from sbc_retrieval.text_search import SearchRequestError, TextSearcher, keep_per_plan
-from tests.unit.test_bundle import make_bundle
-from tests.unit.test_qdrant_loader import DIMS, fake_embed
+from tests.unit.test_search_build import fake_embed, make_embedded_bundle
 
 PLAN_A, PLAN_B = "2027:100000000001", "2027:100000000002"
 SETTINGS = Retrieval(prefetch_limit=20, rrf_k=60, rerank_candidates=20, keep_per_plan=6, rerank_enabled=True,
@@ -27,20 +21,16 @@ SETTINGS = Retrieval(prefetch_limit=20, rrf_k=60, rerank_candidates=20, keep_per
 
 
 @pytest.fixture
-def index(tmp_path: Path) -> Iterator[QdrantSearchIndex]:
-    client = QdrantClient(":memory:")
-    with warnings.catch_warnings(), EmbeddingCache(tmp_path / "emb.sqlite", "test/embed", DIMS) as cache:
-        warnings.simplefilter("ignore", UserWarning)
-        report = load(client, make_bundle(tmp_path), prefix="local", embed=fake_embed, cache=cache)
-        yield QdrantSearchIndex(client, report.collection)
-    client.close()
+def index(tmp_path: Path) -> Iterator[SqliteSearchIndex]:
+    with SqliteSearchIndex(make_embedded_bundle(tmp_path)) as idx:
+        yield idx
 
 
 def _embed_query(text: str) -> Sequence[float]:
     return fake_embed([text])[0]
 
 
-def test_bm25_finds_the_row_and_respects_the_plan_filter(index: QdrantSearchIndex) -> None:
+def test_bm25_finds_the_row_and_respects_the_plan_filter(index: SqliteSearchIndex) -> None:
     result = TextSearcher(index, SETTINGS).search([PLAN_A], "specialist visit copay")
     assert result.hits[0].section_path.endswith("> Specialist visit")
     assert all(h.plan_keys == (PLAN_A,) for h in result.hits)
@@ -48,7 +38,7 @@ def test_bm25_finds_the_row_and_respects_the_plan_filter(index: QdrantSearchInde
     assert len(result.hits) <= SETTINGS.keep_per_plan
 
 
-def test_dense_and_bm25_are_fused(index: QdrantSearchIndex) -> None:
+def test_dense_and_bm25_are_fused(index: SqliteSearchIndex) -> None:
     (target,) = (
         TextSearcher(index, SETTINGS.model_copy(update={"keep_per_plan": 1}))
         .search([PLAN_A], "specialist visit")
@@ -61,7 +51,7 @@ def test_dense_and_bm25_are_fused(index: QdrantSearchIndex) -> None:
     assert result.hits[0].chunk_hash == target.chunk_hash
 
 
-def test_shared_chunks_report_only_requested_plans(index: QdrantSearchIndex) -> None:
+def test_shared_chunks_report_only_requested_plans(index: SqliteSearchIndex) -> None:
     result = TextSearcher(index, SETTINGS).search([PLAN_A, PLAN_B], "cosmetic surgery")
     assert result.degraded == ["embedding_disabled"]
     assert result.hits[0].section_path == "Excluded Services"
@@ -69,30 +59,17 @@ def test_shared_chunks_report_only_requested_plans(index: QdrantSearchIndex) -> 
     assert all(set(h.plan_keys) <= {PLAN_A, PLAN_B} for h in result.hits)
 
 
-def test_unknown_plan_returns_nothing(index: QdrantSearchIndex) -> None:
+def test_unknown_plan_returns_nothing(index: SqliteSearchIndex) -> None:
     query = SearchQuery(
         plan_keys=("2027:999999999999",), text="x", sparse=None, dense=tuple(_embed_query("x"))
     )
     assert index.search(query) == []
 
 
-def test_chunk_type_filter(index: QdrantSearchIndex) -> None:
+def test_chunk_type_filter(index: SqliteSearchIndex) -> None:
     result = TextSearcher(index, SETTINGS).search([PLAN_A], "deductible", chunk_types=["iq"])
     assert result.hits
     assert {h.chunk_type for h in result.hits} == {"iq"}
-
-
-def test_foreign_points_fail_closed() -> None:
-    payload = {
-        "plan_keys": ["2027:2"],
-        "chunk_hash": "h",
-        "chunk_type": "iq",
-        "section_path": "s",
-        "text": "t",
-    }
-    point = SimpleNamespace(id=1, score=1.0, payload=payload)
-    with pytest.raises(PlanFilterViolationError):
-        checked_hits([point], ["2027:1"])
 
 
 class StubIndex:

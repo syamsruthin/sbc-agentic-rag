@@ -96,10 +96,6 @@ class Retrieval(_Model):
     """Add the SBC's own labels for services the query names to the BM25 query (PLAN.md 3.4.4)."""
 
 
-class SearchIndex(_Model):
-    collection_prefix: str = Field(pattern=r"^[a-z]+$")
-
-
 class PlanScope(_Model):
     markets: tuple[str, ...] = ()
     """Markets this bot may see; empty means every market."""
@@ -174,7 +170,6 @@ class AppConfig(BaseSettings):
     models: Models
     budget: TurnBudget
     retrieval: Retrieval
-    search_index: SearchIndex
 
     @classmethod
     def settings_customise_sources(
@@ -202,12 +197,6 @@ class EnvSettings(BaseSettings):
     openrouter_api_key_broker: SecretStr | None = None
     openrouter_api_key_public: SecretStr | None = None
 
-    qdrant_url: str | None = None
-    qdrant_api_key: SecretStr | None = None
-    qdrant_api_key_rw: SecretStr | None = None
-    """Read-write key for the index build (CI only); the API uses the read-only ``qdrant_api_key``."""
-    qdrant_collection: str | None = None
-
     supabase_url: str | None = None
     supabase_anon_key: SecretStr | None = None
     supabase_service_role_key: SecretStr | None = None
@@ -232,9 +221,6 @@ class EnvSettings(BaseSettings):
         """Names (never values) of the environment variables this bot needs in dev and prd but lacks."""
         required = [
             f"openrouter_api_key_{bot.value}",
-            "qdrant_url",
-            "qdrant_api_key",
-            "qdrant_collection",
             "database_url",
             "upstash_redis_rest_url",
             "upstash_redis_rest_token",

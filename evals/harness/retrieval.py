@@ -17,13 +17,14 @@ For every golden item it measures, independently of any LLM:
   confirm that each of those plans contains the chunk. Anything else is a violation (hard gate: 100%).
 
 Three setups (PLAN.md 5.1): ``full`` (dense + BM25 + rerank), ``no_rerank`` (dense + BM25) and
-``bm25_only`` (the fallback when embeddings fail). ``bm25_only`` runs against an in-memory Qdrant collection
-built from the bundle and needs no API keys; the other two need Qdrant Cloud and OpenRouter.
+``bm25_only`` (the fallback when embeddings fail). All three search the bundle's own index. ``bm25_only``
+needs no API keys; the other two need a bundle embedded with ``sbc-embed-bundle`` and OpenRouter for the
+query embedding and rerank.
 
 Usage::
 
     uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite \\
-        --golden evals/golden/0.1.0 --setup bm25_only
+        --golden evals/golden/0.2.0 --setup bm25_only
 """
 
 from __future__ import annotations
@@ -32,7 +33,6 @@ import argparse
 import json
 import re
 import sys
-import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, field
@@ -40,12 +40,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from qdrant_client import QdrantClient
-
 from evals.harness.golden import GoldenItem, load_golden
 from sbc_core.config import BotName, PlanScope, Retrieval, load_config
 from sbc_core.facts import SqliteFactsReader
 from sbc_core.interfaces import FactsReader
+from sbc_core.search import SqliteSearchIndex
 from sbc_core.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from sbc_retrieval.resolver import PlanResolver, Resolution, id_tokens
 from sbc_retrieval.text_search import TextSearcher
@@ -574,48 +573,35 @@ def write_reports(reports: Sequence[RunReport], out_dir: Path) -> tuple[Path, Pa
 # --------------------------------------------------------------------------------------------- CLI
 
 
-def bm25_memory_searcher(bundle: Path) -> Callable[[Retrieval], TextSearcher]:
-    """An in-memory BM25-only collection built from the bundle (no API keys)."""
-    from sbc_index.qdrant_loader import load  # build-time code; the eval is allowed to use it
-    from sbc_retrieval.qdrant_search import QdrantSearchIndex
-
-    client = QdrantClient(":memory:")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)  # local mode ignores payload indexes and says so
-        report = load(client, bundle, prefix="local", embed=None, cache=None)
+def bm25_searcher(bundle: Path) -> Callable[[Retrieval], TextSearcher]:
+    """BM25 only, from the bundle's own index (no API keys)."""
 
     def build(settings: Retrieval) -> TextSearcher:
-        index = QdrantSearchIndex(
-            client, report.collection, prefetch_limit=settings.prefetch_limit, rrf_k=settings.rrf_k
-        )
+        index = SqliteSearchIndex(bundle, prefetch_limit=settings.prefetch_limit, rrf_k=settings.rrf_k)
         return TextSearcher(index, settings)
 
     return build
 
 
-def live_searcher(collection: str | None, bundle_version: str) -> Callable[[Retrieval], TextSearcher]:
-    """Qdrant Cloud plus OpenRouter embeddings and rerank (needs QDRANT_URL, QDRANT_API_KEY and
-    OPENROUTER_API_KEY_BROKER)."""
+def live_searcher(bundle: Path) -> Callable[[Retrieval], TextSearcher]:
+    """The bundle's dense + BM25 index with OpenRouter query embeddings and rerank (needs a bundle embedded
+    with the configured model, and OPENROUTER_API_KEY_BROKER)."""
     from sbc_core.config import EnvSettings
     from sbc_core.llm import OpenRouterClient
-    from sbc_index.qdrant_loader import collection_name
-    from sbc_retrieval.qdrant_search import QdrantSearchIndex
 
     env = EnvSettings()
     config = load_config(BotName.BROKER, env.app_env)
-    key = env.qdrant_api_key or env.qdrant_api_key_rw
-    if not env.qdrant_url or key is None:
-        raise SystemExit("the full and no_rerank setups need QDRANT_URL and QDRANT_API_KEY")
-    name = (
-        collection
-        or env.qdrant_collection
-        or collection_name(config.search_index.collection_prefix, bundle_version)
-    )
-    client = QdrantClient(url=env.qdrant_url, api_key=key.get_secret_value(), timeout=60)
+    role = config.models.embeddings
+    dims = role.dimensions
+    if dims is None:
+        raise SystemExit("models.embeddings.dimensions must be set in config/base.yaml")
     gateway = OpenRouterClient.for_bot(env, BotName.BROKER)
 
     def build(settings: Retrieval) -> TextSearcher:
-        index = QdrantSearchIndex(client, name, prefetch_limit=settings.prefetch_limit, rrf_k=settings.rrf_k)
+        index = SqliteSearchIndex(
+            bundle, prefetch_limit=settings.prefetch_limit, rrf_k=settings.rrf_k,
+            expected_embedding=(role.model, dims),
+        )  # fmt: skip
         return TextSearcher.with_gateway(index, settings, config.models, gateway)
 
     return build
@@ -626,7 +612,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--bundle", type=Path, required=True)
     ap.add_argument("--golden", type=Path, required=True, help="a golden dataset directory")
     ap.add_argument("--setup", action="append", choices=SETUPS, help="repeatable; default bm25_only")
-    ap.add_argument("--collection", help="Qdrant collection for full/no_rerank (default: from the bundle)")
     ap.add_argument("--out", type=Path, default=Path("evals/reports"))
     ap.add_argument("--fail-on-hard-gates", action="store_true")
     args = ap.parse_args(argv)
@@ -637,11 +622,7 @@ def main(argv: list[str] | None = None) -> int:
     with SqliteFactsReader(args.bundle) as reader:
         for setup in args.setup or ["bm25_only"]:
             print(f"running {setup} on {len(items)} items", file=sys.stderr)
-            factory = (
-                bm25_memory_searcher(args.bundle)
-                if setup == "bm25_only"
-                else live_searcher(args.collection, reader.bundle_version)
-            )
+            factory = bm25_searcher(args.bundle) if setup == "bm25_only" else live_searcher(args.bundle)
             reports.append(run(items, reader, factory, settings, setup=setup, scopes=scopes))
     json_path, md_path = write_reports(reports, args.out)
     print(to_markdown(reports))

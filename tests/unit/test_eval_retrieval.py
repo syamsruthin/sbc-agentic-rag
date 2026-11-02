@@ -14,7 +14,7 @@ from evals.harness.golden import GoldenItem
 from evals.harness.retrieval import (
     PlanRanking,
     Scopes,
-    bm25_memory_searcher,
+    bm25_searcher,
     check_gates,
     gold_services,
     predicted_services,
@@ -157,7 +157,7 @@ def test_plan_names_are_masked_before_mapping(reader: SqliteFactsReader, bundle:
         turns=[{"role": "user", "content": "Specialist copay on Blue Rx Option 7 (ZZ01)?"}],
         context={"plan_mentions": ["Blue Rx Option 7"]},
     )
-    searcher = bm25_memory_searcher(bundle)(SETTINGS)
+    searcher = bm25_searcher(bundle)(SETTINGS)
     result = evaluate_item(item, reader, searcher, keep=6, scopes=SCOPES, taxonomy=load_taxonomy())
     assert result.services is not None
     assert result.services.predicted == ["specialist_visit"]  # "Rx" in the mention is not a drug question
@@ -170,7 +170,7 @@ def test_fixture_run_meets_the_hard_gates(bundle: Path, reader: SqliteFactsReade
     report = run(
         synthetic_items(bundle),
         reader,
-        bm25_memory_searcher(bundle),
+        bm25_searcher(bundle),
         SETTINGS,
         setup="bm25_only",
         scopes=SCOPES,
@@ -222,7 +222,7 @@ def test_gates_and_reports(bundle: Path, reader: SqliteFactsReader, tmp_path: Pa
     report = run(
         synthetic_items(bundle)[:4],
         reader,
-        bm25_memory_searcher(bundle),
+        bm25_searcher(bundle),
         SETTINGS,
         setup="bm25_only",
         scopes=SCOPES,

@@ -1,3 +1,2 @@
 # Local development.
-search_index:
-  collection_prefix: local
+# Nothing overrides base.yaml here yet.

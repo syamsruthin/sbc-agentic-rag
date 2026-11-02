@@ -1,7 +1,8 @@
 """Build the facts bundle: one read-only SQLite file per release (PLAN.md sections 3.2.3 and 3.2.5).
 
-It holds the structured facts the runtime reads exactly, the unique search chunks with their plan links (the
-Qdrant collection is loaded from these), and a quarantine list of plans left out and why.
+It holds the structured facts the runtime reads exactly, the unique search chunks with their plan links and
+BM25 term weights (``sbc_index.search_build``; ``sbc-embed-bundle`` adds the embeddings), and a quarantine
+list of plans left out and why.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from sbc_extract.extract import Chunk, Extracted, extract
 from sbc_extract.limits import LimitParse
 from sbc_extract.review import load_allowlist
 from sbc_index.puf_check import hios_ids
+from sbc_index.search_build import write_bm25
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -279,6 +281,7 @@ def build_bundle(
                 "INSERT INTO quarantine VALUES (?, ?, ?)",
                 (rel, e.plan.plan_key if e.plan else None, json.dumps(e.quarantine_reasons)),
             )
+    bm25 = write_bm25(db)
     meta: dict[str, Any] = {
         "bundle_version": version,
         "source_manifest_sha256": manifest.hexdigest(),
@@ -288,6 +291,7 @@ def build_bundle(
         "plans": stats.plans,
         "quarantined": stats.quarantined,
         "unique_chunks": stats.chunks,
+        "bm25": bm25,
     }
     db.executemany("INSERT INTO meta VALUES (?, ?)", [(k, json.dumps(v)) for k, v in meta.items()])
     db.commit()
