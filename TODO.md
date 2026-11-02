@@ -61,7 +61,8 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
       refused under ZDR (no ZDR endpoint on OpenRouter; `cohere/rerank-4-fast` has none either)
 - [x] ZDR replacements approved and in config (PLAN.md 8): `baai/bge-m3` embeddings, `qwen/qwen3-reranker-8b`
       rerank (the only ZDR reranker on OpenRouter); `sbc-llm-smoke` passes all four checks on them
-- [ ] Embeddings added to bundle `2027.1` (`sbc-embed-bundle`) and the smoke test passing on the chosen models
+- [x] Embeddings added to bundle `2027.1` (`sbc-embed-bundle`): 30,498 bge-m3 vectors, 20 plan-filter checks
+      passed; bundle 217 MB with the full search index (16 KB pages; 4 KB pages wasted half the vector space)
 - [x] Service taxonomy v1
 - [x] Golden dataset schema and bundle consistency check
 - [x] Plan resolver in code (IDs, UI selection, name search; never guesses) and BM25 synonym expansion
@@ -74,7 +75,19 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [ ] Golden dataset verified against the PDFs by a person (then items gate merges; 0.2.0 is the set to review)
 - [x] Retrieval eval, BM25-only configuration on golden 0.2.0: plan filter 100%, 0 confident wrong-plan,
       service mapping 98.0%, recall@5 0.847, recall@10 0.952, MRR@10 0.712 (0.713 with Qdrant's tie order)
-- [ ] Retrieval eval, full and no-rerank configurations (needs the embedded bundle); recall@5 ≥ 0.90 gate
+- [x] Retrieval eval, all three configurations on golden 0.2.0 (2026-11-02, 0 degraded searches). Phase 0 bar
+      met: plan filter 100% and 0 confident wrong-plan everywhere, service mapping 98.0%, full recall@5 0.920.
+
+      | Setup | recall@5 | recall@10 | MRR@10 | Context precision | Context recall |
+      |---|---|---|---|---|---|
+      | full (bge-m3 + BM25 + qwen3 rerank) | 0.920 | 0.962 | 0.730 | 0.724 | 0.934 |
+      | no_rerank | 0.900 | 0.945 | 0.783 | 0.776 | 0.916 |
+      | bm25_only | 0.847 | 0.952 | 0.712 | 0.701 | 0.915 |
+
+      Rerank lift: recall@5 +0.020, recall@10 +0.017, context recall +0.018, but MRR@10 −0.053 and context
+      precision −0.052 (it pulls more gold chunks into the top 5 while often demoting the best one). RRF alone
+      is below 0.95, so rerank stays on plan-filtered searches (PLAN.md 3.4.3); revisit in the Phase 1 bake-off.
+      Weakest categories: cost scenarios (recall@5 about 0.69) and multi-turn (about 0.60).
 - [ ] Taxonomy v2 synonyms from the eval: "delivering (a baby)" is unmapped, "pharmacy" maps to every drug
       tier, and "hospital" (an ambiguous term) adds inpatient rows to a delivery question
 

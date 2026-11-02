@@ -163,7 +163,7 @@ if any secret it needs is missing.
 |---|---|
 | Repository setup and public-repo hygiene | Done |
 | Scaffolding: workspace, config, lint, types, tests, CI | Done (PR #1) |
-| Phase 0: extraction, facts bundle with search index, golden dataset | In progress (embeddings, full eval and sign-offs left) |
+| Phase 0: extraction, facts bundle with search index, golden dataset | Eval bar met; human sign-offs left |
 | Phase 1: Broker Assistant MVP (internal alpha) | Planned |
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
