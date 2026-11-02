@@ -23,6 +23,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
+from sbc_core.types import PlanSummary
+
 
 class ConfigError(Exception):
     """Raised when configuration is missing, malformed or unsafe. Messages never contain secret values."""
@@ -101,6 +103,14 @@ class PlanScope(_Model):
     """Markets this bot may see; empty means every market."""
     exclude_plan_statuses: tuple[str, ...] = ()
     exclude_exchange: tuple[str, ...] = ()
+
+    def allows(self, plan: PlanSummary) -> bool:
+        """Whether a bot with this scope may see ``plan`` at all. Lookups, searches and tools all check it."""
+        return (
+            (not self.markets or plan.market in self.markets)
+            and (plan.plan_status or "") not in self.exclude_plan_statuses
+            and (plan.exchange or "") not in self.exclude_exchange
+        )
 
 
 class RateLimits(_Model):

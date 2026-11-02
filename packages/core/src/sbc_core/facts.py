@@ -133,6 +133,47 @@ class SqliteFactsReader:
         )
         return self._load_plans(sql, params)
 
+    def filter_plans(
+        self,
+        *,
+        name: str | None = None,
+        plan_year: int | None = None,
+        states: Sequence[str] = (),
+        markets: Sequence[str] = (),
+        plan_types: Sequence[str] = (),
+        metal_tiers: Sequence[str] = (),
+        exclude_plan_statuses: Sequence[str] = (),
+        exclude_exchanges: Sequence[str] = (),
+        limit: int = 10,
+    ) -> tuple[list[PlanSummary], int]:
+        joins, where, params = "", list[str](), list[object]()
+        if name is not None:
+            name = " ".join(name.split())
+            if len(name) < _MIN_NAME_QUERY:
+                return [], 0
+            joins = "JOIN plan_name_fts f ON f.plan_key = p.plan_key "
+            where.append("plan_name_fts MATCH ?")
+            params.append('"' + name.replace('"', '""') + '"')
+        if plan_year is not None:
+            where.append("p.plan_year = ?")
+            params.append(plan_year)
+        for column, values in (("p.state", states), ("p.market", markets), ("p.metal_tier", metal_tiers)):
+            if values:
+                where.append(f"{column} IN ({_in(values)})")
+                params += list(values)
+        if plan_types:  # "PPO" matches "PPO", "PPO + HSA" and "PPO+HRA"
+            where.append("(" + " OR ".join("p.plan_type LIKE ?" for _ in plan_types) + ")")
+            params += [f"{t}%" for t in plan_types]
+        for column, values in (("p.plan_status", exclude_plan_statuses), ("p.exchange", exclude_exchanges)):
+            if values:
+                where.append(f"COALESCE({column}, '') NOT IN ({_in(values)})")
+                params += list(values)
+        clause = joins + ("WHERE " + " AND ".join(where) if where else "")
+        (total,) = self._db.execute(f"SELECT COUNT(*) FROM plan p {clause}", params).fetchone()  # noqa: S608
+        order = "bm25(plan_name_fts), p.plan_name" if name is not None else "p.state, p.market, p.plan_name"
+        plans = self._load_plans(f"{clause} ORDER BY {order}, p.plan_key LIMIT ?", [*params, limit])
+        return plans, int(total)
+
     def find_plans_by_identifier(self, identifier: str, *, plan_year: int | None = None) -> list[PlanSummary]:
         identifier = identifier.strip()
         if not identifier:
