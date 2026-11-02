@@ -108,6 +108,9 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
       check and four adversarial golden questions: about $0.003 per fast-path turn, $0.02-0.04 per agent turn
 - [ ] Generation eval harness on golden 0.2.0 (answers, not just retrieval) with recorded responses
 - [ ] FastAPI with SSE, PostgresSaver checkpoints on Supabase
+- [ ] Align the Supabase settings with its current key model: publishable and secret keys instead of anon and
+      service-role, and JWT verification through the project's JWKS URL instead of `SUPABASE_JWT_SECRET`
+      (`.env.example`, `EnvSettings`)
 - [ ] Presidio NER for names and addresses (regex recognizers for SSN, member ID, phone, email, dates are in)
 - [x] Tools: `find_plans`, `get_plan_facts`, `search_sbc_text`, `compare_plans`, `ask_clarifying_question`
       (`sbc_tools`, `docs/agent-tools.md`): Pydantic I/O, plan gate and scope checks in code, per-turn

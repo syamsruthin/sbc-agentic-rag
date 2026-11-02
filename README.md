@@ -115,7 +115,7 @@ apps/          broker/, shopper/, chat-ui/ (React)
 evals/         golden datasets, judge calibration, harness
 tests/         unit/, integration/, contract/, load/
 infra/         Docker, Cloud Run, Supabase migrations
-docs/          pipeline notes, ADRs, runbook
+docs/          pipeline, agent graph, tools and answer-path notes; review sheets; ADRs
 data/          fetched and generated SBC data (not committed)
 ```
 
@@ -148,6 +148,19 @@ uv run pytest tests/unit
 
 To fetch and rebuild the SBC data locally, see [data/README.md](data/README.md). How the pipeline converts
 and verifies SBCs is described in [docs/sbc-pipeline.md](docs/sbc-pipeline.md).
+
+### Try the agent
+
+With an embedded facts bundle and `OPENROUTER_API_KEY_BROKER` set, ask a question from the terminal:
+
+```bash
+FACTS_BUNDLE_PATH=bundles/facts-2027.1.sqlite uv run sbc-ask "What's the deductible on BTCU8?"
+```
+
+It prints the answer with its citations, then the path taken, the model calls and their cost. Run it without
+a question for an interactive session. How a turn is handled is in [docs/agent-graph.md](docs/agent-graph.md);
+the tools and the answer checks are in [docs/agent-tools.md](docs/agent-tools.md) and
+[docs/answer-path.md](docs/answer-path.md).
 
 ## Configuration
 
