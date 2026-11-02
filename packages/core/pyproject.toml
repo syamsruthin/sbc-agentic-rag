@@ -16,3 +16,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sbc_core"]
+
+[project.scripts]
+sbc-llm-smoke = "sbc_core.llm_smoke:main"

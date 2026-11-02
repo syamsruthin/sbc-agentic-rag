@@ -23,6 +23,7 @@ from sbc_extract.costs import GRAMMAR_VERSION, CostParse
 from sbc_extract.extract import Chunk, Extracted, extract
 from sbc_extract.limits import LimitParse
 from sbc_extract.review import load_allowlist
+from sbc_index.puf_check import hios_ids
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -80,6 +81,11 @@ CREATE TABLE plan_chunk (
     PRIMARY KEY (plan_id, position)
 ) WITHOUT ROWID;
 CREATE TABLE quarantine (markdown TEXT PRIMARY KEY, plan_key TEXT, reasons TEXT NOT NULL);
+-- Exact plan lookup by the IDs a user can type: contract code, SBC id, HIOS plan id with its -NN variant
+-- ("hios") and without it ("hios_base", which can match several variants).
+CREATE TABLE plan_identifier (
+    kind TEXT NOT NULL, value TEXT NOT NULL, plan_id INTEGER NOT NULL, PRIMARY KEY (kind, value, plan_id)
+) WITHOUT ROWID;
 CREATE VIRTUAL TABLE plan_name_fts USING fts5(
     plan_key UNINDEXED, plan_name, catalog_plan_name, contract_code, tokenize = 'trigram'
 );
@@ -103,6 +109,15 @@ class BuildStats:
 
 def _pages(pages: Iterable[int]) -> str:
     return ",".join(str(p) for p in pages)
+
+
+def _identifiers(
+    contract_code: str, sbc_id: str, sbc_hios: str, catalog: dict[str, str]
+) -> list[tuple[str, str]]:
+    ids = [("contract_code", contract_code), ("sbc_id", sbc_id)]
+    for hios in hios_ids(sbc_hios, json.dumps(catalog)):
+        ids += [("hios", hios), ("hios_base", hios.split("-")[0])]
+    return [(kind, value) for kind, value in ids if value]
 
 
 # Fixed placeholder lists, not user input.
@@ -169,6 +184,11 @@ class _Writer:
         self.db.execute(
             "INSERT INTO plan_name_fts VALUES (?, ?, ?, ?)",
             (plan.plan_key, plan.plan_name, c.get("plan_name", ""), plan.contract_code),
+        )
+        ids = _identifiers(plan.contract_code, plan.sbc_id, plan.hios_ids, c)
+        self.db.executemany(
+            "INSERT OR IGNORE INTO plan_identifier VALUES (?, ?, ?)",
+            [(kind, value, plan_id) for kind, value in ids],
         )
         self.db.executemany(
             "INSERT INTO plan_question VALUES (?, ?, ?, ?, ?)",

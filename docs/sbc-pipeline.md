@@ -75,7 +75,20 @@ can be flagged, or sit on a different page, in one plan and not another, so they
 the facts bundle (`FactsReader.chunk_context`).
 
 Collections are never changed after loading: the loader refuses to write into an existing one unless
-`--recreate` is passed, and it validates the point count and plan-filtered queries before finishing.
+`--recreate` is passed, and it validates the point count and plan-filtered queries before finishing. Without an
+embedder the loader builds a BM25-only collection, which the retrieval eval uses in Qdrant's in-memory mode.
+
+At query time (`sbc_retrieval.text_search`) the BM25 query also gets the SBC's own label for each service the
+question names, from the service taxonomy: "MRI" adds "Imaging (CT/PET scans, MRIs)". The dense query and the
+rerank see the user's text unchanged.
+
+## Plan resolution
+
+`sbc_retrieval.resolver.PlanResolver` decides which plans a turn is about, in code (PLAN.md section 3.4.1):
+contract codes, HIOS plan IDs and SBC IDs typed in the question (looked up exactly in the bundle's
+`plan_identifier` table), then plans selected in the UI, then name search on the plan names the classifier
+found. A name or ID that matches more than one plan comes back `ambiguous` with the candidates for a
+clarifying question; it is never guessed. Plans outside the bot's scope can't be resolved, even by exact ID.
 
 ## Other years and languages
 

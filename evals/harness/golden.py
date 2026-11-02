@@ -145,14 +145,16 @@ def _bundle_value(db: sqlite3.Connection, plan_key: str, fact: str) -> str | Non
         ).fetchone()
     else:
         found = db.execute(
-            """SELECT t.text FROM plan_example e JOIN plan p USING (plan_id) JOIN text_string t
-               ON t.text_id = e.data_id WHERE p.plan_key = ? AND e.example_id = ?""",
+            """SELECT t.text, e.total_cost, e.total_pay FROM plan_example e JOIN plan p USING (plan_id)
+               JOIN text_string t ON t.text_id = e.data_id WHERE p.plan_key = ? AND e.example_id = ?""",
             (plan_key, rest[0]),
         ).fetchone()
         if not found:
             return None
         data = json.loads(found[0])
-        lines = dict(data["plan_terms"]) | dict(data["cost_sharing"]) | dict(data["not_covered"])
+        # The same lines as FactsReader.example_facts, including the two totals.
+        lines = dict(data["plan_terms"]) | {"Total Example Cost": found[1]} | dict(data["cost_sharing"])
+        lines |= dict(data["not_covered"]) | {data.get("total_pay_label") or "total_pay": found[2]}
         return lines.get(rest[1])
     return row[0] if row else None
 

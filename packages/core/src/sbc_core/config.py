@@ -92,6 +92,8 @@ class Retrieval(_Model):
     keep_per_plan: int = Field(gt=0)
     rerank_enabled: bool
     max_plans_per_search: int = Field(gt=0)
+    synonym_expansion: bool = True
+    """Add the SBC's own labels for services the query names to the BM25 query (PLAN.md 3.4.4)."""
 
 
 class SearchIndex(_Model):

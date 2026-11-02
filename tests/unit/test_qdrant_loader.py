@@ -115,3 +115,20 @@ def test_cache_round_trips_float32(cache: EmbeddingCache) -> None:
     vectors, new = cache.ensure({"h": "text"}, fake_embed)
     assert new == 1
     assert cache.get_many(["h"]) == vectors
+
+
+def test_bm25_only_collection_needs_no_embedder(tmp_path: Path, qdrant: QdrantClient) -> None:
+    bundle = make_bundle(tmp_path)
+    report = load(qdrant, bundle, prefix="local", embed=None, cache=None)
+    _, records = read_chunks(bundle)
+    assert (report.embedding_model, report.dimensions, report.newly_embedded) == ("none", 0, 0)
+    assert report.points == len(records)
+    assert report.plan_filter_checks == 2
+    info = qdrant.get_collection(report.collection)
+    assert not info.config.params.vectors
+    assert info.config.params.sparse_vectors is not None
+
+
+def test_embedder_and_cache_go_together(tmp_path: Path, qdrant: QdrantClient, cache: EmbeddingCache) -> None:
+    with pytest.raises(LoadError, match="both"):
+        load(qdrant, make_bundle(tmp_path), prefix="local", embed=None, cache=cache)

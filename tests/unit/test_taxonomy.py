@@ -98,3 +98,36 @@ def test_every_synonym_resolves_to_its_own_service(tax: Taxonomy) -> None:
 
 def test_normalize() -> None:
     assert normalize("  Children’s  Dental Check-Up. ") == "children's dental check-up"
+
+
+def _scanned(tax: Taxonomy, text: str) -> list[tuple[str, tuple[str, ...], tuple[str, ...]]]:
+    return [(h.term, h.match.service_ids, h.match.drug_tags) for h in tax.scan(text)]
+
+
+def test_scan_finds_terms_inside_a_question(tax: Taxonomy) -> None:
+    assert _scanned(tax, "Compare the ER and urgent care copays") == [
+        ("er", ("emergency_room",), ()),
+        ("urgent care", ("urgent_care",), ()),
+    ]
+
+
+def test_scan_prefers_the_longest_term_and_allows_plurals(tax: Taxonomy) -> None:
+    assert [h.term for h in tax.scan("Are CT scans or MRIs covered?")] == ["ct scan", "mri"]
+    assert [h.term for h in tax.scan("generic drugs")] == ["generic drugs"]
+
+
+def test_scan_needs_whole_words(tax: Taxonomy) -> None:
+    assert tax.scan("Is there a deductible for this plan?") == []  # "er" inside words is not the ER
+    assert tax.scan("superb") == []
+
+
+def test_scan_spans_index_the_original_text(tax: Taxonomy) -> None:
+    text = "What’s the cost of Children’s glasses?"
+    (hit,) = tax.scan(text)
+    assert text[hit.start : hit.end] == "Children’s glasses"
+    assert hit.match.service_ids == ("child_glasses",)
+
+
+def test_scan_reports_ambiguous_terms(tax: Taxonomy) -> None:
+    (hit,) = tax.scan("How much is a doctor visit?")
+    assert hit.match.ambiguous

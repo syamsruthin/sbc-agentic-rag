@@ -20,3 +20,4 @@ packages = ["src/sbc_ingest"]
 sbc-portal = "sbc_ingest.portal:main"
 sbc-to-markdown = "sbc_ingest.to_markdown:main"
 sbc-verify = "sbc_ingest.verify:main"
+sbc-snapshot = "sbc_ingest.snapshot:main"

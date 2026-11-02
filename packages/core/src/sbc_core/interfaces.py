@@ -28,9 +28,18 @@ class FactsReader(Protocol):
         plan_year: int | None = None,
         states: Sequence[str] = (),
         markets: Sequence[str] = (),
+        exclude_plan_statuses: Sequence[str] = (),
+        exclude_exchanges: Sequence[str] = (),
         limit: int = 10,
     ) -> list[PlanSummary]:
         """Plans whose SBC or catalog name, or contract code, contains ``text``. Best match first."""
+        ...
+
+    def find_plans_by_identifier(self, identifier: str, *, plan_year: int | None = None) -> list[PlanSummary]:
+        """Plans whose contract code, SBC id or HIOS plan id equals ``identifier`` exactly.
+
+        A HIOS id without its ``-NN`` variant suffix matches every variant, so it can return several plans.
+        """
         ...
 
     def benefit_facts(

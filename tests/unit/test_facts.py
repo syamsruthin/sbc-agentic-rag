@@ -117,3 +117,16 @@ def test_chunk_context(reader: SqliteFactsReader) -> None:
     assert all(c.plan_key == PLAN for c in found.values())
     assert reader.chunk_context(PLAN, []) == {}
     assert fact.carried_note is False
+
+
+def test_find_plans_by_name_applies_scope_exclusions(reader: SqliteFactsReader) -> None:
+    assert len(reader.find_plans_by_name("Example", exclude_plan_statuses=["Discontinued"])) == 2
+    assert len(reader.find_plans_by_name("Example", exclude_exchanges=["Purchased Prior to 01/01/2014"])) == 2
+
+
+def test_find_plans_by_identifier(reader: SqliteFactsReader) -> None:
+    assert [p.plan_key for p in reader.find_plans_by_identifier("ZZ01")] == [PLAN, GOLD]
+    assert [p.plan_key for p in reader.find_plans_by_identifier("100000000002")] == [GOLD]
+    assert reader.find_plans_by_identifier("100000000002", plan_year=2026) == []
+    assert reader.find_plans_by_identifier("ZZ0") == []
+    assert reader.find_plans_by_identifier(" ") == []

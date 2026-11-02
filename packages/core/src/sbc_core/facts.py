@@ -101,6 +101,8 @@ class SqliteFactsReader:
         plan_year: int | None = None,
         states: Sequence[str] = (),
         markets: Sequence[str] = (),
+        exclude_plan_statuses: Sequence[str] = (),
+        exclude_exchanges: Sequence[str] = (),
         limit: int = 10,
     ) -> list[PlanSummary]:
         text = " ".join(text.split())
@@ -117,6 +119,12 @@ class SqliteFactsReader:
         if markets:
             where.append(f"p.market IN ({_in(markets)})")
             params += list(markets)
+        if exclude_plan_statuses:
+            where.append(f"COALESCE(p.plan_status, '') NOT IN ({_in(exclude_plan_statuses)})")
+            params += list(exclude_plan_statuses)
+        if exclude_exchanges:
+            where.append(f"COALESCE(p.exchange, '') NOT IN ({_in(exclude_exchanges)})")
+            params += list(exclude_exchanges)
         params.append(limit)
         sql = (
             "JOIN plan_name_fts f ON f.plan_key = p.plan_key WHERE "
@@ -124,6 +132,17 @@ class SqliteFactsReader:
             + " ORDER BY bm25(plan_name_fts), p.plan_name LIMIT ?"
         )
         return self._load_plans(sql, params)
+
+    def find_plans_by_identifier(self, identifier: str, *, plan_year: int | None = None) -> list[PlanSummary]:
+        identifier = identifier.strip()
+        if not identifier:
+            return []
+        sql = "JOIN plan_identifier i ON i.plan_id = p.plan_id WHERE i.value = ?"
+        params: list[object] = [identifier]
+        if plan_year is not None:
+            sql += " AND p.plan_year = ?"
+            params.append(plan_year)
+        return self._load_plans(sql + " GROUP BY p.plan_id ORDER BY p.plan_key", params)
 
     # ------------------------------------------------------------------ facts
 
