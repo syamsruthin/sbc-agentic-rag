@@ -47,12 +47,16 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [x] PUF cross-check result: 0 unexplained mismatches on the full corpus (448 linked SBCs, 0 mismatches)
 - [x] Facts bundle builder v0 (`sbc-build-bundle`)
 - [x] Facts bundle ≤ 300 MB on the full corpus (139 MB; 9,690 plans; A3655 and A3754 quarantined;
-      30,498 unique chunks)
+      30,498 unique chunks). With the BM25 search tables: 150 MB (rebuilt locally 2026-11-02 from a fresh
+      catalog: 9,692 SBCs, 9,692 REVIEW / 0 FAIL, 99.99% exact, PUF 0 mismatches, snapshot unchanged)
 - [x] Domain types, `FactsReader` / `SearchIndex` interfaces and the SQLite facts reader
 - [x] OpenRouter gateway (chat, embeddings, rerank; ZDR routing, retries, usage)
 - [x] Search index moved from Qdrant Cloud into the facts bundle (PLAN.md change approved 2026-11-02): BM25
       tables written by `sbc-build-bundle`, embeddings added by `sbc-embed-bundle` (embedding cache), exact
-      plan-filtered hybrid search in `sbc_core.search.SqliteSearchIndex`; `TextSearcher` unchanged
+      plan-filtered hybrid search in `sbc_core.search.SqliteSearchIndex`; `TextSearcher` unchanged. Checked
+      against the old Qdrant code on the same bundle (golden 0.2.0, BM25 only): identical recall@5/@10, context
+      recall, plan filter and service mapping; 85 ranking positions differ, all exact BM25 score ties (Qdrant
+      orders ties arbitrarily, the bundle index by chunk id); the eval runs in 2 s instead of about 5 min
 - [x] `sbc-llm-smoke` run (2026-11-02): chat passes; `voyageai/voyage-4-lite` and `voyageai/rerank-3-lite` are
       refused under ZDR (no ZDR endpoint on OpenRouter; `cohere/rerank-4-fast` has none either)
 - [ ] Decide the ZDR replacements (PLAN.md 8): proposed `baai/bge-m3` embeddings; rerank measured as RRF-only
@@ -69,7 +73,7 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
       all `pending`
 - [ ] Golden dataset verified against the PDFs by a person (then items gate merges; 0.2.0 is the set to review)
 - [x] Retrieval eval, BM25-only configuration on golden 0.2.0: plan filter 100%, 0 confident wrong-plan,
-      service mapping 98.0%, recall@5 0.847, recall@10 0.952, MRR@10 0.713
+      service mapping 98.0%, recall@5 0.847, recall@10 0.952, MRR@10 0.712 (0.713 with Qdrant's tie order)
 - [ ] Retrieval eval, full and no-rerank configurations (needs the embedded bundle); recall@5 ≥ 0.90 gate
 - [ ] Taxonomy v2 synonyms from the eval: "delivering (a baby)" is unmapped, "pharmacy" maps to every drug
       tier, and "hospital" (an ambiguous term) adds inpatient rows to a delivery question
