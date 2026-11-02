@@ -25,7 +25,7 @@ from sbc_extract.extract import Chunk, Extracted, extract
 from sbc_extract.limits import LimitParse
 from sbc_extract.review import load_allowlist
 from sbc_index.puf_check import hios_ids
-from sbc_index.search_build import write_bm25
+from sbc_index.search_build import PAGE_SIZE, write_bm25
 
 SCHEMA = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -295,6 +295,7 @@ def build_bundle(
     }
     db.executemany("INSERT INTO meta VALUES (?, ?)", [(k, json.dumps(v)) for k, v in meta.items()])
     db.commit()
+    db.execute(f"PRAGMA page_size = {PAGE_SIZE}")
     db.execute("VACUUM")
     db.close()
     tmp.replace(out)

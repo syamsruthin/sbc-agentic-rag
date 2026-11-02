@@ -39,6 +39,9 @@ CREATE TABLE bm25_df (term_id INTEGER PRIMARY KEY, df INTEGER NOT NULL);
 CREATE TABLE chunk_vector (chunk_id INTEGER PRIMARY KEY, vector BLOB NOT NULL);
 """
 PROBE_RANK = 3
+# A float16 1024-d vector row is just over 2 KB, so 4 KB pages hold one row each and waste half the space.
+# 16 KB pages hold seven.
+PAGE_SIZE = 16384
 
 
 class SearchBuildError(Exception):
@@ -128,6 +131,7 @@ def embed_bundle(
                 "model": cache.model, "dimensions": cache.dimensions, "dtype": "float16", "normalized": True,
             }  # fmt: skip
             db.execute("INSERT OR REPLACE INTO meta VALUES ('embedding', ?)", (json.dumps(meta),))
+        db.execute(f"PRAGMA page_size = {PAGE_SIZE}")
         db.execute("VACUUM")
     report.plan_filter_checks = validate(bundle, records, vectors, checks=filter_checks)
     log(f"bundle {version}: {report.chunks} vectors, {report.plan_filter_checks} plan-filter checks passed")

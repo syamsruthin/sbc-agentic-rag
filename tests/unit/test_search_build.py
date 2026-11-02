@@ -13,7 +13,7 @@ import pytest
 
 from sbc_core.search import SqliteSearchIndex
 from sbc_index.embed_cache import EmbeddingCache
-from sbc_index.search_build import SearchBuildError, embed_bundle, read_chunks
+from sbc_index.search_build import PAGE_SIZE, SearchBuildError, embed_bundle, read_chunks
 from tests.unit.test_bundle import make_bundle
 
 DIMS = 8
@@ -91,6 +91,8 @@ def test_embed_stores_validates_and_reuses_the_cache(tmp_path: Path, cache: Embe
     assert report.plan_filter_checks == 2
     assert _meta(bundle)["embedding"] == {"model": MODEL, "dimensions": DIMS, "dtype": "float16",
                                           "normalized": True}  # fmt: skip
+    with closing(sqlite3.connect(bundle)) as db:
+        assert db.execute("PRAGMA page_size").fetchone() == (PAGE_SIZE,)
 
     with pytest.raises(SearchBuildError, match="already has embeddings"):
         embed_bundle(bundle, embedder, cache)
