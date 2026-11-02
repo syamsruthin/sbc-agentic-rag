@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import dataclasses
 import json
 import sqlite3
 from collections.abc import Callable, Iterator
@@ -11,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from sbc_extract.review import load_allowlist
 from sbc_index.bundle import build_bundle
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sbc_minimal.md"
@@ -92,10 +94,19 @@ def test_meta_records_versions(bundle: sqlite3.Connection) -> None:
     meta = {k: json.loads(v) for k, v in bundle.execute("SELECT key, value FROM meta")}
     assert meta["bundle_version"] == "test.1"
     assert meta["plans"] == 2
-    assert meta["review_allowlist_signed"] is False
+    assert meta["review_allowlist_signed"] is True
 
 
-def test_release_build_requires_signed_allowlist(tmp_path: Path) -> None:
+def test_release_build_requires_signed_allowlist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    unsigned = dataclasses.replace(load_allowlist(), signed_off_by=None, signed_off_on=None)
+    monkeypatch.setattr("sbc_index.bundle.load_allowlist", lambda: unsigned)
     md_dir, report = _corpus(tmp_path)
     with pytest.raises(SystemExit, match="no sign-off"):
         build_bundle(md_dir, report, tmp_path / "x.sqlite", "test.2", root=tmp_path, release=True)
+
+
+def test_the_shipped_allowlist_is_signed() -> None:
+    """The sign-off date sits under a quoted "on" key: YAML 1.1 reads a bare `on` as true, which hid it."""
+    allowlist = load_allowlist()
+    assert allowlist.signed
+    assert (allowlist.signed_off_by, allowlist.signed_off_on) == ("Syamsruthin Kaliki", "2026-11-02")
