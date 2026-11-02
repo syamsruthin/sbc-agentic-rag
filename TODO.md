@@ -109,8 +109,10 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [x] Fact placeholders, verifier and renderer (`sbc_agent.answer`, `docs/answer-path.md`): number, placeholder,
       link and advice firewall; header, SBC wording, page citations, required limitation notes, carried-note and
       inferred-heading labels, disclaimer; deterministic template fallback through the same checks
-- [ ] Decide how to link the 1,383 SBCs that have no public PDF URL (portal preview form only): an API
-      endpoint that fetches the PDF, or hosting the PDFs. Until then their citations link to the portal
+- [x] Decided (2026-11-02): the 1,383 SBCs without a public PDF URL get an API endpoint,
+      `GET /sbc/{plan_key}.pdf`, that fetches the PDF from the portal's preview form, checks its sha256 and
+      streams it (PLAN.md 3.7)
+- [ ] Build that endpoint with the API, and point those plans' citations at it
 - [ ] Broker web app with plan picker
 - [ ] Supabase auth
 - [ ] Langfuse tracing
