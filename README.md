@@ -52,8 +52,10 @@ flowchart LR
     EXT --> XC
     XC --> FACTS[("Facts bundle vN<br/>SQLite tables")]
     FACTS --> DIFF["Diff report<br/>human sign-off"]
-    EXT --> CHK["Chunker<br/>content-addressed"]
+    EXT --> CHK["Chunker<br/>content-addressed, BM25 weights"]
     CHK --> EMB["Embed new chunks via OpenRouter<br/>cached by chunk hash"]
+    CHK --> FACTS
+    EMB --> FACTS
   end
 
   subgraph CLIENTS["Frontends (Cloudflare Pages)"]
@@ -66,11 +68,10 @@ flowchart LR
     AGENT["LangGraph agent"]
     TOOLS["Tools<br/>find_plans, get_plan_facts,<br/>search_sbc_text, compare_plans,<br/>estimate_cost, ask_clarifying_question"]
     VERIFY["Verifier<br/>number + citation firewall"]
-    IDX[("Facts bundle vN<br/>baked into image, read-only")]
+    IDX[("Facts bundle vN<br/>facts + search index,<br/>baked into image, read-only")]
   end
 
   OR["OpenRouter<br/>LLMs, embeddings, rerank"]
-  QD[("Qdrant Cloud<br/>collection sbc_chunks__vN")]
   SB[("Supabase<br/>Auth + Postgres")]
   UP[("Upstash Redis<br/>rate limits, exact cache")]
   LF["Langfuse<br/>traces, cost, evals, review queues"]
@@ -81,7 +82,6 @@ flowchart LR
   EDGE --> AGENT
   AGENT --> TOOLS
   TOOLS --> IDX
-  TOOLS --> QD
   TOOLS --> OR
   AGENT --> OR
   AGENT --> VERIFY
@@ -91,11 +91,10 @@ flowchart LR
   AGENT --> SB
   AGENT -.-> LF
   DIFF ==>|"docker build"| IDX
-  EMB ==>|"create collection vN"| QD
   DP -.-> EDGE
 ```
 
-**Stack:** Python 3.13, uv workspace, LangGraph, FastAPI, Qdrant Cloud, SQLite, OpenRouter (Claude Haiku 5.5,
+**Stack:** Python 3.13, uv workspace, LangGraph, FastAPI, SQLite (facts and search index in one file), OpenRouter (Claude Haiku 5.5,
 Sonnet 5.5 and Opus 5.5; Voyage embeddings and rerank), Supabase, Upstash, Langfuse, Doppler, Cloud Run,
 Cloudflare Pages. PLAN.md section 4 explains each choice.
 
@@ -106,16 +105,16 @@ config/        base.yaml, bots/{broker,public}.yaml, env/{local,dev,prd}.yaml
 packages/      Python workspace packages (imported as sbc_<name>)
   sbc_ingest/    catalog, download, convert, verify SBCs (sbc-portal, sbc-to-markdown, sbc-verify)
   sbc_extract/   Markdown -> structured rows, cost grammar
-  sbc_index/     facts bundle + Qdrant collection builder
-  core/          domain types, config loader, OpenRouter gateway
-  retrieval/     plan resolver, service taxonomy, hybrid search
+  sbc_index/     facts bundle builder, with its BM25 and embedding search index
+  core/          domain types, config loader, facts and search readers, OpenRouter gateway
+  retrieval/     plan resolver, query expansion, text-search pipeline
   tools/         agent tools, cost calculator
   agent/         LangGraph graph, prompts, verifier, renderer
   api/           FastAPI app
 apps/          broker/, shopper/, chat-ui/ (React)
 evals/         golden datasets, judge calibration, harness
 tests/         unit/, integration/, contract/, load/
-infra/         Docker, Cloud Run, Supabase migrations, Qdrant collection
+infra/         Docker, Cloud Run, Supabase migrations
 docs/          pipeline notes, ADRs, runbook
 data/          fetched and generated SBC data (not committed)
 ```
@@ -164,7 +163,7 @@ if any secret it needs is missing.
 |---|---|
 | Repository setup and public-repo hygiene | Done |
 | Scaffolding: workspace, config, lint, types, tests, CI | Done (PR #1) |
-| Phase 0: extraction, facts bundle, Qdrant loader, golden dataset v0 | In progress (live load and sign-offs left) |
+| Phase 0: extraction, facts bundle with search index, golden dataset | In progress (embeddings, full eval and sign-offs left) |
 | Phase 1: Broker Assistant MVP (internal alpha) | Planned |
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |

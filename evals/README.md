@@ -34,8 +34,8 @@ uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite --
 uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0
 ```
 
-- `bm25_only` builds an in-memory Qdrant collection from the bundle and needs no keys (about 5 minutes for the full corpus).
-- `full` and `no_rerank` need `QDRANT_URL`, `QDRANT_API_KEY` and `OPENROUTER_API_KEY_BROKER`, and a collection loaded with `sbc-load-qdrant`. Pass `--setup` more than once to run several setups into one report; with both `full` and `no_rerank` the report shows the rerank lift.
+- `bm25_only` searches the bundle's BM25 index and needs no keys.
+- `full` and `no_rerank` need a bundle embedded with `sbc-embed-bundle` (using the configured embedding model) and `OPENROUTER_API_KEY_BROKER` for the query embedding and rerank. Pass `--setup` more than once to run several setups into one report; with both `full` and `no_rerank` the report shows the rerank lift.
 - Reports go to `evals/reports/retrieval-<bundle>-<time>.{json,md}`. `--fail-on-hard-gates` exits non-zero on a hard-gate failure.
 
 ### What the metrics mean

@@ -1,6 +1,6 @@
 # PLAN.md: Agentic RAG chatbots over 2027 SBCs
 
-**Status:** draft for review, revision 2 (2026-11-01). This is a plan only; no implementation has started.
+**Status:** approved, revision 2 (2026-11-01) plus the approved changes listed below. Implementation is in progress; `TODO.md` tracks it.
 **Scope:** two chatbots on one shared core:
 
 - **Broker Assistant**: authenticated brokers and HR teams, all markets.
@@ -12,13 +12,14 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 
 - Every model call goes through OpenRouter: LLMs, embeddings (`voyageai/voyage-4-lite`) and reranker (`voyageai/rerank-3-lite`). PII detection is the one exception and stays local (§3.8).
 - No SLM or vLLM; this is now a firm decision.
-- Qdrant Cloud holds the text-search index. Structured facts stay in a SQLite facts bundle shipped inside the API image.
+- ~~Qdrant Cloud holds the text-search index.~~ Superseded on 2026-11-02 (below): the text-search index lives in the SQLite facts bundle with the structured facts, shipped inside the API image.
 - Hosting stays on Cloud Run. Hugging Face Spaces was evaluated and rejected (§1.3).
 - Doppler is the source of truth for secrets.
 - Appendix C adds a functional overview with sample interactions.
 - §3.2.4 now explains the chunking strategy in full, with an example chunk and the reasoning behind it.
 - §3.2.1 and §11 (approved in Phase 0): converter sub-label fix and punctuation-exact verification; the byte-identical criterion now applies to the move, and the fix's changes are listed in a diff report.
-- §10 (approved during scaffolding): CI workflows live in `.github/workflows/`, because GitHub only runs workflows from there, and environment files use `prd` to match Doppler and the Qdrant collection prefixes.
+- §10 (approved during scaffolding): CI workflows live in `.github/workflows/`, because GitHub only runs workflows from there, and environment files use `prd` to match Doppler.
+- **Search index back in SQLite (approved 2026-11-02).** Qdrant Cloud is dropped. Every plan-filtered search scores at most about 370 chunks (about 61 per plan, up to 6 plans), and even broker discovery scans only about 30K chunks, so no approximate-nearest-neighbour service is needed. The bundle now holds BM25 term weights and float16 embeddings next to the facts (about 60 MB more), so code, facts and index ship and roll back as one file, with no network hop per search, no free-cluster suspension risk, no collection pinning and no Qdrant keys. A vector service is reconsidered only if a much larger corpus arrives (for example EOCs). Sections 0, 1.3, 2.3, 3, 4, 7, 8, 9, 10, 11, 12 and the appendices are updated.
 
 ---
 
@@ -34,9 +35,9 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
   - A verifier rejects any digit the LLM typed itself.
   - Arithmetic goes through a deterministic calculator.
 - **Plan identity is enforced in code, not by the LLM.** Every retrieval call requires resolved `plan_key`s. Ambiguous names (for example "Premier Plus", which has 26 SBCs in MO Individual) trigger a clarifying question, never a guess.
-- **Read path, in two stores:**
+- **Read path, one file:**
   - **Structured facts:** an immutable *facts bundle* built offline and baked into the container image. It is one SQLite file with the plan, benefit, limit, list and coverage-example tables. Exact lookups need no network hop, and the facts roll back atomically with the code.
-  - **Text search:** Qdrant Cloud (free tier) holds the 38K unique chunks with dense vectors and BM25 sparse vectors, filtered by plan. Each bundle version gets its own collection, and the code pins the collection name.
+  - **Text search:** the same bundle holds the unique chunks (about 30–38K) with their BM25 term weights and dense embeddings. Every search is filtered to the resolved plans in SQL and scored exactly in the API process; there is no separate search service.
 - **All models go through OpenRouter:**
   - LLMs: Claude Haiku 5.5 for routing, rewriting and guard classification; Claude Sonnet 5.5 for the agent and answer composition; Claude Opus 5.5 as the offline judge.
   - Embeddings: `voyageai/voyage-4-lite`. Reranker: `voyageai/rerank-3-lite`.
@@ -46,7 +47,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
   - API: Cloud Run free tier.
   - Frontends: Cloudflare Pages.
   - Broker auth and operational database: Supabase free.
-  - Search index: Qdrant Cloud free.
+  - Search index: inside the facts bundle (no service).
   - Secrets: Doppler (free Developer plan).
   - Rate limits: Upstash Redis free.
   - Tracing, evals and review queues: Langfuse Cloud Hobby.
@@ -102,7 +103,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 | Hosting | **OpenRouter for LLM calls; free deployment options** | All models go through OpenRouter. Infrastructure uses free tiers (§4, §9), with the first paid upgrades named. |
 | Host everything on Supabase? | **No; keep the current split** | Supabase handles broker auth and the operational Postgres only. Edge Functions are TypeScript/Deno with 256 MB memory and a 20 MB size cap, so they can't run the Python agent with the in-image index and ONNX models. An all-Supabase setup would need a TypeScript rewrite and an index in Postgres (likely Supabase Pro). The Python API runs on Cloud Run. |
 | Models via OpenRouter (revision 2) | **LLMs, embeddings and reranker all through OpenRouter** | Embeddings `voyageai/voyage-4-lite`, rerank `voyageai/rerank-3-lite`; no model weights in the container (§3.6). PII detection stays local, because finding PII by sending raw text to an external model would defeat the purpose (§3.8). |
-| Qdrant Cloud for the read store (revision 2) | **Yes, for the search index only** | Qdrant holds chunks with dense and BM25 sparse vectors and plan filters. Structured facts stay in the SQLite facts bundle for exact SQL lookups, joins, ranking and atomic rollback (§3.2, §3.4.3). |
+| Qdrant Cloud for the read store (revision 2) | Yes, for the search index only; **reversed on 2026-11-02** | Plan-filtered candidate sets are a few hundred chunks, so exact scoring inside the API is faster and simpler than a network search service. The search index now lives in the SQLite facts bundle with the facts (§3.2.4, §3.4.3). |
 | Hugging Face for API hosting (revision 2) | Asked for; **rejected after review, Cloud Run kept** | Docker Spaces now require a paid HF plan (PRO, $9/month). Spaces can only make outbound connections on ports 80, 443 and 8080. That blocks Qdrant Cloud's documented API ports (6333/6334) and Supabase Postgres (5432/6543). |
 | Doppler for secrets (revision 2) | **Yes** | Doppler is the source of truth. It syncs to GCP Secret Manager for Cloud Run and to GitHub Actions for CI, so the API has no runtime dependency on Doppler (§8). |
 
@@ -165,7 +166,7 @@ None of these block the plan; each has a default.
 |---|---|---|
 | Time to first answer token, lookup | p50 ≤ 2.0 s, p95 ≤ 4.0 s | Status events ("Looking up the deductible…") stream sooner and do not count |
 | Full answer, single-plan lookup | p50 ≤ 4 s, p95 ≤ 8 s | Fast path: 1 Haiku call + deterministic tools + 1 compose call |
-| Full answer, comparison or scenario | p50 ≤ 8 s, p95 ≤ 15 s | Agent loop of at most 4 LLM calls. Each text search adds about 0.3–0.6 s (OpenRouter embedding, Qdrant query, OpenRouter rerank). |
+| Full answer, comparison or scenario | p50 ≤ 8 s, p95 ≤ 15 s | Agent loop of at most 4 LLM calls. Each text search adds about 0.3–0.6 s (OpenRouter embedding and rerank; the local search itself takes milliseconds). |
 | Cold start (free tier, min-instances 0) | ≤ 8 s added to the first request after idle | First paid upgrade: min-instances 1 (about $7–10/month) |
 | Cost per query, blended | Public ≤ $0.015; Broker ≤ $0.03 | Appendix A has the model. The public target assumes Haiku 5.5 passes on the fast path; Sonnet everywhere is about $0.021. |
 | Hard per-turn cost ceiling | Public $0.05; Broker $0.12 | Enforced through token and step budgets |
@@ -192,8 +193,10 @@ flowchart LR
     EXT --> XC
     XC --> FACTS[("Facts bundle vN<br/>SQLite tables")]
     FACTS --> DIFF["Diff report<br/>human sign-off"]
-    EXT --> CHK["Chunker<br/>content-addressed"]
+    EXT --> CHK["Chunker<br/>content-addressed, BM25 weights"]
     CHK --> EMB["Embed new chunks via OpenRouter<br/>cached by chunk hash"]
+    CHK --> FACTS
+    EMB --> FACTS
   end
 
   subgraph CLIENTS["Frontends (Cloudflare Pages)"]
@@ -206,11 +209,10 @@ flowchart LR
     AGENT["LangGraph agent"]
     TOOLS["Tools<br/>find_plans, get_plan_facts,<br/>search_sbc_text, compare_plans,<br/>estimate_cost, ask_clarifying_question"]
     VERIFY["Verifier<br/>number + citation firewall"]
-    IDX[("Facts bundle vN<br/>baked into image, read-only")]
+    IDX[("Facts bundle vN<br/>facts + search index,<br/>baked into image, read-only")]
   end
 
   OR["OpenRouter<br/>LLMs, embeddings, rerank"]
-  QD[("Qdrant Cloud<br/>collection sbc_chunks__vN")]
   SB[("Supabase<br/>Auth + Postgres")]
   UP[("Upstash Redis<br/>rate limits, exact cache")]
   LF["Langfuse<br/>traces, cost, evals, review queues"]
@@ -221,7 +223,6 @@ flowchart LR
   EDGE --> AGENT
   AGENT --> TOOLS
   TOOLS --> IDX
-  TOOLS --> QD
   TOOLS --> OR
   AGENT --> OR
   AGENT --> VERIFY
@@ -231,7 +232,6 @@ flowchart LR
   AGENT --> SB
   AGENT -.-> LF
   DIFF ==>|"docker build"| IDX
-  EMB ==>|"create collection vN"| QD
   DP -.-> EDGE
 ```
 
@@ -265,7 +265,8 @@ flowchart LR
 | `plan_limit` | `(plan_key, kind, tier_id)` | Parsed deductible and OOP: `individual`, `family`, `embedded` (true, false, unknown, from the CMS "Why this matters" wording), separate drug OOP, `source_question_id` |
 | `plan_list_item` | `(plan_key, list, item_id)` | `list` (`excluded` or `other_covered`), `item_verbatim`, `item_canonical`, `page` |
 | `plan_coverage_example` | `(plan_key, example)` | `example` (`peg`, `joe`, `mia`); deductible; specialist, hospital and other coinsurance; total example cost; deductibles; copays; coinsurance; limits/exclusions; total member pays (all verbatim plus numeric) |
-| `chunk`, `plan_chunk` | `chunk_hash`; `(plan_key, chunk_hash)` | Unique chunk text + section path (source of truth; the Qdrant collection is derived from it); mapping table with page and order |
+| `chunk`, `plan_chunk` | `chunk_hash`; `(plan_key, chunk_hash)` | Unique chunk text + section path; mapping table with page and order |
+| `chunk_bm25`, `bm25_df`, `chunk_vector` | `chunk_id`; `term_id`; `chunk_id` | The search index: each unique chunk's BM25 term weights, each term's document frequency, and each chunk's embedding (unit-normalized float16, written by `sbc-embed-bundle`) |
 
 **Validation at build time.** Any failure blocks the bundle.
 
@@ -300,7 +301,7 @@ Limitations, Exceptions, & Other Important Information: Copayment waived if admi
 - **Every chunk stands on its own.** A row carries its section path, column labels and note, so a cost is never separated from its service, tier or limitation. Where the SBC prints one note in a box spanning several rows, the converter already repeats it on each row.
 - **The plan name is not in the embedded text.**
   - Plan identity is a filter, not something to search on. Every search is restricted to the resolved plans (§3.4.3), so a chunk from another plan can't come back, however similar its wording.
-  - Identical text is stored once. Each chunk is identified by a hash of its text, so 593,146 chunks shrink to 38,406 unique ones (6.5%), because thousands of plans share rows like "Not covered" or the same appeal-rights text. Each unique chunk is one Qdrant point that lists every plan containing it.
+  - Identical text is stored once. Each chunk is identified by a hash of its text, so 593,146 chunks shrink to 38,406 unique ones (6.5%), because thousands of plans share rows like "Not covered" or the same appeal-rights text. Each unique chunk is indexed once, and `plan_chunk` links it to every plan containing it.
   - Plan name, contract code, year and page are added at render time as a context header, which doubles as the citation: "[Blue Access PPO Option 52 with Rx Option 7 | BTCU8 | 2027 | SBC p. N]".
 - **Inferred content is flagged.** Two flags travel with the chunk, and answers that use a flagged chunk must say so (§3.2.2):
   - `carried_note`: the note continues from the previous page's box.
@@ -311,23 +312,23 @@ Limitations, Exceptions, & Other Important Information: Copayment waived if admi
 
 - Cutting by token count would split table rows, leaving a cost without its service or tier label.
 - Overlap only duplicates text when the boundaries are already meaningful.
-- Putting the plan name into chunks would make every chunk unique. That means about 15× more vectors, too many for Qdrant's free tier, and it would be no safer than the filter.
+- Putting the plan name into chunks would make every chunk unique. That means about 15× more vectors (and a bundle too large to ship in the image), and it would be no safer than the filter.
 
 **Trade-off:** chunks are small (a service row is roughly 300 characters), so a question that spans several rows retrieves several chunks. Search keeps the top 6 per plan, which covers that.
 
-**Qdrant layout.** One point per unique chunk (about 38K) in the collection `sbc_chunks__{bundle_version}`:
+**Search index layout (in the facts bundle).** One entry per unique chunk (30,498 in bundle `2027.1`):
 
-- **Named vectors:** `dense` (voyage-4-lite, 1024 dimensions, cosine; int8 scalar quantization kept in RAM, full vectors on disk) and `bm25` (sparse, with Qdrant's IDF modifier; term weights come from a local tokenizer, not an ML model).
-- **Payload:** `chunk_hash`, `chunk_type`, `section_path`, `text`, the flags `carried_note` and `event_inferred`, and the arrays `plan_keys`, `plan_years`, `states` and `markets`, each with a keyword payload index. A boilerplate chunk shared by thousands of plans just has a long `plan_keys` array; there are 593K plan–chunk links in total.
-- **Not in Qdrant:** page numbers. They differ per plan for identical text, so they live in the facts bundle's `plan_chunk` table and are joined in at render time.
-- **Size:** about 40 MB of quantized vectors in RAM, plus about 160 MB of full vectors and about 40 MB of payload on disk. Two collections (current and previous) fit the free tier's 1 GB RAM and 4 GB disk.
+- **BM25:** `chunk_bm25` holds each chunk's saturated term weights from a local tokenizer (`sbc_core.bm25`, not an ML model); `bm25_df` holds each term's document frequency, from which the search computes IDF. Written by `sbc-build-bundle`; needs no API keys.
+- **Dense:** `chunk_vector` holds one embedding per chunk, unit-normalized and stored as float16, so a dot product is the cosine similarity. Written by `sbc-embed-bundle` through the embedding cache. The bundle records the model and dimensions; the API refuses a bundle embedded with a different model than the configured one.
+- **Plan links, pages and flags** come from `plan_chunk` and the fact tables. A boilerplate chunk shared by thousands of plans is stored once; there are about 593K plan–chunk links in total. Pages and the `carried_note`/`event_inferred` flags differ per plan for identical text, so they are joined in per plan at render time.
+- **Size:** a 1024-dimension float16 vector is 2 KB, so about 60 MB of vectors for 30K chunks, plus a few MB of BM25 weights. With the facts, the bundle stays under the 300 MB cap (§11).
 
 **3.2.5 Versioning and incremental re-indexing.**
 
 - `plan_key` includes `plan_year`. `contract_code` plus normalized plan name links the "same plan" across years; the CMS crosswalk PUF covers exchange plans. Answers always state the plan year and coverage period.
 - Bundle version `{plan_year_set}.{build_n}` (for example `2027.4`). Each bundle records input manifest hashes, `grammar_version`, taxonomy version and embedding model.
-- **Incremental build.** Diff the manifest by `pdf_sha256`, then reconvert, reverify and re-extract only changed SBCs. Embeddings are cached by `(chunk_hash, embedding_model)`, so only new chunk text is sent to OpenRouter. The cache is archived with each bundle, so a lost Qdrant cluster can be rebuilt without re-embedding. A full rebuild runs on any `grammar_version` or converter change.
-- **Qdrant collections are versioned with the bundle.** The build creates `sbc_chunks__{bundle_version}` and validates it (point count, payload counts, the plan-filter test) before any deploy. The API config pins the exact collection name, so code, facts and search index always match. The previous collection is kept until the next release has been stable for 7 days, so a rollback still finds it. Older collections are deleted to stay inside the free tier.
+- **Incremental build.** Diff the manifest by `pdf_sha256`, then reconvert, reverify and re-extract only changed SBCs. Embeddings are cached by `(chunk_hash, embedding_model)`, so only new chunk text is sent to OpenRouter. The cache is archived with each bundle, so any bundle can be rebuilt without re-embedding. A full rebuild runs on any `grammar_version` or converter change.
+- **The search index is versioned with the bundle, because it is inside it.** After embedding, the build validates the index (vector count, the plan-filter test) before any deploy. Code, facts and search index ship in one image, so they always match and roll back together.
 - **Diff report** for sign-off: plans added, removed or changed, with field-level diffs such as "BTCU8 oop_limit changed: … → …". Releases need human approval when more than 2% of plans change or any plan is removed.
 - **Mid-year updates.** A weekly GitHub Actions cron runs `catalog` → `download` → `manifest` → build. If nothing changed, it skips the release.
 
@@ -363,17 +364,17 @@ Limitations, Exceptions, & Other Important Information: Copayment waived if admi
 
 **3.4.2 Service mapping.** A hand-curated taxonomy maps 47 SBC service labels to about 30 canonical `service_id`s with about 300 synonyms, for example "MRI", "CT", "PET" → *Imaging (CT/PET scans, MRIs)*; "PT" → *Rehabilitation services*; "ER" → *Emergency room care*; "baby" or "pregnancy" → the *If you are pregnant* rows plus the Peg example. Lookup order is exact or synonym, then embedding nearest neighbor over the synonym list, then Haiku disambiguation when the top two are within 0.05. Synonym vectors are precomputed at build time with the same OpenRouter embedding model, and the query vector is the one already computed for the turn, so mapping adds no extra call. Target accuracy is ≥ 97%.
 
-**3.4.3 Hybrid search (`search_sbc_text`).** Search runs on Qdrant Cloud; the embedding and the rerank go through OpenRouter.
+**3.4.3 Hybrid search (`search_sbc_text`).** Search runs in the API process over the facts bundle (`sbc_core.search.SqliteSearchIndex`); the query embedding and the rerank go through OpenRouter.
 
 - **Plan-filtered (the default and required case):**
   1. Embed the query with `voyageai/voyage-4-lite` via OpenRouter (cached by normalized query text) and compute BM25 sparse terms locally.
-  2. Make one Qdrant `query_points` call with two prefetches, dense (top 20) and BM25 sparse (top 20). Both sit under a mandatory `must` filter: `plan_keys` matches any resolved `plan_key`. Results are fused with Reciprocal Rank Fusion. Candidate sets are tiny (about 61 chunks per plan), so Qdrant answers from its payload index instead of walking the whole graph.
+  2. Select the resolved plans' chunks in SQL (a join through `plan_chunk` on the resolved `plan_key`s; this is the mandatory plan filter). Candidate sets are tiny (about 61 chunks per plan), so every candidate is scored exactly: cosine over the stored embeddings (top 20) and BM25 (top 20), fused with Reciprocal Rank Fusion.
   3. Rerank the top 20 with `voyageai/rerank-3-lite` via OpenRouter, then keep the top 6 per plan.
-  - The tool builds the filter in code, never the LLM. After each call, code checks that every returned point carries one of the requested `plan_key`s. A violation drops the point, fails the request closed and raises a P1 alert. A unit test against a seeded local Qdrant runs on every PR.
+  - The tool builds the filter in code, never the LLM. Before results are returned, code checks that every hit belongs to one of the requested `plan_key`s. A violation fails the request closed and raises a P1 alert. Unit tests on a synthetic bundle and the CI eval gate check the filter on every PR.
 - **Discovery (broker only)**, for example "which plans list fertility preservation":
   - Prefer structured list items.
-  - Otherwise query Qdrant with scope filters only (the `plan_years`, `states` and `markets` payload arrays). Map hashes to plans through the facts bundle, apply plan-level filters, group by plan, and return plans with evidence.
-- **Rerank is gated by eval.** The retrieval eval runs with and without rerank. If RRF alone meets recall@5 ≥ 0.95 on plan-filtered queries, rerank runs only in discovery mode, saving about 0.2–0.3 s per search. `cohere/rerank-4-fast` is the bake-off alternative.
+  - Otherwise search the chunks of every plan in scope (plan year, state, market filters in SQL). The whole corpus is about 30K chunks (about 60 MB of float16 vectors), so an exact scan takes tens of milliseconds. Group by plan and return plans with evidence.
+- **Rerank is gated by eval.** The retrieval eval runs with and without rerank. If RRF alone meets recall@5 ≥ 0.95 on plan-filtered queries, rerank runs only in discovery mode, saving about 0.2–0.3 s per search. `cohere/rerank-4-fast` is the bake-off alternative, subject to the ZDR policy (§8).
 - **Fallbacks:** if the OpenRouter embedding call fails, search runs on BM25 sparse only. If rerank fails, RRF order is used. Both are recorded on the trace.
 
 **3.4.4 Query rewriting for vague questions.** The Haiku classifier also emits a normalized *query spec*. "Cheapest plan for a family" becomes:
@@ -474,7 +475,7 @@ flowchart TD
 - **On limit hit:** compose from the facts gathered so far, if the verifier passes. Otherwise give a graceful partial answer with links to the SBC PDF and page.
 - **Model failure:** OpenRouter `models:[primary, fallback]` lists only eval-approved models (Sonnet 5.5 → Sonnet 5 → Haiku 5.5).
 - **OpenRouter down:** *deterministic mode*. A keyword and regex router covers plan + field and plan + service lookups, renders facts through templates and states "limited mode". Everything else gets an apology plus the PDF link.
-- **Qdrant unreachable or suspended:** structured tools keep working from the facts bundle. Questions that need text search get "I can't search the full SBC text right now" plus the PDF link and page, and a P1 alert fires.
+- **Search index:** it is part of the facts bundle, so it is available whenever the API is. If query embedding fails, search runs on BM25 alone (above).
 - **Supabase down:** the public bot runs stateless (session state goes into a signed client token). Broker sign-in is unavailable, and a banner says so.
 - **Kill switches** (hot-reloaded, read from Postgres and cached for 60 s):
   - turn off LLM answers per bot (deterministic mode only);
@@ -499,7 +500,7 @@ Nothing else in the plan depends on an SLM. Reopening the question would take a 
 | classify, rewrite, reference resolution, guard | `anthropic/claude-haiku-5.5` | $0.10 / $0.50 / $0.01 | low | Structured output, about 300 ms, negligible cost | `openai/gpt-5-nano`, `google/gemini-3.1-flash-lite` |
 | Agent loop + compose | `anthropic/claude-sonnet-5.5` | $2.00 / $10.00 / $0.10 | low to medium | Strong tool use and instruction following. Numbers are placeholders, so the model mostly *selects and explains* | `anthropic/claude-opus-5.5` ($4 / $20; quality ceiling), `anthropic/claude-haiku-5.5` (cost floor) |
 | Offline LLM-as-judge | `anthropic/claude-opus-5.5` | $4 / $20 / $0.20 | medium | Most capable judge; batch variants are 50% off | Cross-family check: `openai/gpt-5.6-sol` on the calibration set to measure self-preference bias |
-| Embeddings (index build + queries) | `voyageai/voyage-4-lite`, 1024 dimensions | $0.02 per 1M input tokens; embedding all 38K unique chunks costs about $0.10 once | Strong retrieval for the price; Matryoshka dimensions allow a drop to 512 if Qdrant memory gets tight | `voyageai/voyage-4` ($0.06/M), `baai/bge-m3` ($0.01/M) |
+| Embeddings (index build + queries) | `voyageai/voyage-4-lite`, 1024 dimensions | $0.02 per 1M input tokens; embedding all 38K unique chunks costs about $0.10 once | Strong retrieval for the price; Matryoshka dimensions allow a drop to 512 if the bundle gets too large | `voyageai/voyage-4` ($0.06/M), `baai/bge-m3` ($0.01/M) |
 | Rerank | `voyageai/rerank-3-lite` | OpenRouter's model list doesn't show rerank prices. Voyage bills rerank per token upstream, so a 20-chunk rerank should cost well under $0.001; confirm on the first invoice. | Latency-optimized; same vendor as the embeddings; eval-gated (§3.4.3) | `cohere/rerank-4-fast`, `voyageai/rerank-3` |
 
 OpenRouter's free (`:free`) models, such as the Nemotron embedding and rerank models, are excluded. They are rate-limited, and their providers may retain or train on prompts.
@@ -554,8 +555,8 @@ Free-tier quotas are as of 2026-11; check them at signup.
 | LLMs | Haiku 5.5 (router and guards), Sonnet 5.5 (agent and compose), Opus 5.5 (judge) | §3.6 | GPT-5.x or Gemini 3.x families (bake-off candidates) |
 | Embeddings | `voyageai/voyage-4-lite` (1024-d) via OpenRouter | One gateway for every model (revision 2); about $0.10 to embed the corpus; no model weights in the container | Local `bge-small-en-v1.5` via fastembed (revision 1: free and no network hop, but lower quality) |
 | Reranker | `voyageai/rerank-3-lite` via OpenRouter, eval-gated | Same gateway; no reranking CPU load on Cloud Run | Local MiniLM cross-encoder (revision 1); `cohere/rerank-4-fast` |
-| Search index | **Qdrant Cloud free tier** (1 GB RAM, 0.5 vCPU, 4 GB disk, no card): one collection per bundle version; dense + BM25 sparse named vectors; int8 quantization; keyword payload indexes on `plan_keys`, `plan_years`, `states`, `markets` | Native hybrid query with RRF fusion, fast filtered search, managed; about 240 MB per collection, so two versions fit | SQLite FTS5 + sqlite-vec inside the bundle (revision 1: no network hop, atomic rollback); Postgres + pgvector on Supabase |
-| Structured facts store | SQLite facts bundle in the image, opened read-only with `immutable=1`; FTS5 trigram over plan names for plan resolution | Exact SQL lookups, joins and ranking with no network hop; rolls back with the code; estimated 80–200 MB | Qdrant payloads (no joins or constraints, an extra hop on every lookup; rejected in review) |
+| Search index | **Inside the SQLite facts bundle** (since 2026-11-02): BM25 term weights and float16 embeddings per unique chunk; plan filter in SQL; exact scoring with numpy and RRF fusion in the API process | Candidate sets are a few hundred chunks per search, so no ANN index is needed; no network hop; no extra service, keys or free-tier suspension; rolls back with the code | Qdrant Cloud free tier (revision 2: managed hybrid search, but a network hop, a P1 dependency and collection pinning for no gain at this size); sqlite-vec; Postgres + pgvector on Supabase |
+| Structured facts store | SQLite facts bundle in the image, opened read-only; FTS5 trigram over plan names for plan resolution | Exact SQL lookups, joins and ranking with no network hop; rolls back with the code; 139 MB for `2027.1` before embeddings, about 200 MB with them | Qdrant payloads (no joins or constraints, an extra hop on every lookup; rejected in review) |
 | Operational DB | Supabase Postgres free (500 MB): sessions and LangGraph checkpoints, feedback, audit log, kill-switch tables | Postgres plus Auth in one free project | Neon free (no auth) + Firebase Auth |
 | Orchestration | LangGraph (OSS) | §3.5.1 | PydanticAI; hand-rolled loop |
 | API | FastAPI + Uvicorn, SSE streaming, Pydantic v2, OpenAPI | Standard, async, typed | Litestar |
@@ -572,14 +573,13 @@ Free-tier quotas are as of 2026-11; check them at signup.
 
 **Monthly cost at launch:**
 
-- **Infrastructure:** about $0 within free tiers. Without ONNX weights the image is about 0.3–0.4 GB, which fits Artifact Registry's free 0.5 GB. Secret Manager may add up to about $0.50/month for synced secret versions beyond its free 6.
+- **Infrastructure:** about $0 within free tiers. Without ONNX weights, and with the facts bundle and its search index (about 200 MB), the image is about 0.4–0.5 GB, at the edge of Artifact Registry's free 0.5 GB; storage beyond it costs cents per month. Measured in Phase 1. Secret Manager may add up to about $0.50/month for synced secret versions beyond its free 6.
 - **OpenRouter (usage-based), at 10K queries/month:** about $210 with Sonnet everywhere, $140 with Haiku on the fast path and Sonnet in the agent loop, or $13 with Haiku everywhere. Embeddings and rerank add well under $0.001 per text search.
 - **Evals:** about $100–250/month at the cadence in §5.5.
 - **First paid upgrades, in order:**
   1. Cloud Run min-instances 1 ($7–10).
   2. Supabase Pro ($25: no pausing, PITR).
-  3. Qdrant Standard tier (usage-based), if free-cluster suspension or capacity becomes a problem.
-  4. Langfuse Core, once traces exceed the Hobby limit.
+  3. Langfuse Core, once traces exceed the Hobby limit.
 
 ---
 
@@ -771,7 +771,7 @@ Plan-filter correctness must be 100% in all three. Recall gates apply to the ful
   - `plan_keys`, tool arguments and result sizes;
   - verifier outcome and violations;
   - token counts, OpenRouter cost, cache-read tokens;
-  - embedding and rerank calls (model, tokens, latency), and each Qdrant query's latency, filter and returned point count;
+  - embedding and rerank calls (model, tokens, latency), and each text search's latency, plan filter and hit count;
   - latency per span.
 - **Privacy:** user text is redacted before it reaches Langfuse (masking hook).
 - **Correlation:** a request ID flows from browser to API to Langfuse trace to Cloud Logging entry and back in response headers, so a user's "report" button links straight to the trace.
@@ -782,8 +782,8 @@ Plan-filter correctness must be 100% in all three. Recall gates apply to the ful
 |---|---|
 | Quality (Langfuse) | Verifier block rate, fallback rate, clarification and refusal rates, thumbs-down rate, wrong-number reports, eval trend per category |
 | Cost (Langfuse) | Cost per query by bot, path and model; embedding and rerank spend; cache hit rate; daily spend vs budget; top expensive traces |
-| Latency (Langfuse + Cloud Monitoring) | TTFT and total p50/p95 by path; per-node latency; OpenRouter chat, embedding and rerank latency; Qdrant latency; cold-start count |
-| Infra (Cloud Monitoring) | Requests, 4xx/5xx, instance count, memory, rate-limit rejections, uptime check, Qdrant cluster health probe |
+| Latency (Langfuse + Cloud Monitoring) | TTFT and total p50/p95 by path; per-node latency; OpenRouter chat, embedding and rerank latency; text-search latency; cold-start count |
+| Infra (Cloud Monitoring) | Requests, 4xx/5xx, instance count, memory, rate-limit rejections, uptime check |
 
 ### 7.3 Alerting
 
@@ -799,7 +799,6 @@ Alerts go out by email plus a Slack webhook.
 | p95 latency | > 12 s over 15 min | P2 |
 | Daily LLM spend | > 80% of budget (also enforced by OpenRouter per-key credit limits) | P2 |
 | Supabase unreachable / paused | Health probe fails | P2 |
-| Qdrant unreachable or cluster suspended | Health probe fails twice (5-min interval) | P1 |
 | Plan-filter check violation in search results | Any | P1 |
 | Weekly build | FAIL or quarantine count > 0, or plan removals | P3 (blocks release) |
 
@@ -812,22 +811,17 @@ Alerts go out by email plus a Slack webhook.
    - **Fix:** add a regression item to the golden set and patch.
    - **Verify:** full gating run, then un-quarantine.
    - Write a postmortem within 5 business days.
-2. **Bad deploy.** Shift traffic to the previous revision (`gcloud run services update-traffic --to-revisions=<prev>=100`, under 1 minute). Code and facts roll back together, and the old revision still points at its pinned Qdrant collection.
+2. **Bad deploy.** Shift traffic to the previous revision (`gcloud run services update-traffic --to-revisions=<prev>=100`, under 1 minute). Code, facts and search index roll back together.
 3. **OpenRouter outage.** Fallback models engage automatically. If all fail, flip the bot to deterministic mode and post a status banner.
 4. **Cost spike.** Check traces for abuse. Tighten limits (Upstash config), require Turnstile on every public message, lower the per-key credit limit.
 5. **Supabase paused or down.** The public bot runs stateless automatically. Restore the project, and check checkpoint and audit-write backlogs (buffered to Cloud Logging).
-6. **Qdrant cluster suspended or deleted.** Structured answers keep working throughout.
-   - **Suspended:** reactivate it in the Qdrant console.
-   - **Deleted:** recreate the pinned collection from the bundle archive and its embedding cache with the index loader. This takes about 5 minutes and needs no re-embedding.
-   - Then run the plan-filter test before clearing the alert.
-7. **New plan year or mass SBC update.** Run the build, review the diff report, run the gating eval on the new bundle with the year-sliced golden set, then canary.
-8. **Prompt injection or abuse campaign.** Block IPs or sessions, add samples to the adversarial set, patch classifier heuristics.
+6. **New plan year or mass SBC update.** Run the build, review the diff report, run the gating eval on the new bundle with the year-sliced golden set, then canary.
+7. **Prompt injection or abuse campaign.** Block IPs or sessions, add samples to the adversarial set, patch classifier heuristics.
 
 **Backups:**
 
 - A nightly `pg_dump` of Supabase to GCS (free 5 GB) gives RPO 24 h and RTO 1 h.
 - Bundles and their embedding caches can be rebuilt from PDFs and are also kept as GCS objects; the last 10 are retained.
-- A Qdrant collection can always be recreated from a bundle plus its embedding cache, so Qdrant needs no separate backup.
 
 ---
 
@@ -837,7 +831,7 @@ Alerts go out by email plus a Slack webhook.
 |---|---|
 | AuthN | Brokers: Supabase Auth (invite-only, email + TOTP MFA, 12 h session, refresh rotation). Public: anonymous session JWT (HS256, 24 h) issued after Turnstile verification. Both verified in FastAPI middleware. |
 | AuthZ | `role` claim (`broker`, `admin`); the bot profile is selected by route *and* checked against the claim. Admin endpoints (kill switches, quarantine) require `admin` and are audited. Postgres row-level security keeps brokers to their own conversations. |
-| Secrets | Doppler is the source of truth: project `plan-info-chatbot`, configs `dev`, `ci` and `prd`. Doppler syncs `dev` and `prd` to GCP Secret Manager, which Cloud Run mounts as environment variables, and `ci` to GitHub Actions. Local dev uses `doppler run`. No secrets live in the repo, the images or plain Cloud Run env vars. Each environment and bot has its own OpenRouter key with a credit limit. The API uses a **read-only** Qdrant key; the read-write key exists only in `ci` for the index build. Keys rotate quarterly in Doppler. `gitleaks` runs in CI. The free plan keeps 3 days of activity logs; the Team plan ($21/user/month) keeps 90 days if a secret-change audit trail becomes a requirement. |
+| Secrets | Doppler is the source of truth: project `plan-info-chatbot`, configs `dev`, `ci` and `prd`. Doppler syncs `dev` and `prd` to GCP Secret Manager, which Cloud Run mounts as environment variables, and `ci` to GitHub Actions. Local dev uses `doppler run`. No secrets live in the repo, the images or plain Cloud Run env vars. Each environment and bot has its own OpenRouter key with a credit limit. Keys rotate quarterly in Doppler. `gitleaks` runs in CI. The free plan keeps 3 days of activity logs; the Team plan ($21/user/month) keeps 90 days if a secret-change audit trail becomes a requirement. |
 | LLM data handling | OpenRouter account prompt logging off. Provider routing is restricted to zero-data-retention endpoints with no data collection, for chat, embedding and rerank requests alike. Only redacted text is sent. Phase 0 confirms the chosen embedding and rerank endpoints meet that policy; if one doesn't, the bake-off alternative replaces it. |
 | PII / PHI | Redaction before LLM, logs and traces (§3.8). The UI warns: "Don't share personal or health information." No identity is ever requested. **BAA decision before GA** (assumption 1.4.2). |
 | Retention | Public: redacted content 30 days. Broker: 365 days. Audit metadata: 2 years. Langfuse: 30 days. Deletion runs as a daily job. Brokers can delete their own history. |
@@ -853,17 +847,15 @@ Alerts go out by email plus a Slack webhook.
 
 | Env | API | DB / Auth | Frontends | Data |
 |---|---|---|---|---|
-| local | `uvicorn` or `docker compose` | Local Postgres container (or SQLite checkpointer) | Vite dev server | Full facts bundle or a 200-plan dev bundle; local Qdrant container |
-| dev / preview | Cloud Run service `api-dev`; each PR deploys a tagged revision with no traffic (`pr-123---api-dev…`) | Supabase project #1 (free) | Cloudflare Pages preview per PR | Latest bundle; `dev__` Qdrant collection |
-| prod | Cloud Run service `api-prod` | Supabase project #2 (free) | Cloudflare Pages production | Signed-off bundle; `prd__` Qdrant collection |
-
-Dev and prod collections share the single free Qdrant cluster, told apart by an environment prefix (`prd__sbc_chunks__2027_4`). That is at most three collections (prod current, prod previous, dev). A paid tier allows a separate prod cluster.
+| local | `uvicorn` or `docker compose` | Local Postgres container (or SQLite checkpointer) | Vite dev server | Full facts bundle (with its search index) or a 200-plan dev bundle |
+| dev / preview | Cloud Run service `api-dev`; each PR deploys a tagged revision with no traffic (`pr-123---api-dev…`) | Supabase project #1 (free) | Cloudflare Pages preview per PR | Latest bundle |
+| prod | Cloud Run service `api-prod` | Supabase project #2 (free) | Cloudflare Pages production | Signed-off bundle |
 
 ### 9.2 Container
 
 - Multi-stage build on `python:3.13-slim` with `uv sync --frozen`. There are no model weights, because embeddings and rerank are OpenRouter calls.
-- The facts bundle is copied in (read-only). The image is about 0.3–0.4 GB and runs as non-root.
-- The **image tag equals the git SHA plus the bundle version**, and the config pins the matching Qdrant collection, so one image is one reproducible behavior.
+- The facts bundle, with its search index, is copied in (read-only). The image is about 0.4–0.5 GB and runs as non-root.
+- The **image tag equals the git SHA plus the bundle version**. The bundle carries its own search index, so one image is one reproducible behavior.
 
 ### 9.3 Cloud Run settings
 
@@ -878,18 +870,18 @@ Dev and prod collections share the single free Qdrant cluster, told apart by an 
 PR:   ruff, mypy → unit + integration (cassettes) → deterministic eval
       → LLM smoke eval (path-filtered) → build image → deploy tagged preview (no traffic)
       → e2e smoke against preview
-main: if the bundle changed: build facts bundle + create Qdrant collection sbc_chunks__vN
-      (only new chunks embedded) → validate collection (counts, plan-filter test)
+main: if the bundle changed: build facts bundle → embed (only new chunks sent to OpenRouter)
+      → validate the search index (vector count, plan-filter test)
       → build image → deploy api-prod revision with --no-traffic --tag rc → smoke on rc URL
       → canary 10% for 30 min (auto-abort if 5xx > 2%, verifier block rate > 5%, or p95 > 12 s)
       → 100%
 ```
 
-**Rollback:** traffic goes to the previous revision in under a minute. Code and facts roll back together, and the previous revision's pinned Qdrant collection is still there (§3.2.5). Database migrations use expand-then-contract with one release of backward compatibility (Supabase migrations in `infra/supabase/`).
+**Rollback:** traffic goes to the previous revision in under a minute. Code, facts and search index roll back together (§3.2.5). Database migrations use expand-then-contract with one release of backward compatibility (Supabase migrations in `infra/supabase/`).
 
 ### 9.5 Scaling, vLLM, caching and rate limiting
 
-- **Scaling.** Stateless replicas, each with its own copy of the facts bundle. Throughput is bounded by OpenRouter rate limits, the max-instances cap and the free Qdrant cluster's 0.5 vCPU. Text search runs only on the agent path, which keeps Qdrant load low. Raise max-instances when budget allows.
+- **Scaling.** Stateless replicas, each with its own copy of the facts bundle. Throughput is bounded by OpenRouter rate limits and the max-instances cap. Text search runs in-process and takes milliseconds of CPU per call. Raise max-instances when budget allows.
 - **vLLM.** Not used (§3.6), so there is no GPU tier to scale.
 - **Caching, in four layers:**
   1. **Prompt caching** of system and tool prefixes (§3.6).
@@ -913,9 +905,9 @@ plan-info-chatbot/
 ├── packages/
 │   ├── sbc_ingest/     # current scripts/ moved here unchanged: portal, to_markdown, verify (+ CLI)
 │   ├── sbc_extract/    # markdown → rows; cost grammar; deductible/OOP parsers; validators; PUF cross-check
-│   ├── sbc_index/      # facts bundle builder (SQLite schema, plan-name FTS5), chunker, embedding cache, Qdrant loader, diff report
-│   ├── core/           # domain types (PlanKey, Fact, Chunk, Citation, CalcResult), config loader, OpenRouter gateway (chat, embeddings, rerank)
-│   ├── retrieval/      # plan resolver, service taxonomy, Qdrant hybrid search, rerank client
+│   ├── sbc_index/      # facts bundle builder (SQLite schema, plan-name FTS5), chunker, BM25 index, embedding cache and `sbc-embed-bundle`, diff report
+│   ├── core/           # domain types (PlanKey, Fact, Chunk, Citation, CalcResult), config loader, facts and search readers over the bundle, OpenRouter gateway (chat, embeddings, rerank)
+│   ├── retrieval/      # plan resolver, query expansion, text-search pipeline (hybrid search + rerank)
 │   ├── tools/          # agent tools incl. calculator (pure functions + Pydantic I/O)
 │   ├── agent/          # LangGraph graph, nodes, prompts/ (versioned .md), verifier, renderer, guards
 │   └── api/            # FastAPI app, auth, rate limit, SSE, admin endpoints, audit
@@ -930,21 +922,21 @@ plan-info-chatbot/
 │   └── reports/
 ├── tests/
 │   ├── unit/           # parser snapshots (all 2,328 strings), calculator properties, resolver, verifier
-│   ├── integration/    # graph end-to-end on a dev bundle with recorded OpenRouter cassettes (vcrpy) and a local Qdrant container
+│   ├── integration/    # graph end-to-end on a dev bundle with recorded OpenRouter cassettes (vcrpy)
 │   ├── contract/       # schemathesis against OpenAPI
 │   └── load/           # k6 scripts
 ├── infra/
-│   └── docker/Dockerfile  cloudrun/*.yaml  supabase/migrations/  qdrant/collection.yaml  doppler.yaml
+│   └── docker/Dockerfile  cloudrun/*.yaml  supabase/migrations/  doppler.yaml
 ├── .github/workflows/  # ci, eval, build-index, deploy, backup (GitHub only runs workflows from here)
 ├── docs/               # runbook.md, ADRs (one per major decision above)
 └── data/               # unchanged layout; raw/ and reference/ stay git-ignored; bundles and embedding caches in GCS
 ```
 
-**Module boundaries.** `core` depends on nothing internal. `sbc_extract` → `core`. `sbc_index` → `sbc_extract`, `core`. `retrieval` and `tools` → `core`. They read facts only through a `FactsReader` interface and search only through a `SearchIndex` interface (a Qdrant implementation, plus an in-memory fake for unit tests). Import names carry an `sbc_` prefix (`packages/core` is imported as `sbc_core`), so generic names like `core` or `api` never shadow third-party modules. import-linter enforces these rules in CI. `agent` → `tools`, `retrieval`, `core`. `api` → `agent`. No package imports `api`. The packages that build the bundle are never imported at runtime.
+**Module boundaries.** `core` depends on nothing internal. `sbc_extract` → `core`. `sbc_index` → `sbc_extract`, `core`. `retrieval` and `tools` → `core`. They read facts only through a `FactsReader` interface and search only through a `SearchIndex` interface (both implemented over the facts bundle in `core`, plus stubs for unit tests). Import names carry an `sbc_` prefix (`packages/core` is imported as `sbc_core`), so generic names like `core` or `api` never shadow third-party modules. import-linter enforces these rules in CI. `agent` → `tools`, `retrieval`, `core`. `api` → `agent`. No package imports `api`. The packages that build the bundle are never imported at runtime.
 
 **Config.** `pydantic-settings` merges `base` → `bot` → `env` → environment variables, with secrets coming only from the environment. The config is validated at startup (fails fast). Its `config_hash` is logged on every trace. Prompts live in git and are versioned. Runtime prompt editing (for example Langfuse prompt management) is deliberately not used, so every prompt change passes the CI eval gates.
 
-**Testing levels:** unit (pytest + Hypothesis), integration (cassettes plus a local Qdrant container), eval (§5), contract, load (k6: 30 virtual users for 10 min with a mocked LLM to test infra, plus a 5-minute run against the real LLM for latency NFRs), and an e2e smoke (Playwright) on preview deploys.
+**Testing levels:** unit (pytest + Hypothesis), integration (cassettes), eval (§5), contract, load (k6: 30 virtual users for 10 min with a mocked LLM to test infra, plus a 5-minute run against the real LLM for latency NFRs), and an e2e smoke (Playwright) on preview deploys.
 
 ---
 
@@ -954,7 +946,7 @@ These are calendar estimates for about 1.5 engineers.
 
 | Phase | Weeks | Deliverables | Acceptance criteria | Eval bar |
 |---|---|---|---|---|
-| **0. Foundations** | 1–2 | `git init` + CI skeleton; Doppler, Qdrant Cloud, Supabase and OpenRouter keys provisioned; scripts moved into `sbc_ingest`; REVIEW allowlist signed; `sbc_extract` (schema, cost grammar, limit parsers, validators); PUF cross-check; facts bundle builder v0; Qdrant collection loader (embeddings via OpenRouter); service taxonomy v1; golden v0 (150 hand-authored, PDF-verified) | The moved pipeline regenerates the corpus byte-identically; the converter fix (§3.2.1) changes only the cells listed in its diff report, and the strict verifier passes on all 9,690 files; 100% verbatim round-trip; ≥ 99.5% of cost cells parse `exact` with the rest flagged; all 185 patterns snapshot-reviewed; 0 unexplained PUF mismatches; facts bundle ≤ 300 MB; Qdrant collection fits the free tier with room for two more; embedding and rerank endpoints confirmed under the ZDR policy | Retrieval only, in all three configurations: plan filter 100%; service mapping ≥ 95%; recall@5 ≥ 0.90; rerank lift measured |
+| **0. Foundations** | 1–2 | `git init` + CI skeleton; Doppler, Supabase and OpenRouter keys provisioned; scripts moved into `sbc_ingest`; REVIEW allowlist signed; `sbc_extract` (schema, cost grammar, limit parsers, validators); PUF cross-check; facts bundle builder v0 with its search index (embeddings via OpenRouter); service taxonomy v1; golden v0 (150 hand-authored, PDF-verified) | The moved pipeline regenerates the corpus byte-identically; the converter fix (§3.2.1) changes only the cells listed in its diff report, and the strict verifier passes on all 9,690 files; 100% verbatim round-trip; ≥ 99.5% of cost cells parse `exact` with the rest flagged; all 185 patterns snapshot-reviewed; 0 unexplained PUF mismatches; facts bundle ≤ 300 MB including the search index; embedding and rerank endpoints confirmed under the ZDR policy | Retrieval only, in all three configurations: plan filter 100%; service mapping ≥ 95%; recall@5 ≥ 0.90; rerank lift measured |
 | **1. Broker MVP (internal alpha)** | 3–5 | FastAPI + LangGraph; fast path; tools `find_plans`, `get_plan_facts`, `search_sbc_text`, `compare_plans`, `ask_clarifying_question`; placeholders + verifier + renderer; broker app with plan picker; Supabase auth; Langfuse; **model bake-off**; deploy to `api-dev` | 3 internal users run 100+ conversations; bake-off report picks models per path; p95 lookup ≤ 10 s | MVP gating set (about 410): all **hard gates**; faithfulness ≥ 0.95; citation ≥ 0.97; behavior ≥ 90%; tool selection ≥ 90% |
 | **2. Broker beta (agentic depth)** | 6–8 | `estimate_cost`, coverage examples, `rank_plans`; multi-turn references; feedback + review queues; alerts; CI eval gates enforced; canary deploys; deterministic mode; 5–10 external brokers | 2 weeks of beta, ≥ 200 real conversations, 0 confirmed wrong-number incidents, thumbs-down ≤ 10% | v1 gating set (about 800 at this point): §5 "v1" thresholds; calculator used 100%; property tests green |
 | **3. Plan Shopper (public)** | 9–11 | Shopper app (guided state → plan flow); anonymous sessions + Turnstile; public profile (scope, tone, no recommendations); readability check; WCAG 2.1 AA; adversarial set of 120 + a red-team session; legal review of disclaimers; load test | Legal and compliance sign-off, including the BAA/PHI decision; runbook drill done; load test: 30 concurrent sessions within NFR, error rate < 1% | All hard gates; adversarial handling ≥ 98%; false refusal ≤ 3%; readability ≥ 90% |
@@ -979,7 +971,7 @@ These are calendar estimates for about 1.5 engineers.
 | Latency above NFR | Medium | Medium | Fast path (no text search); streaming; small contexts; parallel tool calls; compare in one call; query-embedding cache; rerank only where eval shows a lift; min-instances upgrade for cold starts |
 | Free-tier limits (Supabase pause, Langfuse quota, Cloud Run cold starts) | Medium | Medium | Read path has no database dependency; public stateless fallback; quota alerts; paid upgrades named and priced (§4) |
 | OpenRouter as the single dependency for LLMs, embeddings and rerank | Low–Medium | High | Eval-approved fallback models; BM25-only search when embeddings fail; RRF order when rerank fails; deterministic mode for lookups; the `llm` interface allows a direct provider swap |
-| Qdrant free cluster suspended (after 1 week unused) or deleted (after 4 weeks); no SLA; 0.5 vCPU | Low–Medium (daily traffic and nightly evals keep it active) | High for text-search questions | P1 health probe; structured answers unaffected; rebuild from the embedding cache in about 5 minutes; Standard tier once traffic or uptime needs justify it |
+| Bundle with embeddings grows the image past the Artifact Registry free 0.5 GB | Medium | Low (storage costs cents per month) | float16 vectors (Matryoshka 512 dimensions if needed); measure the image in Phase 1 |
 | PHI/PII exposure or no BAA | Medium (public) | High | Redaction before LLM and logs; short retention; UI notice; BAA decision as a GA blocker |
 | Prompt injection or jailbreak | Medium | Medium (read-only tools, placeholders) | Layered guards; URL allowlist; adversarial gating set; red team |
 | Eval circularity (gold derived from the extractor) | Medium | High | Gating gold verified against the PDF by humans; PUF oracle; two-reviewer gold changes |
@@ -1007,14 +999,14 @@ Cache writes are billed at about 1.25× input. Prefix reuse across turns and use
 |---|---|---|---|
 | Retrieval paradigm | Structured-first + plan-filtered hybrid text search | Classic chunk-embed-retrieve | Template corpus: exactness and auditability beat recall-oriented RAG |
 | Number handling | Fact placeholders + firewall + calculator | Post-hoc number checking only | Prevention by construction vs detection after the fact |
-| Read store | Facts in an immutable SQLite bundle in the image; search index in Qdrant Cloud (revision 2) | One SQLite bundle for both (revision 1); Postgres + pgvector | Exact, zero-hop facts with atomic rollback, plus managed hybrid search |
+| Read store | One immutable SQLite bundle in the image for facts and the search index (revision 1 design, restored 2026-11-02) | Search index in Qdrant Cloud (revision 2); Postgres + pgvector | Exact, zero-hop facts and search with atomic rollback; a few hundred candidates per search need no vector service |
 | Embeddings and rerank | Through OpenRouter (revision 2) | Local ONNX models | One gateway and no weights in the image vs no network hop |
 | Chunking | Template sections, content-addressed, no plan name in embeddings | Fixed-size + plan-prefixed chunks | 15× fewer vectors; filter guarantees plan identity |
 | Extraction | Deterministic grammar | LLM or SLM extraction | Provable on 2,328 strings vs probabilistic |
 | Agent framework | LangGraph | PydanticAI / hand-rolled | Durable interrupts, checkpoints, tracing |
 | Models | Haiku 5.5 router + Sonnet 5.5 agent (bake-off may change) | Opus 5.5 everywhere | About 2× cheaper; placeholders reduce what the model must get right |
 | SLM / vLLM | None (firm decision, revision 2) | Fine-tuned SLM for routing and extraction | Not free; no gap to close |
-| Hosting | Cloud Run free + Cloudflare Pages + Supabase/Qdrant/Upstash/Langfuse free | HF Spaces (rejected: paid plan, outbound port limits) / Oracle VM | Revisions, canary, autoscale at $0, no port limits |
+| Hosting | Cloud Run free + Cloudflare Pages + Supabase/Upstash/Langfuse free | HF Spaces (rejected: paid plan, outbound port limits) / Oracle VM | Revisions, canary, autoscale at $0, no port limits |
 | Secrets | Doppler, synced to Secret Manager and GitHub Actions (revision 2) | Secret Manager alone | One source of truth, no runtime dependency on Doppler |
 | Bots | One core, two profiles | Two codebases | Single correctness surface |
 
@@ -1080,7 +1072,7 @@ This is a fast-path lookup of the emergency room row for both tiers. The row's n
 **3. Covered, excluded and not mentioned, Plan Shopper (0JF1 selected).** *"Does this plan cover acupuncture, chiropractor visits, or LASIK?"*
 
 1. This goes through the agent loop. `get_plan_facts` checks the SBC's two lists: acupuncture is under Other Covered Services; chiropractic care is under Excluded Services.
-2. LASIK is in neither list, so `search_sbc_text` searches the SBC text in Qdrant, restricted to 0JF1. Nothing relevant comes back.
+2. LASIK is in neither list, so `search_sbc_text` searches the SBC text, restricted to 0JF1. Nothing relevant comes back.
 3. The rule "not mentioned doesn't mean not covered" applies (§3.3).
 
 > - **Acupuncture:** listed under "Other Covered Services." The SBC says limitations may apply and this isn't a complete list. [1]
@@ -1187,5 +1179,4 @@ The Broker Assistant would instead rank by the Joe example total if asked.
 
 - **The model types a number:** the verifier catches it, the model retries once, then a fixed template answers from the stored facts. The user may get a plainer answer, but never an unchecked number.
 - **OpenRouter is down:** simple lookups still work from templates under a "limited mode" banner. Everything else gets an apology and a link to the SBC PDF.
-- **Qdrant is down:** lookups, comparisons and the calculator keep working. Questions that need full-text search get "I can't search the full SBC text right now" plus the PDF page link.
 - **A user reports a wrong number:** an urgent ticket opens with the full trace attached. The plan can be switched off within 60 seconds ("temporarily unavailable, see the official SBC") until it's fixed and re-tested.

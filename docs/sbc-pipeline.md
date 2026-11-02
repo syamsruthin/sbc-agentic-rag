@@ -62,21 +62,21 @@ plans, Important Questions, benefit rows with parsed costs, list items, coverage
 search chunks with their plan links. Plans that fail extraction go to its `quarantine` table instead. At
 runtime the bundle is read through `sbc_core.facts.SqliteFactsReader`.
 
-`sbc-load-qdrant` loads the bundle's unique chunks into a new collection, `{env}__sbc_chunks__{version}`:
+The same file holds the search index (`sbc_index.search_build`), read at runtime through
+`sbc_core.search.SqliteSearchIndex`:
 
-- `dense`: OpenRouter embeddings (`models.embeddings` in `config/base.yaml`), cosine, int8-quantized in RAM
-  with the full vectors on disk.
-- `bm25`: sparse term weights from `sbc_core.bm25`; Qdrant applies IDF.
-- Payload: `chunk_hash`, `chunk_type`, `section_path`, `text`, and the `plan_keys`, `plan_years`, `states` and
-  `markets` arrays, each indexed.
+- `chunk_bm25` and `bm25_df`: each unique chunk's BM25 term weights from `sbc_core.bm25`, and each term's
+  document frequency for the IDF. `sbc-build-bundle` writes them; no API keys are needed.
+- `chunk_vector`: one embedding per unique chunk (`models.embeddings` in `config/base.yaml`), unit-normalized
+  float16. `sbc-embed-bundle` adds them through the embedding cache and records the model and dimensions in the
+  bundle; the search refuses a bundle embedded with a different model. It refuses to overwrite existing
+  embeddings unless `--replace` is passed, and it validates the vector count and plan-filtered queries.
 
-The `carried_note` and `event_inferred` flags and the page numbers are not in the payload. The same chunk text
-can be flagged, or sit on a different page, in one plan and not another, so they are joined in per plan from
-the facts bundle (`FactsReader.chunk_context`).
-
-Collections are never changed after loading: the loader refuses to write into an existing one unless
-`--recreate` is passed, and it validates the point count and plan-filtered queries before finishing. Without an
-embedder the loader builds a BM25-only collection, which the retrieval eval uses in Qdrant's in-memory mode.
+A search selects the resolved plans' chunks in SQL (about 61 per plan), scores every one of them exactly
+(cosine and BM25, top 20 each), fuses the two rankings with Reciprocal Rank Fusion, and checks every hit
+against the requested plans before returning it. Page numbers and the `carried_note` and `event_inferred`
+flags are joined in per plan (`FactsReader.chunk_context`), because the same chunk text can be flagged, or sit
+on a different page, in one plan and not another.
 
 At query time (`sbc_retrieval.text_search`) the BM25 query also gets the SBC's own label for each service the
 question names, from the service taxonomy: "MRI" adds "Imaging (CT/PET scans, MRIs)". The dense query and the
