@@ -23,6 +23,8 @@ def test_citation_label_and_url() -> None:
     assert CITE.url == "https://x/sbc.pdf#page=3"
     assert CITE.model_copy(update={"pages": (1, 3)}).label.endswith("pp. 1, 3")
     assert CITE.model_copy(update={"pages": ()}).url == "https://x/sbc.pdf"
+    portal = CITE.model_copy(update={"source_url": "https://sbc.anthem.com/dps/"})
+    assert portal.url == "https://sbc.anthem.com/dps/"  # not a PDF: no page fragment
 
 
 def test_fact_rules() -> None:

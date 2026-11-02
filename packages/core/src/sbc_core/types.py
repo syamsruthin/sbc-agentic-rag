@@ -91,8 +91,11 @@ class Citation(_Model):
 
     @property
     def url(self) -> str:
-        """The SBC PDF, opened at the first cited page when there is one."""
-        if not self.source_url or not self.pages:
+        """The SBC PDF, opened at the first cited page when there is one.
+
+        About 1,400 SBCs are served only through the portal's preview form, so their ``source_url`` is the
+        portal search page, where a page fragment means nothing."""
+        if not self.source_url or not self.pages or not self.source_url.lower().endswith(".pdf"):
             return self.source_url
         return f"{self.source_url}#page={self.pages[0]}"
 
