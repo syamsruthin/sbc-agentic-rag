@@ -158,6 +158,7 @@ scripts/aws/                  # WP9/WP13: helper scripts (bash, aws CLI)
   put-secrets.sh              # writes SSM SecureStrings from your shell (no values in git)
   upload-bundle.sh            # bundles/*.sqlite → s3://…/bundles/
   seed-users.sh               # admin + demo-broker Cognito users
+  rotate-demo-password.sh     # new demo password → Cognito + /landing/demo.json + invalidation
   run-build.sh                # aws ecs run-task for the offline pipeline
 .github/workflows/
   ci.yml                      # WP11: + sbc_aws tests (moto), cdk synth + tests, frontend build
@@ -476,7 +477,7 @@ CMD ["uvicorn", "sbc_api.app:app", "--host", "0.0.0.0", "--port", "8080", "--wor
 ```
 
 - One uvicorn worker. Lambda sends one request at a time to each instance; the sync graph runs in FastAPI's thread pool.
-- If Presidio and spaCy land later, add `en_core_web_sm` in the build stage, and load it at import time so the cost is paid in init (or in `healthz?deep=1`).
+- **Presidio and spaCy are not in the launch image** (decision D3). When they're added after launch, add `en_core_web_sm` in the build stage and load it at import time, so the cost is paid in init (or in `healthz?deep=1`). Then re-measure the cold start.
 - **Measure:** image size (target < 1 GB), cold start (`Init Duration` in the REPORT log line), memory high-water mark.
 
 **`build.Dockerfile`:** `python:3.13-slim` + `poppler-utils` + `awscli` + `uv sync --frozen` (all packages). The entrypoint script does: `s3 sync` down → pipeline steps (DEPLOYMENT_ANALYSIS.md §7.6) → retrieval eval → `s3 sync` up.
@@ -535,7 +536,13 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
   - Tokens are kept in memory, with refresh through the refresh token.
   - Screens: plan picker with filters, chat, comparison table, CSV export.
 - **Shopper app:** a Turnstile widget at session start → `POST /api/public/session`; then the guided state → plan picker flow, and chat.
-- **Landing:** a short intro; "Try Plan Shopper" and "Try Broker Assistant" buttons (demo credentials shown or "on request"); "Try these" question chips; a "How it works" page with the architecture diagrams; a "Quality and cost" page with the eval numbers and the cost per question.
+- **Landing:**
+  - A short intro, and "Try Plan Shopper" and "Try Broker Assistant" buttons.
+  - **The demo broker username and password are shown next to the broker button** (decision D2), with copy buttons. They're read at runtime from `/landing/demo.json`, not compiled into the bundle, so rotating them needs no rebuild.
+  - A note: "Shared demo account: history clears daily; don't enter personal or health information."
+  - "Try these" question chips.
+  - A "How it works" page with the architecture diagrams.
+  - A "Quality and cost" page with the eval numbers and the cost per question.
 - **Environment:** `VITE_API_BASE_URL=/api`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, `VITE_TURNSTILE_SITE_KEY`. All are public by design; they are injected at build time from CDK outputs.
 
 **Done when** both bots work end to end against the deployed API at the CloudFront URL, on desktop and phone widths.
@@ -575,6 +582,8 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 ### WP13: Portfolio readiness and documentation
 
 - `scripts/aws/seed-users.sh`: creates the `admin` user (TOTP enrollment) and the `demo-broker` user (no MFA, `broker` group); writes the demo user's `sub` to the `SBC_PORTFOLIO__DEMO_USER_IDS` Lambda environment variable through CDK context.
+- `scripts/aws/rotate-demo-password.sh`: generates a new demo password, sets it with `admin-set-user-password --permanent`, writes `/landing/demo.json` to the web bucket, and invalidates that path in CloudFront (decision D2).
+- A check that the demo user's tokens **can't** change its password (`aws cognito-idp change-password` with a demo access token must fail).
 - OpenRouter key credit limits set ($10 public, $15 broker), recorded in the runbook.
 - **Measurements:** cold start, warm fast-path latency and agent-path latency.
 - **Deliberately hit** every cap: per-user, global, kill switch, OpenRouter key limit (with a $0.10 test key).
@@ -783,19 +792,31 @@ The PLAN.md decisions on models, the bundle, retrieval, the verifier and the eva
 | 1 | `langgraph-checkpoint-aws` compatibility with the locked `langgraph 1.2.x`, its table schema, and S3 offload behavior | Spike first in WP2: pin a version and run the interrupt/resume test across two saver instances. Fallback: a small custom `BaseCheckpointSaver` over DynamoDB (≈ 200 lines) |
 | 2 | SSE through CloudFront → Function URL (buffering, timeouts) | WP4/WP9 spike early: deploy a canned SSE endpoint first and check incremental delivery and 10 s keepalives through CloudFront |
 | 3 | OAC needs `x-amz-content-sha256` on POSTs | Built into `chat-ui` (WP10). Fallback: Function URL auth `NONE` + a secret origin header checked by the app |
-| 4 | Cold start with a large image (+ Presidio later) | Measure in WP8; warm on load + optional warmer (WP9). Keep the spaCy model small |
+| 4 | Cold start with a large image | Presidio and spaCy are deferred (D3), so the launch image has no NER model. Measure in WP8; warm on load + optional warmer (WP9). Re-measure when Presidio is added later |
 | 5 | The PDF proxy depends on the portal's preview form and on fields missing from the bundle | WP3 adds the fields; WP7 has a hash check and a graceful fallback link. Find out whether the portal rate-limits AWS IPs |
 | 6 | Shared demo-broker history across interviewers | Short TTL (24 h) + listing by browser-held thread IDs for the demo user |
 | 7 | Public URL abuse | OpenRouter key credit limits (hard), global cap, per-session and per-IP limits, Turnstile, kill switch (WP6, WP13) |
 | 8 | New-account limits (Lambda concurrency, Free-plan restrictions) | Upgrade to the Paid plan; check quotas in runbook step 1 |
-| 9 | Changing `EnvSettings` diverges `main_AWS` from `main` | Keep each WP small; merge `main` into `main_AWS` regularly; if both tracks must coexist, put the AWS/GCP fields behind a `platform` setting instead of replacing them (decide before WP1) |
+| 9 | Changing `EnvSettings` diverges `main_AWS` from `main` | Decided (D1): replace, with no `platform` switch. Keep each WP small and merge `main` into `main_AWS` regularly; resolve conflicts in `config.py` in favor of the AWS fields |
 | 10 | Two Vite apps + landing under one distribution: asset path collisions | Distinct `base` per app (`/broker/`, `/shopper/`, `/`) and a per-app hashed asset folder |
 
-**Open questions for you before WP1:**
+**Decisions (resolved before WP1):**
 
-1. Should `main_AWS` **replace** the Supabase and Upstash settings (simpler; recommended), or keep both platforms selectable (§12 #9)?
-2. Should the demo-broker credentials be shown **on the landing page** or shared **on request** (resume or email)?
-3. Is Presidio NER (TODO.md) in scope before the portfolio launch? It affects image size and cold start.
+| # | Question | Decision | Effect on this plan |
+|---|---|---|---|
+| D1 | Replace the Supabase and Upstash settings, or keep both platforms selectable? | **Replace them** | WP1 removes the Supabase and Upstash fields from `EnvSettings` and `.env.example`; there is no `platform` switch. Risk #9 is reduced to "merge `main` into `main_AWS` regularly" |
+| D2 | Show the demo-broker credentials on the landing page, or share them on request? | **Show them on the landing page** | WP10 shows the username and password on the landing page, next to "Try Broker Assistant". The safeguards in "Demo credentials on a public page" below become required, not optional |
+| D3 | Is Presidio NER in scope before the portfolio launch? | **No, deferred until after launch** | The regex redaction already in `sbc_agent.redact` (SSN, member ID, phone, email, dates) stays as the L1 PII layer. No spaCy or Presidio goes in the image, which keeps the image smaller and the cold start shorter. The landing page and chat input say "Don't enter personal or health information". It is added later as a separate PR (§13) |
+
+**Demo credentials on a public page (required by D2):**
+
+- **The demo account can't change itself.** The app client omits the `aws.cognito.signin.user.admin` scope, so the demo password and attributes can't be changed with the demo user's tokens (WP9).
+- **Limits:** the demo user is `broker` group only, rate-limited through `portfolio.demo_rate_limits`, and counted in the global daily cap (WP6).
+- **Short history:** demo history expires after 24 h, and the thread list shows only threads started in the current browser (WP6, risk #6).
+- **Hard spending cap:** the broker OpenRouter key has its monthly credit limit ($15) set before the landing page goes live (WP13).
+- **Rotation without a code change:** `scripts/aws/rotate-demo-password.sh` sets a new password (`admin-set-user-password --permanent`) and updates the value the landing page shows (WP13).
+- **The credentials aren't baked into the build.** The page reads them at runtime from `/landing/demo.json` in the web bucket, so rotating needs only an `s3 cp` and a CloudFront invalidation of that one path.
+- **Monitoring:** the CloudWatch metric filter `demo_user_limit_reached` feeds an alarm (WP12), which shows if the account is being abused.
 
 ---
 
@@ -819,6 +840,7 @@ Estimates are for one engineer. The API and frontends are new Phase 1 and Phase 
 | WP12 Observability | WP4, WP9 | 1 day | Partly |
 | WP13 Readiness + docs | all | 2–3 days | Partly |
 | WP14 Bedrock (later) | WP4 | 3–5 days | Yes |
+| Presidio NER (after launch, decision D3) | WP8 | 1–2 days | No (re-measure the cold start) |
 | **Total (WP1–WP13)** | | **≈ 29–43 days** | AWS-specific ≈ 9–13 days |
 
 ```mermaid
@@ -857,7 +879,7 @@ flowchart LR
 The AWS migration is done when all of these hold:
 
 - [ ] Both bots answer end to end at `https://<distribution>.cloudfront.net`: lookup, comparison, coverage check, clarification and resume, refusal, and a PDF citation (including a preview-only SBC through the proxy).
-- [ ] The broker sign-in works for `admin` (TOTP) and `demo-broker` (no MFA, read-only, rate-limited). The public bot passes Turnstile.
+- [ ] The broker sign-in works for `admin` (TOTP) and `demo-broker` (no MFA, read-only, rate-limited). The demo credentials shown on the landing page work, the demo user's tokens can't change its password, and `rotate-demo-password.sh` updates the page without a rebuild. The public bot passes Turnstile.
 - [ ] No NAT Gateway, load balancer, Secrets Manager secret, customer-managed KMS key or public database exists (the CDK tests assert this).
 - [ ] Every cap has been hit on purpose and behaved correctly: per-user, per-IP, global daily, kill switch, and the OpenRouter key limit.
 - [ ] Cold first answer < 10 s; warm fast path ≤ 4 s p50; the measurements are in the runbook.

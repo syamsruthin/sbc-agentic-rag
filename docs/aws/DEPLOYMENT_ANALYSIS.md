@@ -1044,7 +1044,8 @@ Because the link may be forwarded, every bot has hard limits. Treat them as part
   - **Your admin account:** TOTP enrolled and set as preferred, so you're always challenged. It is in the `admin` group.
   - **`demo-broker` account:** no MFA, `broker` group only (read-only; no admin endpoints, no kill switches).
 - **The demo user can't change its own password or attributes.** Remove the `aws.cognito.signin.user.admin` scope from the app client. That scope is what lets a token holder call `ChangePassword`, `UpdateUserAttributes` and similar self-service APIs, so without it an interviewer can't lock others out.
-- **Share the credentials** in your resume or interview email, or on the landing page. On the landing page, the §17.4 caps limit the risk. Rotate the password when needed with `admin-set-user-password`.
+- **The credentials are shown on the landing page** (decided). The §17.4 caps limit the risk. They're served from `/landing/demo.json`, so `rotate-demo-password.sh` can change them without a rebuild (MIGRATION_PLAN.md, decision D2).
+- **Presidio NER is deferred until after launch** (decided). The existing regex redaction stays as the PII layer, which keeps the image smaller and the cold start shorter (MIGRATION_PLAN.md, decision D3).
 - **Brokers' own history is separated by user ID.** All interviewers share the demo user, so they see one shared history. Either show only the current browser session's threads (thread IDs kept client-side), or clear the demo user's history nightly with a short TTL (e.g. 1 day for the demo user).
 
 ### 17.6 Interviewer-facing extras (cheap, high signal)
