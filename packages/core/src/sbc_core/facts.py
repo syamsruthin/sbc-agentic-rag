@@ -45,7 +45,9 @@ class SqliteFactsReader:
         path = Path(path)
         if not path.is_file():
             raise BundleError(f"facts bundle not found: {path}")
-        self._db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, check_same_thread=False)
+        # immutable=1: a bundle never changes while open, so SQLite skips locking (the image is read-only).
+        uri = f"{path.resolve().as_uri()}?mode=ro&immutable=1"
+        self._db = sqlite3.connect(uri, uri=True, check_same_thread=False)
         try:
             meta = {k: json.loads(v) for k, v in self._db.execute("SELECT key, value FROM meta")}
         except sqlite3.DatabaseError as exc:

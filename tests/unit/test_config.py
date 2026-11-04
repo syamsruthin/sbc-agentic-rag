@@ -103,7 +103,7 @@ def test_env_cannot_be_set_in_yaml(tmp_path: Path, config_dir: Path) -> None:
         ({"compare_max_plans": 6}, "at most 3"),
         ({"plan_recommendation_policy": "rank_by_stated_criteria"}, "tradeoffs_only"),
         ({"plan_scope": {"markets": ["Individual", "Small Group"]}}, r"exactly \[Individual\]"),
-        ({"auth": "supabase"}, "anonymous"),
+        ({"auth": "cognito"}, "anonymous"),
         ({"readability_max_grade": None}, "readability_max_grade"),
         ({"rate_limits": {"per_ip_per_day": None}}, "per_ip_per_day"),
     ],
@@ -117,11 +117,56 @@ def test_public_profile_rejects_broker_settings(
         load_config("public", "local", root)
 
 
-def test_broker_requires_supabase_auth(tmp_path: Path, config_dir: Path) -> None:
+def test_broker_requires_cognito_auth(tmp_path: Path, config_dir: Path) -> None:
     root = _copy_config(config_dir, tmp_path)
     _edit(root / "bots" / "broker.yaml", {"bot": {"auth": "anonymous"}})
-    with pytest.raises(ConfigError, match="supabase"):
+    with pytest.raises(ConfigError, match="cognito"):
         load_config("broker", "local", root)
+
+
+def test_supabase_auth_is_no_longer_accepted(tmp_path: Path, config_dir: Path) -> None:
+    root = _copy_config(config_dir, tmp_path)
+    _edit(root / "bots" / "broker.yaml", {"bot": {"auth": "supabase"}})
+    with pytest.raises(ConfigError, match="auth"):
+        load_config("broker", "local", root)
+
+
+# ------------------------------------------------------------------ portfolio limits
+
+
+def test_portfolio_limits_are_off_unless_an_environment_sets_them(config_dir: Path) -> None:
+    local = load_config("broker", "local", config_dir).portfolio
+    assert not local.enabled
+    assert local.global_daily_llm_turns is None
+    dev = load_config("public", "dev", config_dir).portfolio
+    assert dev.global_daily_llm_turns == 300
+    assert (dev.demo_rate_limits.per_minute, dev.demo_rate_limits.per_day) == (15, 100)
+    assert dev.demo_history_ttl_hours == 24
+
+
+def test_demo_user_ids_come_from_the_environment(config_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SBC_PORTFOLIO__DEMO_USER_IDS", '["11111111-2222-3333-4444-555555555555"]')
+    portfolio = load_config("broker", "dev", config_dir).portfolio
+    assert portfolio.demo_user_ids == ("11111111-2222-3333-4444-555555555555",)
+    assert portfolio.enabled
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"global_daily_llm_turns": 0},
+        {"demo_history_ttl_hours": 0},
+        {"demo_rate_limits": {"per_minute": 0, "per_day": 10}},
+        {"unknown_limit": 5},
+    ],
+)
+def test_invalid_portfolio_settings_are_rejected(
+    tmp_path: Path, config_dir: Path, update: dict[str, Any]
+) -> None:
+    root = _copy_config(config_dir, tmp_path)
+    _edit(root / "env" / "dev.yaml", {"portfolio": update})
+    with pytest.raises(ConfigError, match="portfolio"):
+        load_config("broker", "dev", root)
 
 
 def test_unknown_tool_is_rejected(tmp_path: Path, config_dir: Path) -> None:
@@ -182,7 +227,12 @@ def test_dev_settings_fail_fast_and_name_only_missing_variables(config_dir: Path
     message = str(excinfo.value)
     missing = message.split(": ", 1)[1].split(", ")
     assert "OPENROUTER_API_KEY_BROKER" in missing
-    assert "SUPABASE_JWT_SECRET" in missing
+    assert {
+        "COGNITO_USER_POOL_ID",
+        "COGNITO_APP_CLIENT_ID",
+        "DDB_TABLE_CHECKPOINTS",
+        "S3_DATA_BUCKET",
+    } <= set(missing)
     assert "LANGFUSE_SECRET_KEY" not in missing
     assert "TURNSTILE_SECRET_KEY" not in missing
     assert "super-secret-value" not in message
@@ -192,7 +242,23 @@ def test_public_bot_needs_turnstile_and_session_secret(config_dir: Path) -> None
     missing = _env(app_env="prd").missing_for(BotName.PUBLIC)
     assert {"OPENROUTER_API_KEY_PUBLIC", "TURNSTILE_SECRET_KEY", "SESSION_JWT_SECRET"} <= set(missing)
     assert "OPENROUTER_API_KEY_BROKER" not in missing
-    assert "SUPABASE_JWT_SECRET" not in missing
+    assert "COGNITO_USER_POOL_ID" not in missing
+    assert {"DDB_TABLE_APP", "DDB_TABLE_AUDIT", "DDB_TABLE_CHECKPOINTS", "S3_DATA_BUCKET"} <= set(missing)
+
+
+def test_supabase_and_upstash_settings_are_gone() -> None:
+    names = set(EnvSettings.model_fields)
+    assert not {n for n in names if n.startswith(("supabase_", "upstash_"))}
+    assert "database_url" not in names
+
+
+def test_langfuse_is_optional_and_needs_both_keys() -> None:
+    assert not _env().langfuse_enabled
+    assert not _env(langfuse_public_key="pk-lf-example").langfuse_enabled
+    both = _env(langfuse_public_key="pk-lf-example", langfuse_secret_key="sk-lf-example")  # noqa: S106 - fake
+    assert both.langfuse_enabled
+    missing = _env(app_env="dev").missing_for(BotName.BROKER)
+    assert not {n for n in missing if n.startswith("LANGFUSE")}
 
 
 @pytest.mark.parametrize("bot", list(BotName))

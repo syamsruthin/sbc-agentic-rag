@@ -1,2 +1,2 @@
-# Production (Cloud Run api-prod, Supabase project 2).
+# Production (a separate AWS deployment, when there is one).
 # Nothing overrides base.yaml here yet.

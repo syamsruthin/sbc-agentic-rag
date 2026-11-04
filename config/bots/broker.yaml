@@ -1,7 +1,7 @@
 # Broker Assistant: authenticated brokers and HR teams, every market (PLAN.md section 2.2).
 bot:
   name: broker
-  auth: supabase
+  auth: cognito  # Amazon Cognito user pool; tokens verified through its JWKS (docs/aws/MIGRATION_PLAN.md WP5)
   plan_scope:
     markets: []  # empty = every market; plan status is shown, not filtered
   tools:

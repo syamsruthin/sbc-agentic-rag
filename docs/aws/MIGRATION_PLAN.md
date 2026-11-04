@@ -216,6 +216,8 @@ Each work package is one pull request into `main_AWS`. The order follows the dep
 
 ### WP1: Configuration for AWS
 
+> **Status: done** on `main_AWS`. All checks are green: ruff, mypy, import-linter, 305 unit tests and the eval gate. `sbc-ask` loads the new config and the bundle; a live answer still needs an OpenRouter key. As built, `portfolio` is off unless an environment file sets it (only `config/env/dev.yaml` does), and `demo_rate_limits` defaults to 15 per minute and 100 per day.
+
 **Files:** `packages/core/src/sbc_core/config.py`, `config/bots/broker.yaml`, `config/env/dev.yaml`, `.env.example`, `tests/unit/test_config.py`, `packages/core/src/sbc_core/facts.py`, `packages/core/src/sbc_core/search.py`.
 
 **`BotProfile`:**

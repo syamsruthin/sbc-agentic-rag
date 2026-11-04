@@ -4,9 +4,11 @@ Behavior settings live in YAML under ``config/`` and are versioned with the code
 order, later layers winning: ``base.yaml`` -> ``bots/<bot>.yaml`` -> ``env/<env>.yaml`` -> ``SBC_*``
 environment variables (nested keys use ``__``, e.g. ``SBC_RETRIEVAL__RERANK_ENABLED=false``).
 
-Deploy-time values and secrets come only from environment variables (Doppler in shared environments) and are
-never read from YAML. In ``dev`` and ``prd`` every secret the bot needs must be present, so a misconfigured
-deployment fails at startup instead of on the first request.
+Deploy-time values and secrets come only from environment variables and are never read from YAML. On AWS the
+API loads its secrets from SSM Parameter Store into the environment at cold start, before these settings are
+read (docs/aws/MIGRATION_PLAN.md, WP1/WP2), so this module stays cloud-neutral. In ``dev`` and ``prd`` every
+setting the bot needs must be present, so a misconfigured deployment fails at startup instead of on the first
+request.
 """
 
 from __future__ import annotations
@@ -121,7 +123,7 @@ class RateLimits(_Model):
 
 class BotProfile(_Model):
     name: BotName
-    auth: Literal["supabase", "anonymous"]
+    auth: Literal["cognito", "anonymous"]
     plan_scope: PlanScope
     tools: tuple[str, ...]
     allow_discovery: bool
@@ -144,8 +146,8 @@ class BotProfile(_Model):
             raise ValueError(f"required tools missing: {sorted(missing)}")
         if self.name is BotName.PUBLIC:
             self._check_public()
-        elif self.auth != "supabase":
-            raise ValueError("the broker bot must use supabase auth")
+        elif self.auth != "cognito":
+            raise ValueError("the broker bot must use cognito auth")
         return self
 
     def _check_public(self) -> None:
@@ -168,6 +170,26 @@ class BotProfile(_Model):
             raise ValueError("public profile: " + "; ".join(problems))
 
 
+class Portfolio(_Model):
+    """Limits for running the app as a public portfolio demo (docs/aws/DEPLOYMENT_ANALYSIS.md section 17).
+
+    Off unless an environment file sets it: ``global_daily_llm_turns`` None means no global cap, and an empty
+    ``demo_user_ids`` means no account gets the demo limits."""
+
+    global_daily_llm_turns: int | None = Field(default=None, gt=0)
+    """Turns that call a model, across both bots, per UTC day; then a "demo limit reached" reply."""
+    demo_user_ids: tuple[str, ...] = ()
+    """Cognito ``sub`` of the shared demo broker account(s); set per deployment through
+    ``SBC_PORTFOLIO__DEMO_USER_IDS`` (a JSON list)."""
+    demo_rate_limits: RateLimits = RateLimits(per_minute=15, per_day=100)
+    demo_history_ttl_hours: int = Field(default=24, gt=0)
+    """How long the shared demo account's conversations are kept."""
+
+    @property
+    def enabled(self) -> bool:
+        return self.global_daily_llm_turns is not None or bool(self.demo_user_ids)
+
+
 class AppConfig(BaseSettings):
     """Behavior settings: merged YAML layers, overridable through ``SBC_*`` environment variables."""
 
@@ -180,6 +202,7 @@ class AppConfig(BaseSettings):
     models: Models
     budget: TurnBudget
     retrieval: Retrieval
+    portfolio: Portfolio = Portfolio()
 
     @classmethod
     def settings_customise_sources(
@@ -207,14 +230,18 @@ class EnvSettings(BaseSettings):
     openrouter_api_key_broker: SecretStr | None = None
     openrouter_api_key_public: SecretStr | None = None
 
-    supabase_url: str | None = None
-    supabase_anon_key: SecretStr | None = None
-    supabase_service_role_key: SecretStr | None = None
-    supabase_jwt_secret: SecretStr | None = None
-    database_url: SecretStr | None = None
-
-    upstash_redis_rest_url: str | None = None
-    upstash_redis_rest_token: SecretStr | None = None
+    # AWS resources (docs/aws/MIGRATION_PLAN.md section 6.4). Names and IDs, not secrets.
+    aws_region: str = "us-east-1"
+    ssm_prefix: str | None = None
+    """Parameter Store path the API loads its secrets from at cold start, e.g. ``/sbc/dev/``."""
+    ddb_table_app: str | None = None
+    ddb_table_audit: str | None = None
+    ddb_table_checkpoints: str | None = None
+    s3_data_bucket: str | None = None
+    cognito_user_pool_id: str | None = None
+    cognito_app_client_id: str | None = None
+    public_base_url: str | None = None
+    """The public site URL (the CloudFront distribution), for absolute links and the allowed origin."""
 
     turnstile_secret_key: SecretStr | None = None
     session_jwt_secret: SecretStr | None = None
@@ -227,18 +254,22 @@ class EnvSettings(BaseSettings):
     def openrouter_key_for(self, bot: BotName) -> SecretStr | None:
         return self.openrouter_api_key_broker if bot is BotName.BROKER else self.openrouter_api_key_public
 
+    @property
+    def langfuse_enabled(self) -> bool:
+        """Tracing to Langfuse is optional; it is on only when both keys are set."""
+        return _is_set(self.langfuse_public_key) and _is_set(self.langfuse_secret_key)
+
     def missing_for(self, bot: BotName) -> list[str]:
         """Names (never values) of the environment variables this bot needs in dev and prd but lacks."""
         required = [
             f"openrouter_api_key_{bot.value}",
-            "database_url",
-            "upstash_redis_rest_url",
-            "upstash_redis_rest_token",
-            "langfuse_public_key",
-            "langfuse_secret_key",
+            "ddb_table_app",
+            "ddb_table_audit",
+            "ddb_table_checkpoints",
+            "s3_data_bucket",
         ]
         if bot is BotName.BROKER:
-            required += ["supabase_url", "supabase_jwt_secret"]
+            required += ["cognito_user_pool_id", "cognito_app_client_id"]
         else:
             required += ["turnstile_secret_key", "session_jwt_secret"]
         return [name.upper() for name in required if not _is_set(getattr(self, name))]

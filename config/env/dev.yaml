@@ -1,2 +1,11 @@
-# Shared dev environment (Cloud Run api-dev, Supabase project 1).
-# Nothing overrides base.yaml here yet.
+# Shared dev environment: the AWS portfolio deployment (Lambda sbc-api, docs/aws/MIGRATION_PLAN.md).
+
+# Public demo limits (docs/aws/DEPLOYMENT_ANALYSIS.md section 17.4). The demo broker account's Cognito sub is
+# set per deployment through SBC_PORTFOLIO__DEMO_USER_IDS (a JSON list), not here.
+portfolio:
+  global_daily_llm_turns: 300
+  demo_user_ids: []
+  demo_rate_limits:
+    per_minute: 15
+    per_day: 100
+  demo_history_ttl_hours: 24
