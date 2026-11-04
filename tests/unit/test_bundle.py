@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from sbc_extract.review import load_allowlist
-from sbc_index.bundle import build_bundle
+from sbc_index.bundle import SOURCE_FIELDS, build_bundle
 
 FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "sbc_minimal.md"
 
@@ -45,11 +45,51 @@ def _corpus(root: Path, edit: Callable[[str, str], str] | None = None) -> tuple[
     return root / "data" / "markdown" / "sbc" / "2027", report
 
 
-def make_bundle(root: Path, edit: Callable[[str, str], str] | None = None) -> Path:
-    """Build a two-plan test bundle under ``root`` and return its path."""
+SILVER_SHA = "a" * 64
+GOLD_SHA = "b" * 64
+
+
+def manifest_rows() -> list[dict[str, str]]:
+    """Manifest rows for the corpus: the Silver plan is preview-only, Gold has a public deep link."""
+    base = {
+        "source": "portal", "portal": "example", "brand": "Example", "state": "XX",
+        "market_unit": "Individual", "plan_type": "PPO", "network": "Example Network", "exchange": "On",
+        "plan_status": "Active", "rx_rider": "", "coverage_period": "01/01/2027 - 12/31/2027",
+        "hios_plan_ids": "", "language": "English", "local_path": "", "downloaded": "True", "bytes": "123456",
+        "contract_code": "ZZ01",
+    }  # fmt: skip
+    silver = {
+        "plan_name": "Example Silver PPO 3000", "sbc_id": "100000000001", "doc_sys_id": "D1",
+        "dps_unique_id": "U1", "source_system": "EPDG", "fetch_method": "preview_post",
+        "url": "https://portal.example/dps/", "sha256": SILVER_SHA.upper(),
+    }  # fmt: skip
+    gold = {
+        "plan_name": "Example Gold", "sbc_id": "100000000002", "doc_sys_id": "D2", "dps_unique_id": "U2",
+        "source_system": "DOCGEN", "fetch_method": "deeplink", "sha256": GOLD_SHA,
+        "url": "https://portal.example/dpsdeeplink/deepLink/x/ZZ01/English/DG100000000002.pdf",
+    }  # fmt: skip
+    return [{**base, **silver}, {**base, **gold}]
+
+
+def write_manifest(root: Path, rows: list[dict[str, str]] | None = None) -> Path:
+    """Write a ``sbc-portal manifest`` CSV (default: :func:`manifest_rows`) under ``root``."""
+    rows = manifest_rows() if rows is None else rows
+    path = root / "manifest.csv"
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(["sbc_id", *SOURCE_FIELDS, *rows[0]])))
+        w.writeheader()
+        w.writerows(rows)
+    return path
+
+
+def make_bundle(root: Path, edit: Callable[[str, str], str] | None = None, *, manifest: bool = True) -> Path:
+    """Build a two-plan test bundle under ``root`` and return its path (with ``plan_source`` rows unless
+    ``manifest`` is False)."""
     md_dir, report = _corpus(root, edit)
     out = root / "facts.sqlite"
-    stats = build_bundle(md_dir, report, out, "test.1", root=root)
+    stats = build_bundle(
+        md_dir, report, out, "test.1", root=root, manifest_csv=write_manifest(root) if manifest else None
+    )
     assert (stats.plans, stats.quarantined) == (2, 1)
     return out
 
@@ -103,6 +143,83 @@ def test_release_build_requires_signed_allowlist(tmp_path: Path, monkeypatch: py
     md_dir, report = _corpus(tmp_path)
     with pytest.raises(SystemExit, match="no sign-off"):
         build_bundle(md_dir, report, tmp_path / "x.sqlite", "test.2", root=tmp_path, release=True)
+
+
+# ------------------------------------------------------------------ plan_source (the PDF proxy's data)
+
+
+def test_every_plan_gets_its_pdf_source(bundle: sqlite3.Connection) -> None:
+    rows = bundle.execute(
+        "SELECT p.plan_key, s.fetch_method, s.doc_sys_id, s.source_system, s.pdf_sha256, s.pdf_bytes"
+        " FROM plan_source s JOIN plan p USING (plan_id) ORDER BY p.plan_key"
+    ).fetchall()
+    assert rows == [
+        (
+            "2027:100000000001",
+            "preview_post",
+            "D1",
+            "EPDG",
+            "a" * 64,
+            123456,
+        ),  # hash normalized to lower case
+        ("2027:100000000002", "deeplink", "D2", "DOCGEN", "b" * 64, 123456),
+    ]
+    meta = {k: json.loads(v) for k, v in bundle.execute("SELECT key, value FROM meta")}
+    assert meta["plan_source"] == {"rows": 2, "preview_only": 1, "missing": 0}
+
+
+def test_without_a_manifest_the_table_is_empty(tmp_path: Path) -> None:
+    with closing(sqlite3.connect(make_bundle(tmp_path, manifest=False))) as db:
+        assert db.execute("SELECT count(*) FROM plan_source").fetchone() == (0,)
+        meta = {k: json.loads(v) for k, v in db.execute("SELECT key, value FROM meta")}
+    assert meta["plan_source"] is None
+
+
+def _with_gold(**changes: str) -> list[dict[str, str]]:
+    rows = manifest_rows()
+    rows[1].update(changes)
+    return rows
+
+
+def test_undownloaded_or_unhashed_rows_count_as_missing(tmp_path: Path) -> None:
+    md_dir, report = _corpus(tmp_path)
+    manifest = write_manifest(tmp_path, _with_gold(downloaded="False"))
+    stats = build_bundle(md_dir, report, tmp_path / "x.sqlite", "t", root=tmp_path, manifest_csv=manifest)
+    assert (stats.sources, stats.sources_missing) == (1, 1)
+    manifest = write_manifest(tmp_path, _with_gold(sha256="not-a-hash"))
+    stats = build_bundle(md_dir, report, tmp_path / "y.sqlite", "t", root=tmp_path, manifest_csv=manifest)
+    assert stats.sources_missing == 1
+
+
+def test_release_build_requires_a_complete_manifest(tmp_path: Path) -> None:
+    md_dir, report = _corpus(tmp_path)
+    with pytest.raises(SystemExit, match="manifest is required"):
+        build_bundle(md_dir, report, tmp_path / "x.sqlite", "t", root=tmp_path, release=True)
+    partial = write_manifest(tmp_path, _with_gold(downloaded="False"))
+    with pytest.raises(SystemExit, match="1 plans are missing"):
+        build_bundle(
+            md_dir, report, tmp_path / "x.sqlite", "t", root=tmp_path, release=True, manifest_csv=partial
+        )
+    assert not (tmp_path / "x.sqlite").exists()
+    assert not (tmp_path / "x.tmp").exists()
+    stats = build_bundle(
+        md_dir,
+        report,
+        tmp_path / "x.sqlite",
+        "t",
+        root=tmp_path,
+        release=True,
+        manifest_csv=write_manifest(tmp_path),
+    )
+    assert stats.sources == 2
+
+
+def test_a_file_that_is_not_a_manifest_is_rejected(tmp_path: Path) -> None:
+    md_dir, report = _corpus(tmp_path)
+    bad = tmp_path / "bad.csv"
+    bad.write_text("sbc_id,url\n100000000001,https://x\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="not an sbc-portal manifest"):
+        build_bundle(md_dir, report, tmp_path / "x.sqlite", "t", root=tmp_path, manifest_csv=bad)
 
 
 def test_the_shipped_allowlist_is_signed() -> None:

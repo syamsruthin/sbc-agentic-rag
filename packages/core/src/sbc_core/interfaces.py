@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from sbc_core.types import ChunkContext, Fact, PlanSummary, SearchHit, SearchQuery
+from sbc_core.types import ChunkContext, Fact, PdfSource, PlanSummary, SearchHit, SearchQuery
 
 
 class FactsReader(Protocol):
@@ -76,6 +76,11 @@ class FactsReader(Protocol):
 
     def example_facts(self, plan_key: str, example_ids: Sequence[str] = ()) -> list[Fact]:
         """Every line of the Peg, Joe and Mia coverage examples."""
+        ...
+
+    def pdf_source(self, plan_key: str) -> PdfSource | None:
+        """How to fetch the plan's SBC PDF, or None when the bundle has no source for it (or no
+        ``plan_source`` table, in bundles built before it existed)."""
         ...
 
     def chunk_context(self, plan_key: str, chunk_hashes: Sequence[str]) -> dict[str, ChunkContext]:

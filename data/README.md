@@ -31,11 +31,17 @@ On a 4-CPU machine the download takes about 25 minutes, conversion about 55 and 
 Then build the facts bundle, which also holds the search index:
 
 ```bash
-uv run sbc-build-bundle --version 2027.1                 # -> bundles/facts-2027.1.sqlite (facts + BM25 index)
-uv run sbc-grammar-review bundles/facts-2027.1.sqlite    # -> docs/reviews/cost-grammar-review.md
-uv run sbc-puf-check bundles/facts-2027.1.sqlite         # -> data/markdown/puf_check_2027.csv
-uv run sbc-embed-bundle bundles/facts-2027.1.sqlite      # adds the chunk embeddings to the bundle
+uv run sbc-build-bundle --version 2027.2                 # -> bundles/facts-2027.2.sqlite (facts + BM25 index)
+uv run sbc-grammar-review bundles/facts-2027.2.sqlite    # -> docs/reviews/cost-grammar-review.md
+uv run sbc-puf-check bundles/facts-2027.2.sqlite         # -> data/markdown/puf_check_2027.csv
+uv run sbc-embed-bundle bundles/facts-2027.2.sqlite      # adds the chunk embeddings to the bundle
 ```
+
+`sbc-build-bundle` also reads the portal manifest (`data/catalog/sbc_manifest_<year>.csv`, or `--manifest`) into
+the bundle's `plan_source` table: each plan's fetch method, the portal's preview-form fields and the PDF's sha256.
+The API's PDF proxy needs these for the SBCs the portal serves only through its preview form. A `--release` build
+refuses to run without the manifest, or with any plan missing from it. Bundles from `2027.2` on have the table;
+`2027.1` predates it, and the API then links those plans to the portal search page as before.
 
 `sbc-embed-bundle` needs `OPENROUTER_API_KEY_BROKER` (see `.env.example`) and uses the embedding model in
 `config/base.yaml`. Embeddings are cached in `bundles/embeddings.sqlite` by chunk hash, so a rebuild only
@@ -44,8 +50,8 @@ embeds new chunk text. Without this step the bundle still supports BM25-only sea
 The retrieval eval and the PDF check of the golden dataset read the bundle (see `evals/README.md`):
 
 ```bash
-uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0 --setup bm25_only
-uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0
+uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup bm25_only
+uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0
 ```
 
 The downloader uses 6 parallel workers by default (`--workers`). Keep it modest and don't re-run it more

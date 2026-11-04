@@ -12,10 +12,11 @@ import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, get_args
+from urllib.parse import quote
 
 from sbc_core.template import LIMIT_QUESTIONS, LIST_TITLES, QUESTION_IDS, QUESTIONS
 from sbc_core.tiers import TierId
-from sbc_core.types import ChunkContext, Citation, Fact, PlanSummary
+from sbc_core.types import ChunkContext, Citation, Fact, PdfSource, PlanSummary
 
 _PLAN_COLUMNS = (
     "plan_key, plan_year, sbc_id, contract_code, plan_name, issuer, plan_type, coverage_period, coverage_for,"
@@ -40,8 +41,22 @@ def _in(values: Sequence[str]) -> str:
     return ",".join("?" * len(values))
 
 
+_SOURCE_COLUMNS = (
+    "fetch_method", "portal", "catalog_url", "state", "market_unit", "plan_name", "plan_type",
+    "coverage_period", "network", "language", "plan_status", "doc_sys_id", "dps_unique_id", "brand",
+    "source_system", "pdf_sha256", "pdf_bytes",
+)  # fmt: skip
+
+
 class SqliteFactsReader:
-    def __init__(self, path: Path | str) -> None:
+    """Reads the facts bundle.
+
+    ``pdf_proxy_base`` (the API passes ``/api/sbc/``) points the ``source_url`` of plans whose PDF is served
+    only by the portal's preview form at the API's PDF proxy, ``{base}{plan_key}.pdf``, so their citations
+    link to the PDF at the cited page. Without it (the CLI, tests) ``source_url`` is the bundle's own value.
+    """
+
+    def __init__(self, path: Path | str, *, pdf_proxy_base: str | None = None) -> None:
         path = Path(path)
         if not path.is_file():
             raise BundleError(f"facts bundle not found: {path}")
@@ -56,6 +71,16 @@ class SqliteFactsReader:
         self.meta: dict[str, Any] = meta
         self._plan_ids: dict[str, int] = {}
         self._plans: dict[str, PlanSummary] = {}
+        self._has_sources = bool(
+            self._db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plan_source'"
+            ).fetchone()
+        )
+        self._pdf_proxy_base = pdf_proxy_base
+        self._preview_only: frozenset[int] = frozenset()
+        if pdf_proxy_base is not None and self._has_sources:
+            rows = self._db.execute("SELECT plan_id FROM plan_source WHERE fetch_method = 'preview_post'")
+            self._preview_only = frozenset(r[0] for r in rows)
 
     def close(self) -> None:
         self._db.close()
@@ -76,9 +101,10 @@ class SqliteFactsReader:
         rows = self._db.execute(f"SELECT p.plan_id, {_PLAN_SELECT} FROM plan p {where}", params).fetchall()  # noqa: S608 - fixed SQL fragments
         out = []
         for plan_id, *values in rows:
-            summary = PlanSummary(
-                **{k: v for k, v in zip(_PLAN_FIELDS, values, strict=True) if v is not None}
-            )
+            fields = {k: v for k, v in zip(_PLAN_FIELDS, values, strict=True) if v is not None}
+            if plan_id in self._preview_only:
+                fields["source_url"] = f"{self._pdf_proxy_base}{quote(str(fields['plan_key']), safe='')}.pdf"
+            summary = PlanSummary(**fields)
             self._plan_ids[summary.plan_key] = plan_id
             self._plans[summary.plan_key] = summary
             out.append(summary)
@@ -95,6 +121,25 @@ class SqliteFactsReader:
         if plan_key not in found:
             return None
         return self._plan_ids[plan_key], found[plan_key]
+
+    def pdf_source(self, plan_key: str) -> PdfSource | None:
+        if not self._has_sources:
+            return None
+        found = self._plan(plan_key)
+        if found is None:
+            return None
+        plan_id, plan = found
+        row = self._db.execute(
+            f"SELECT {', '.join(_SOURCE_COLUMNS)} FROM plan_source WHERE plan_id = ?",  # noqa: S608 - fixed columns
+            (plan_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        sbc_id = self._db.execute("SELECT sbc_id FROM plan WHERE plan_id = ?", (plan_id,)).fetchone()[0]
+        return PdfSource(
+            plan_key=plan_key, sbc_id=sbc_id, contract_code=plan.contract_code,
+            **dict(zip(_SOURCE_COLUMNS, row, strict=True)),
+        )  # fmt: skip
 
     def find_plans_by_name(
         self,

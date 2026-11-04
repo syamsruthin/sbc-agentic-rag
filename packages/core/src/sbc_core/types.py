@@ -68,6 +68,40 @@ class PlanSummary(_Model):
     eoc_url: str = ""
 
 
+class PdfSource(_Model):
+    """How a plan's SBC PDF is fetched, from the bundle's ``plan_source`` table (the portal manifest).
+
+    ``deeplink`` PDFs have a public URL. ``preview_post`` PDFs are served only by the portal's previewDocument
+    form, so the API fetches them on request (``GET /api/sbc/{plan_key}.pdf``) with these form fields and
+    checks the result against ``pdf_sha256`` before streaming it (PLAN.md 3.7)."""
+
+    plan_key: PlanKey
+    sbc_id: str
+    contract_code: str
+    fetch_method: Literal["deeplink", "preview_post"]
+    portal: str
+    catalog_url: str
+    state: str
+    market_unit: str
+    plan_name: str
+    """The portal catalog's plan name (the preview form wants it exactly as the portal lists it)."""
+    plan_type: str
+    coverage_period: str
+    network: str
+    language: str
+    plan_status: str
+    doc_sys_id: str
+    dps_unique_id: str
+    brand: str
+    source_system: str
+    pdf_sha256: str
+    pdf_bytes: int
+
+    @property
+    def preview_only(self) -> bool:
+        return self.fetch_method == "preview_post"
+
+
 class Citation(_Model):
     """Where a value is printed: plan, SBC section and page(s)."""
 

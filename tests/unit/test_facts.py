@@ -9,7 +9,7 @@ import pytest
 
 from sbc_core.facts import BundleError, SqliteFactsReader
 from sbc_core.interfaces import FactsReader
-from tests.unit.test_bundle import make_bundle
+from tests.unit.test_bundle import GOLD_SHA, SILVER_SHA, make_bundle
 
 PLAN = "2027:100000000001"
 GOLD = "2027:100000000002"
@@ -130,3 +130,50 @@ def test_find_plans_by_identifier(reader: SqliteFactsReader) -> None:
     assert reader.find_plans_by_identifier("100000000002", plan_year=2026) == []
     assert reader.find_plans_by_identifier("ZZ0") == []
     assert reader.find_plans_by_identifier(" ") == []
+
+
+# ------------------------------------------------------------------ PDF sources (WP3)
+
+
+def test_pdf_source_has_the_preview_form_fields(reader: SqliteFactsReader) -> None:
+    silver = reader.pdf_source(PLAN)
+    assert silver is not None
+    assert silver.preview_only
+    assert (silver.sbc_id, silver.contract_code, silver.doc_sys_id, silver.dps_unique_id) == (
+        "100000000001", "ZZ01", "D1", "U1",
+    )  # fmt: skip
+    assert (silver.state, silver.market_unit, silver.language, silver.source_system) == (
+        "XX", "Individual", "English", "EPDG",
+    )  # fmt: skip
+    assert silver.pdf_sha256 == SILVER_SHA
+    gold = reader.pdf_source(GOLD)
+    assert gold is not None
+    assert not gold.preview_only
+    assert gold.pdf_sha256 == GOLD_SHA
+    assert reader.pdf_source("2027:999999999999") is None
+
+
+def test_bundles_without_plan_source_still_open(tmp_path: Path) -> None:
+    import sqlite3
+    from contextlib import closing
+
+    path = make_bundle(tmp_path)
+    with closing(sqlite3.connect(path)) as db:
+        db.execute("DROP TABLE plan_source")
+        db.commit()
+    with SqliteFactsReader(path, pdf_proxy_base="/api/sbc/") as old:
+        assert old.pdf_source(PLAN) is None
+        assert old.plans([PLAN])[PLAN].source_url == "https://example.org/sbc.pdf"
+
+
+def test_without_a_proxy_base_source_urls_are_unchanged(reader: SqliteFactsReader) -> None:
+    assert reader.plans([PLAN])[PLAN].source_url == "https://example.org/sbc.pdf"
+
+
+def test_preview_only_plans_link_to_the_pdf_proxy(tmp_path: Path) -> None:
+    with SqliteFactsReader(make_bundle(tmp_path), pdf_proxy_base="/api/sbc/") as r:
+        plans = r.plans([PLAN, GOLD])
+        assert plans[PLAN].source_url == "/api/sbc/2027%3A100000000001.pdf"
+        assert plans[GOLD].source_url == "https://example.org/sbc.pdf"  # has a public link: unchanged
+        (fact, *_) = r.question_facts(PLAN, ["overall_deductible"])
+        assert fact.citation.url == "/api/sbc/2027%3A100000000001.pdf#page=1"

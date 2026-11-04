@@ -1,8 +1,10 @@
 """Build the facts bundle: one read-only SQLite file per release (PLAN.md sections 3.2.3 and 3.2.5).
 
 It holds the structured facts the runtime reads exactly, the unique search chunks with their plan links and
-BM25 term weights (``sbc_index.search_build``; ``sbc-embed-bundle`` adds the embeddings), and a quarantine
-list of plans left out and why.
+BM25 term weights (``sbc_index.search_build``; ``sbc-embed-bundle`` adds the embeddings), a quarantine list of
+plans left out and why, and each plan's PDF source from the portal manifest (``plan_source``): how the PDF is
+fetched, the portal's preview-form fields and the PDF's sha256, which the API's PDF proxy needs for the SBCs
+the portal serves only through its preview form (PLAN.md 3.7).
 """
 
 from __future__ import annotations
@@ -83,6 +85,16 @@ CREATE TABLE plan_chunk (
     PRIMARY KEY (plan_id, position)
 ) WITHOUT ROWID;
 CREATE TABLE quarantine (markdown TEXT PRIMARY KEY, plan_key TEXT, reasons TEXT NOT NULL);
+-- Each plan's PDF as the portal manifest records it (sbc-portal catalog + manifest). fetch_method 'deeplink'
+-- has a public PDF URL; 'preview_post' is served only by the portal's previewDocument form, whose fields
+-- are kept here so the API can fetch the PDF on request and check it against pdf_sha256.
+CREATE TABLE plan_source (
+    plan_id INTEGER PRIMARY KEY, fetch_method TEXT NOT NULL, portal TEXT NOT NULL, catalog_url TEXT NOT NULL,
+    state TEXT NOT NULL, market_unit TEXT NOT NULL, plan_name TEXT NOT NULL, plan_type TEXT NOT NULL,
+    coverage_period TEXT NOT NULL, network TEXT NOT NULL, language TEXT NOT NULL, plan_status TEXT NOT NULL,
+    doc_sys_id TEXT NOT NULL, dps_unique_id TEXT NOT NULL, brand TEXT NOT NULL, source_system TEXT NOT NULL,
+    pdf_sha256 TEXT NOT NULL, pdf_bytes INTEGER NOT NULL
+);
 -- Exact plan lookup by the IDs a user can type: contract code, SBC id, HIOS plan id with its -NN variant
 -- ("hios") and without it ("hios_base", which can match several variants).
 CREATE TABLE plan_identifier (
@@ -104,6 +116,9 @@ class BuildStats:
     benefits: int = 0
     chunks: int = 0
     plan_chunks: int = 0
+    sources: int = 0
+    preview_only: int = 0
+    sources_missing: int = 0
     cost_status: Counter[str] = dataclasses.field(default_factory=Counter)
     cost_cells: Counter[str] = dataclasses.field(default_factory=Counter)
     quarantine_reasons: Counter[str] = dataclasses.field(default_factory=Counter)
@@ -122,15 +137,42 @@ def _identifiers(
     return [(kind, value) for kind, value in ids if value]
 
 
+SOURCE_FIELDS = (
+    "fetch_method", "portal", "url", "state", "market_unit", "plan_name", "plan_type", "coverage_period",
+    "network", "language", "plan_status", "doc_sys_id", "dps_unique_id", "brand", "source_system", "sha256",
+    "bytes",
+)  # fmt: skip
+"""Manifest columns copied into ``plan_source``, in its column order (``url`` is stored as ``catalog_url``,
+``sha256`` as ``pdf_sha256``)."""
+_SHA256_HEX = frozenset("0123456789abcdef")
+
+
+def load_manifest(path: Path) -> dict[str, dict[str, str]]:
+    """The ``sbc-portal manifest`` CSV by ``sbc_id``; rows without a downloaded, hashed PDF are left out."""
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    missing = {"sbc_id", "downloaded", *SOURCE_FIELDS} - set(rows[0] if rows else {})
+    if missing:
+        raise SystemExit(f"{path}: not an sbc-portal manifest (missing columns: {sorted(missing)})")
+    out: dict[str, dict[str, str]] = {}
+    for r in rows:
+        sha = r["sha256"].strip().lower()
+        if r["downloaded"].strip().lower() == "true" and len(sha) == 64 and set(sha) <= _SHA256_HEX:
+            out[r["sbc_id"]] = {**r, "sha256": sha}
+    return out
+
+
 # Fixed placeholder lists, not user input.
 _INSERT_PLAN = "INSERT INTO plan VALUES (NULL," + ",".join("?" * 27) + ")"  # noqa: S608
 _INSERT_BENEFIT = "INSERT INTO plan_benefit VALUES (" + ",".join("?" * 13) + ")"  # noqa: S608
+_INSERT_SOURCE = "INSERT INTO plan_source VALUES (?," + ",".join("?" * len(SOURCE_FIELDS)) + ")"  # noqa: S608
 
 
 class _Writer:
-    def __init__(self, db: sqlite3.Connection) -> None:
+    def __init__(self, db: sqlite3.Connection, manifest: dict[str, dict[str, str]] | None = None) -> None:
         self.db = db
         self.ids: dict[tuple[str, ...], int] = {}
+        self.manifest = manifest
 
     def _intern(self, key: tuple[str, ...], sql: str, params: tuple[Any, ...]) -> int:
         if key not in self.ids:
@@ -239,21 +281,48 @@ class _Writer:
             "INSERT INTO plan_chunk VALUES (?, ?, ?, ?)",
             [(plan_id, pc.position, chunk_ids[pc.chunk_hash], _pages(pc.pages)) for pc in e.plan_chunks],
         )
+        self._source(plan_id, plan.sbc_id, stats)
         stats.plans += 1
         stats.benefits += len(e.benefits)
         stats.chunks = sum(1 for k in self.ids if k[0] == "chunk")
         stats.plan_chunks += len(e.plan_chunks)
 
+    def _source(self, plan_id: int, sbc_id: str, stats: BuildStats) -> None:
+        if self.manifest is None:
+            return
+        row = self.manifest.get(sbc_id)
+        if row is None:
+            stats.sources_missing += 1
+            return
+        values = [(row.get(k) or "").strip() for k in SOURCE_FIELDS]
+        values[-1] = str(int(values[-1] or 0))
+        self.db.execute(_INSERT_SOURCE, (plan_id, *values))
+        stats.sources += 1
+        stats.preview_only += row["fetch_method"] == "preview_post"
+
 
 def build_bundle(
-    markdown_dir: Path, report_csv: Path, out: Path, version: str, *, root: Path, release: bool = False
+    markdown_dir: Path,
+    report_csv: Path,
+    out: Path,
+    version: str,
+    *,
+    root: Path,
+    release: bool = False,
+    manifest_csv: Path | None = None,
 ) -> BuildStats:
-    """Extract every Markdown file under ``markdown_dir`` and write the bundle to ``out``."""
+    """Extract every Markdown file under ``markdown_dir`` and write the bundle to ``out``.
+
+    With ``manifest_csv`` (the ``sbc-portal manifest`` output), every plan gets its ``plan_source`` row; a
+    release build requires the manifest and refuses a bundle with any plan missing from it."""
     allowlist = load_allowlist()
     if release and not allowlist.signed:
         raise SystemExit(
             "release build refused: the REVIEW allowlist has no sign-off (data/review_allowlist.yaml)"
         )
+    if release and manifest_csv is None:
+        raise SystemExit("release build refused: the portal manifest is required (--manifest)")
+    manifest = load_manifest(manifest_csv) if manifest_csv is not None else None
     with report_csv.open(newline="", encoding="utf-8") as f:
         report = {r["markdown"]: r for r in csv.DictReader(f)}
     files = sorted(markdown_dir.rglob("*.md"))
@@ -264,12 +333,12 @@ def build_bundle(
     tmp.unlink(missing_ok=True)
     db = sqlite3.connect(tmp)
     db.executescript(SCHEMA)
-    writer, stats = _Writer(db), BuildStats()
-    manifest = hashlib.sha256()
+    writer, stats = _Writer(db, manifest), BuildStats()
+    manifest_hash = hashlib.sha256()
     for path in files:
         rel = str(path.relative_to(root))
         text = path.read_text(encoding="utf-8")
-        manifest.update(f"{rel}\0{hashlib.sha1(text.encode()).hexdigest()}\n".encode())  # noqa: S324
+        manifest_hash.update(f"{rel}\0{hashlib.sha1(text.encode()).hexdigest()}\n".encode())  # noqa: S324
         e = extract(text, report.get(rel, {}))
         if e.ok:
             writer.add(e, stats)
@@ -281,10 +350,16 @@ def build_bundle(
                 "INSERT INTO quarantine VALUES (?, ?, ?)",
                 (rel, e.plan.plan_key if e.plan else None, json.dumps(e.quarantine_reasons)),
             )
+    if release and stats.sources_missing:
+        db.close()
+        tmp.unlink(missing_ok=True)
+        raise SystemExit(
+            f"release build refused: {stats.sources_missing} plans are missing from the manifest"
+        )
     bm25 = write_bm25(db)
     meta: dict[str, Any] = {
         "bundle_version": version,
-        "source_manifest_sha256": manifest.hexdigest(),
+        "source_manifest_sha256": manifest_hash.hexdigest(),
         "grammar_version": GRAMMAR_VERSION,
         "taxonomy_version": load_taxonomy().version,
         "review_allowlist_signed": allowlist.signed,
@@ -292,7 +367,10 @@ def build_bundle(
         "quarantined": stats.quarantined,
         "unique_chunks": stats.chunks,
         "bm25": bm25,
-    }
+        "plan_source": {
+            "rows": stats.sources, "preview_only": stats.preview_only, "missing": stats.sources_missing,
+        } if manifest is not None else None,
+    }  # fmt: skip
     db.executemany("INSERT INTO meta VALUES (?, ?)", [(k, json.dumps(v)) for k, v in meta.items()])
     db.commit()
     db.execute(f"PRAGMA page_size = {PAGE_SIZE}")
@@ -307,13 +385,27 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--year", default="2027")
     ap.add_argument("--version", required=True, help="bundle version, e.g. 2027.1")
     ap.add_argument("--out", type=Path, help="default: bundles/facts-<version>.sqlite")
-    ap.add_argument("--release", action="store_true", help="require a signed REVIEW allowlist")
+    ap.add_argument(
+        "--release", action="store_true", help="require a signed REVIEW allowlist and the manifest"
+    )
+    ap.add_argument(
+        "--manifest", type=Path,
+        help="sbc-portal manifest CSV for plan_source (default: data/catalog/sbc_manifest_<year>.csv)",
+    )  # fmt: skip
     args = ap.parse_args(argv)
     root = Path.cwd()
     md_dir = root / "data" / "markdown" / "sbc" / args.year
     report = root / "data" / "markdown" / f"verification_report_{args.year}.csv"
     out = args.out or root / "bundles" / f"facts-{args.version}.sqlite"
-    stats = build_bundle(md_dir, report, out, args.version, root=root, release=args.release)
+    manifest = args.manifest
+    if manifest is None:
+        default = root / "data" / "catalog" / f"sbc_manifest_{args.year}.csv"
+        manifest = default if default.is_file() else None
+        if manifest is None:
+            print(f"no manifest at {default}: plan_source stays empty (no PDF proxy data)", file=sys.stderr)
+    stats = build_bundle(
+        md_dir, report, out, args.version, root=root, release=args.release, manifest_csv=manifest
+    )
     cells = sum(stats.cost_cells.values())
     exact = stats.cost_cells["exact"] / cells if cells else 0.0
     print(f"{out} ({out.stat().st_size / 1e6:.0f} MB)", file=sys.stderr)
@@ -326,3 +418,9 @@ def main(argv: list[str] | None = None) -> None:
         file=sys.stderr,
     )
     print(f"unique chunks {stats.chunks}, plan-chunk links {stats.plan_chunks}", file=sys.stderr)
+    if manifest is not None:
+        print(
+            f"plan sources {stats.sources} ({stats.preview_only} preview-only), "
+            f"missing {stats.sources_missing}",
+            file=sys.stderr,
+        )

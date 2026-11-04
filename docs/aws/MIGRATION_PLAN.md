@@ -306,6 +306,16 @@ portfolio:
 
 ### WP3: Bundle additions for the SBC PDF proxy
 
+> **Status: done** on `main_AWS` (code and tests). The real bundle `2027.2` still has to be rebuilt where the corpus lives. Its embeddings come from the embedding cache, so nothing is re-embedded; the new table adds about 3 MB.
+>
+> **As built:**
+> - **Builder:** `sbc-build-bundle` reads the existing `sbc-portal manifest` CSV (`--manifest`, defaulting to `data/catalog/sbc_manifest_<year>.csv`). That file already has every preview-form field and the sha256, so `sbc_ingest` is unchanged.
+> - **Release builds** refuse to run without the manifest, or with any plan missing from it.
+> - **Table:** `plan_source` is keyed by `plan_id` and also stores `catalog_url` and `pdf_bytes`. The bundle metadata records the row, preview-only and missing counts.
+> - **Reader:** `SqliteFactsReader(path, pdf_proxy_base="/api/sbc/")` rewrites only preview-only plans' `source_url` to `/api/sbc/<url-encoded plan_key>.pdf`, so citations become `…pdf#page=N` with no change to `Citation`. Without the argument (the CLI, tests) nothing changes.
+> - **Older bundles:** a bundle without the table still opens; `pdf_source()` returns None for it.
+> - **Tests:** 9 new tests in `test_bundle.py` and `test_facts.py`.
+
 **Files:** `packages/sbc_index/src/sbc_index/bundle.py`, `packages/core/src/sbc_core/interfaces.py`, `packages/core/src/sbc_core/facts.py`, `packages/core/src/sbc_core/types.py`, `tests/unit/test_bundle.py`, `tests/unit/test_facts.py`, `data/README.md`.
 
 **New table:**
