@@ -268,7 +268,7 @@ portfolio:
 
 **Files:** `packages/aws/**`, root `pyproject.toml` (workspace member, `[tool.uv.sources]`, import-linter, mypy strict override for `sbc_aws.*`), `uv.lock`, `tests/unit/aws/*`.
 
-**Dependencies:** `boto3`, `langgraph-checkpoint-aws` (pin the newest release that supports the locked `langgraph` 1.2.x; check its `DynamoDBSaver` constructor and table schema at implementation time), `sbc-core`. Dev dependencies: `moto[dynamodb,s3,ssm]`.
+**Dependencies:** `boto3`, `langgraph-checkpoint-aws==1.2.6` (confirmed by spike 1 with the locked `langgraph` 1.2.19: `DynamoDBSaver(table_name, session=..., endpoint_url=..., ttl_seconds=..., s3_offload_config=...)`, table keys `PK`/`SK`, TTL attribute `ttl`), `sbc-core`. Dev dependencies: `moto[dynamodb,s3,ssm]`.
 
 | Module | API (sketch) | Notes |
 |---|---|---|
@@ -496,7 +496,7 @@ CMD ["uvicorn", "sbc_api.app:app", "--host", "0.0.0.0", "--port", "8080", "--wor
 
 | Construct | Resources | Key settings |
 |---|---|---|
-| `DataConstruct` | S3 `data` bucket; DynamoDB `app`, `audit` and `checkpoints` tables | SSE-S3; block public access; lifecycle rules (`pdf-cache/` 1 day, `bundles/` keep 3 or 90 days, optional `raw/` → Glacier IR at 30 days); tables on-demand with TTL `expires_at`; PITR off (flag); `RemovalPolicy.RETAIN` on data |
+| `DataConstruct` | S3 `data` bucket; DynamoDB `app`, `audit` and `checkpoints` tables | SSE-S3; block public access; lifecycle rules (`pdf-cache/` 1 day, `bundles/` keep 3 or 90 days, optional `raw/` → Glacier IR at 30 days); tables on-demand; TTL on `expires_at` for `app` and `audit`, and on **`ttl`** for `checkpoints` (the attribute `DynamoDBSaver` writes; spike 1); PITR off (flag); `RemovalPolicy.RETAIN` on data |
 | `AuthConstruct` | Cognito user pool, app client, groups `broker` and `admin` | Self sign-up off; MFA **OPTIONAL** with TOTP; password policy; SPA client with SRP and no secret; OAuth scopes **without** `aws.cognito.signin.user.admin`; access token 1 h, refresh 12 h |
 | `ApiConstruct` | ECR repo; Lambda `DockerImageFunction` (arm64, 2,048 MB, 60 s, `/tmp` 1,024 MB); `live` alias; Function URL (`AWS_IAM`, `RESPONSE_STREAM`); log group (14 days) | Environment from WP1; IAM per DEPLOYMENT_ANALYSIS.md §6.5 (audit table `PutItem` only); ECR lifecycle keeps 3 |
 | `WebConstruct` | S3 `web` bucket; CloudFront distribution; OAC for S3 and for the Lambda URL; CloudFront Function for SPA rewrites; response headers policy | Behaviors: `/api/*` → Function URL (CachingDisabled, AllViewerExceptHostHeader, all methods); `/broker/*`, `/shopper/*`, `/` → S3; PriceClass_100; default domain |
@@ -866,7 +866,7 @@ flowchart LR
   WP4 -.-> WP14["WP14 Bedrock (later)"]
 ```
 
-**Spikes to run first,** in the first 2 days, because each one could change the plan:
+**Spikes to run first,** in the first 2 days, because each one could change the plan. Results: [SPIKES.md](SPIKES.md). Spike 1 passed; spikes 2 and 3 passed locally and are waiting for an AWS account run.
 
 1. `DynamoDBSaver` interrupt/resume across two instances (risk 1).
 2. A canned SSE endpoint through Lambda Web Adapter → Function URL → CloudFront with OAC, including a POST with the body hash (risks 2 and 3).

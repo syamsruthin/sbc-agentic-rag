@@ -1,0 +1,8 @@
+*
+!pyproject.toml
+!uv.lock
+!packages/
+!config/
+!spikes/aws/sse_app/app.py
+**/__pycache__
+**/.mypy_cache
