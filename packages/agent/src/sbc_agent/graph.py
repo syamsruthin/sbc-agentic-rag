@@ -13,6 +13,7 @@ across a clarifying question. Tool results and facts live only inside the answer
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Iterator, Mapping
 from typing import Any, Literal, TypedDict
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -255,3 +256,48 @@ class Agent:
         """Answer the pending clarifying question with a listed plan or free text."""
         resume = {"plan_key": plan_key, "text": text}
         return self._reply(self.graph.invoke(Command(resume=resume), self._config(thread_id)))
+
+    def stream(
+        self,
+        thread_id: str,
+        message: str | None = None,
+        *,
+        choice: Mapping[str, str | None] | None = None,
+        ui_selected: tuple[str, ...] = (),
+        user_state: str | None = None,
+    ) -> Iterator[Progress | Reply]:
+        """Run a turn (``message``) or answer a pending clarifying question (``choice``, with ``plan_key`` or
+        ``text``), yielding a :class:`Progress` as each node finishes and the :class:`Reply` last.
+
+        The reply is the same one ``ask``/``choose`` return; nothing the model typed is yielded before the
+        verifier has passed it (only node names are), so the API can stream progress safely."""
+        if (message is None) == (choice is None):
+            raise ValueError("pass exactly one of message or choice")
+        payload: Any
+        if choice is not None:
+            payload = Command(resume={"plan_key": choice.get("plan_key"), "text": choice.get("text")})
+        else:
+            payload = {"message": message, "ui_selected": list(ui_selected), "user_state": user_state}
+        final: dict[str, Any] = {}
+        interrupts: list[Any] = []
+        for mode, chunk in self.graph.stream(
+            payload, self._config(thread_id), stream_mode=["updates", "values"]
+        ):
+            if mode == "values":
+                final = dict(chunk)
+                continue
+            for node, update in chunk.items():
+                if node == "__interrupt__":
+                    interrupts.extend(update)
+                else:
+                    yield Progress(node)
+        if interrupts:
+            final["__interrupt__"] = tuple(interrupts)
+        yield self._reply(final)
+
+
+@dataclasses.dataclass(frozen=True)
+class Progress:
+    """A graph node finished (``ingress``, ``classify``, ``refuse``, ``resolve``, ``clarify``, ``answer``)."""
+
+    node: str

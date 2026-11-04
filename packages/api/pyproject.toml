@@ -4,6 +4,8 @@ version = "0.0.0"
 description = "FastAPI app: auth, rate limits, SSE streaming, admin endpoints and audit."
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.162",
+    "uvicorn>=0.54",
     "sbc-agent",
     "sbc-aws",
     "sbc-core",

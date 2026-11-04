@@ -162,6 +162,20 @@ a question for an interactive session. How a turn is handled is in [docs/agent-g
 the tools and the answer checks are in [docs/agent-tools.md](docs/agent-tools.md) and
 [docs/answer-path.md](docs/answer-path.md).
 
+### Run the API locally
+
+```bash
+APP_ENV=local FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite \
+  uv run uvicorn --factory sbc_api.app:create_app --port 8080
+curl -s 'localhost:8080/api/healthz?deep=1'
+curl -sN -X POST localhost:8080/api/broker/chat -H 'content-type: application/json' \
+  -d '{"message": "What'"'"'s the deductible on BTCU8?"}'
+```
+
+Locally every request is a developer principal and the stores are in-process; set the `DDB_TABLE_*` variables
+(and `AWS_ENDPOINT_URL_DYNAMODB` for DynamoDB Local) to use DynamoDB instead. The AWS deployment track is in
+[docs/aws/](docs/aws/MIGRATION_PLAN.md).
+
 ## Configuration
 
 Behavior settings live in `config/` and are merged in order: `base.yaml`, then `bots/<bot>.yaml`, then

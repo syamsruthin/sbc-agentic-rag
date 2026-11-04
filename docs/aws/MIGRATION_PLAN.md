@@ -339,6 +339,20 @@ plan_source(
 
 ### WP4: FastAPI app, SSE chat and agent streaming
 
+> **Status: done** on `main_AWS`.
+>
+> **As built:**
+> - **`Agent.stream()`** in `sbc_agent.graph` yields a `Progress(node)` per finished node, then the same `Reply` that `ask`/`choose` return. Clarification interrupts come through intact.
+> - **`sbc_api`:**
+>   - `app.create_app()` is the uvicorn `--factory`; request-ID middleware reads `x-amzn-request-id` and returns `x-request-id`.
+>   - `deps.build_state()`: SSM secrets, then settings, then the reader (with `pdf_proxy_base="/api/sbc/"`) and the index. Stores are DynamoDB/S3 when the table names are set, otherwise in-process. Each bot gets an agent with its own key and checkpointer.
+>   - `ports`/`memory`, `sse.stream_turn()` (worker thread, 10 s keepalives, 55 s timeout, a generic `error` event), JSON logging.
+>   - Routes: `health`, `chat` (`/chat`, `/chat/choose`), `plans` (search and get, scope-filtered).
+> - **Auth for now:** `auth/principal.py` has only `LocalAuthenticator` (`APP_ENV=local`) and `RefuseAll` (every other environment), so a deployed API refuses all chat and plan calls until WP5.
+> - **Local runs:** on a bundle without embeddings, local search runs BM25-only; dev and prd still require the configured embeddings. A bot whose OpenRouter key is missing locally answers 503 and shows as unavailable in `healthz?deep=1`.
+> - **Not yet built (WP6):** guards, thread ownership and audit writes. The stores are already wired.
+> - **Tests:** 12 API tests (`tests/unit/api/test_app.py`) and 2 stream tests in `test_graph.py`. A DynamoDB Local integration test (`tests/integration/test_api_dynamodb_local.py`) runs clarify, then choose, across two app instances sharing only the tables.
+
 **Files:**
 
 - `packages/api/pyproject.toml`: dependencies `fastapi`, `uvicorn[standard]`, `pyjwt[crypto]`, `httpx`, `sbc-agent`, `sbc-core`, `sbc-aws`.

@@ -257,3 +257,45 @@ def test_redaction_keeps_plan_identifiers() -> None:
     assert "[EMAIL]" in cleaned.text
     assert "[DATE]" in cleaned.text
     assert sorted(cleaned.found) == ["DATE", "EMAIL", "PHONE"]
+
+
+# ------------------------------------------------------------------ streaming (WP4)
+
+
+def test_stream_yields_progress_then_the_same_reply_as_ask(reader: SqliteFactsReader) -> None:
+    from sbc_agent.graph import Progress, Reply
+
+    def script() -> ScriptedChat:
+        return ScriptedChat(
+            classified(intent="lookup", plan_mentions=["Example Gold"], service_terms=["specialist"]),
+            reply("On {{P1.name}} a specialist visit is {{F1}} in network and {{F2}} out of network."),
+        )
+
+    asked = agent(reader, script()).ask("t1", "Specialist copay on Example Gold?")
+    items = list(agent(reader, script()).stream("t1", "Specialist copay on Example Gold?"))
+    assert [i.node for i in items if isinstance(i, Progress)] == ["ingress", "classify", "resolve", "answer"]
+    streamed = items[-1]
+    assert isinstance(streamed, Reply)
+    assert (streamed.kind, streamed.markdown, streamed.plan_keys) == (
+        asked.kind,
+        asked.markdown,
+        asked.plan_keys,
+    )
+
+
+def test_stream_reports_a_clarification_and_resumes_with_a_choice(reader: SqliteFactsReader) -> None:
+    from sbc_agent.graph import Reply
+
+    chat = ScriptedChat(
+        classified(intent="lookup", question_ids=["overall_deductible"]),
+        reply("The overall deductible on {{P1.name}} is {{F1}}."),
+    )
+    bot = agent(reader, chat)
+    asked = list(bot.stream("t2", "What's the deductible on ZZ01?"))[-1]
+    assert isinstance(asked, Reply)
+    assert asked.kind == "clarify"
+    out = list(bot.stream("t2", choice={"plan_key": GOLD}))[-1]
+    assert isinstance(out, Reply)
+    assert (out.kind, out.plan_keys) == ("answer", (GOLD,))
+    with pytest.raises(ValueError, match="exactly one"):
+        list(bot.stream("t3"))
