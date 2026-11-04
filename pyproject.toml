@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "sbc-agent",
     "sbc-api",
+    "sbc-aws",
     "sbc-core",
     "sbc-extract",
     "sbc-index",
@@ -18,7 +19,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     "hypothesis>=6.170",
+    "boto3-stubs[dynamodb,s3,ssm]>=1.43.64",
     "import-linter>=2.15",
+    "moto[dynamodb,s3,ssm]>=5.2",
     "mypy>=2.4",
     "pytest>=9.2",
     "pytest-cov>=7.1",
@@ -36,6 +39,7 @@ members = ["packages/*"]
 [tool.uv.sources]
 sbc-agent = { workspace = true }
 sbc-api = { workspace = true }
+sbc-aws = { workspace = true }
 sbc-core = { workspace = true }
 sbc-extract = { workspace = true }
 sbc-index = { workspace = true }
@@ -71,6 +75,7 @@ exclude = ["packages/sbc_ingest/src/sbc_ingest/{portal,to_markdown,verify}.py"]
 known-first-party = [
     "sbc_agent",
     "sbc_api",
+    "sbc_aws",
     "sbc_core",
     "sbc_extract",
     "sbc_index",
@@ -93,7 +98,7 @@ strict_equality = true
 
 # PLAN.md section 10: strict typing for core, extract and tools.
 [[tool.mypy.overrides]]
-module = ["sbc_core.*", "sbc_extract.*", "sbc_tools.*"]
+module = ["sbc_core.*", "sbc_extract.*", "sbc_tools.*", "sbc_aws.*"]
 disallow_any_generics = true
 disallow_incomplete_defs = true
 disallow_subclassing_any = true
@@ -105,6 +110,11 @@ no_implicit_reexport = true
 warn_return_any = true
 
 # Untyped original pipeline modules (see the ruff note above).
+# No inline types or stubs are published for these.
+[[tool.mypy.overrides]]
+module = ["langgraph_checkpoint_aws"]
+ignore_missing_imports = true
+
 [[tool.mypy.overrides]]
 module = ["sbc_ingest.portal", "sbc_ingest.to_markdown", "sbc_ingest.verify"]
 ignore_errors = true
@@ -138,6 +148,7 @@ skip_empty = true
 root_packages = [
     "sbc_agent",
     "sbc_api",
+    "sbc_aws",
     "sbc_core",
     "sbc_extract",
     "sbc_index",
@@ -147,9 +158,21 @@ root_packages = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "Runtime layers: api > agent > (tools | retrieval) > core"
+name = "Runtime layers: api > (agent | aws) > (tools | retrieval) > core"
 type = "layers"
-layers = ["sbc_api", "sbc_agent", "sbc_tools | sbc_retrieval", "sbc_core"]
+layers = ["sbc_api", "sbc_agent | sbc_aws", "sbc_tools | sbc_retrieval", "sbc_core"]
+
+[[tool.importlinter.contracts]]
+name = "AWS adapters depend only on core"
+type = "forbidden"
+source_modules = ["sbc_aws"]
+forbidden_modules = ["sbc_agent", "sbc_tools", "sbc_retrieval", "sbc_api"]
+
+[[tool.importlinter.contracts]]
+name = "Domain code never imports AWS adapters"
+type = "forbidden"
+source_modules = ["sbc_agent", "sbc_tools", "sbc_retrieval", "sbc_core"]
+forbidden_modules = ["sbc_aws"]
 
 [[tool.importlinter.contracts]]
 name = "Build layers: index > extract > core"
@@ -159,14 +182,14 @@ layers = ["sbc_index", "sbc_extract", "sbc_core"]
 [[tool.importlinter.contracts]]
 name = "Runtime code never imports build-time packages"
 type = "forbidden"
-source_modules = ["sbc_api", "sbc_agent", "sbc_tools", "sbc_retrieval", "sbc_core"]
+source_modules = ["sbc_api", "sbc_agent", "sbc_aws", "sbc_tools", "sbc_retrieval", "sbc_core"]
 forbidden_modules = ["sbc_ingest", "sbc_extract", "sbc_index"]
 
 [[tool.importlinter.contracts]]
 name = "Build-time code never imports runtime packages"
 type = "forbidden"
 source_modules = ["sbc_ingest", "sbc_extract", "sbc_index"]
-forbidden_modules = ["sbc_api", "sbc_agent", "sbc_tools", "sbc_retrieval"]
+forbidden_modules = ["sbc_api", "sbc_agent", "sbc_aws", "sbc_tools", "sbc_retrieval"]
 
 [[tool.importlinter.contracts]]
 name = "Ingest stands alone (it may use sbc_core)"

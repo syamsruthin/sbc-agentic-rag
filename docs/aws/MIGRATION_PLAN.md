@@ -268,6 +268,16 @@ portfolio:
 
 ### WP2: `sbc_aws` adapters package
 
+> **Status: done** on `main_AWS`.
+>
+> - **What's in the package:** `ddb`, `schema`, `secrets`, `checkpoint`, `ratelimit`, `cache`, `audit`, `killswitch`, `sessions` and `pdfcache`, typed with `boto3-stubs` and under strict mypy. The package is wired into the workspace and into two new import-linter contracts (7 contracts kept).
+> - **Tests:** 37 moto tests in `tests/unit/aws/`, run in CI with no AWS account. They include the checkpoint resume across two saver instances.
+> - **Integration tests:** 2 tests in `tests/integration/test_aws_dynamodb_local.py`, run against DynamoDB Local. 100 concurrent hits on a limit of 25 let exactly 25 through, and 120 concurrent turns on a cap of 40 let exactly 40 through.
+> - **Changes from the sketch below:**
+>   - Thread index items use `SK = THREAD#<thread_id>` with an `updated_at` attribute (sorted in code), so refreshing a thread doesn't create duplicates.
+>   - `schema.create_tables()` is the single definition of the table keys and TTL attributes, for DynamoDB Local, the tests and (as a reference) the CDK stack.
+>   - Caches treat DynamoDB errors as misses. Rate limits and the global cap raise them, so the cost protection never fails open.
+
 **Files:** `packages/aws/**`, root `pyproject.toml` (workspace member, `[tool.uv.sources]`, import-linter, mypy strict override for `sbc_aws.*`), `uv.lock`, `tests/unit/aws/*`.
 
 **Dependencies:** `boto3`, `langgraph-checkpoint-aws==1.2.6` (confirmed by spike 1 with the locked `langgraph` 1.2.19: `DynamoDBSaver(table_name, session=..., endpoint_url=..., ttl_seconds=..., s3_offload_config=...)`, table keys `PK`/`SK`, TTL attribute `ttl`), `sbc-core`. Dev dependencies: `moto[dynamodb,s3,ssm]`.
@@ -673,7 +683,7 @@ event: done      data: {}
 | `app` | `QEMB#<model>#<sha256>` | `E` | float16 bytes | 30 days | `GetItem` / `PutItem` |
 | `app` | `KILL` | `<bot>` | `llm_enabled` | — | `GetItem` (cached 60 s) |
 | `app` | `QUARANTINE` | `<plan_key>` | reason, actor | — | `Query` (cached 60 s) |
-| `app` | `OWNER#<sub or session>` | `THREAD#<updated_at>#<thread_id>` | title, bot | per bot or demo | `Query` (newest first) |
+| `app` | `OWNER#<sub or session>` | `THREAD#<thread_id>` | title, bot, `updated_at` | per bot or demo | `Query`, sorted newest first in code |
 | `app` | `FEEDBACK#<thread_id>` | `<request_id>` | rating, reasons | retention | `PutItem` |
 | `audit` | `DAY#<yyyy-mm-dd>` | `<iso-ts>#<request_id>` | audit record (PLAN.md §8) | 2 years | `PutItem` only |
 | `checkpoints` | per `DynamoDBSaver` | per `DynamoDBSaver` | checkpoints and writes | per bot | library-managed |

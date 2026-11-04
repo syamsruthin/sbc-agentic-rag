@@ -5,6 +5,7 @@ description = "FastAPI app: auth, rate limits, SSE streaming, admin endpoints an
 requires-python = ">=3.13"
 dependencies = [
     "sbc-agent",
+    "sbc-aws",
     "sbc-core",
 ]
 
