@@ -24,9 +24,12 @@ How a compose draft becomes the answer users see (PLAN.md section 3.7), in `pack
 4. **Template fallback** (`fallback.py`). It lists every fact and excerpt of the turn as a placeholder-only
    draft, and it goes through the same verifier and renderer.
 
-## Known gap: SBC links
+## SBC links for preview-only SBCs
 
-About 1,383 SBCs (1,071 Small Group, 310 Individual) are served only through the Anthem portal's preview form,
-so their `source_url` is the portal search page, not the PDF. Their citations show the page number but link
-to the portal without a page fragment. Deep links need either an API endpoint that fetches the PDF through the
-preview form, or hosting the PDFs; that decision is open in `TODO.md`.
+About 1,383 SBCs (1,071 Small Group, 310 Individual) are served only through the Anthem portal's preview form, so
+the bundle's `source_url` for them is the portal search page, not the PDF. Since bundle `2027.2` the bundle's
+`plan_source` table holds each plan's preview-form fields and PDF sha256. The API opens the bundle with
+`pdf_proxy_base="/api/sbc/"`, which points those plans' `source_url` at `GET /api/sbc/{plan_key}.pdf`, so their
+citations link to the PDF at the cited page (`…pdf#page=N`). That endpoint fetches the PDF through the preview
+form, checks its sha256 against the bundle, caches it for a day and streams it (`sbc_api.routes.sbc_pdf`). The
+`sbc-ask` CLI, and bundles older than `2027.2`, keep the portal search page link.

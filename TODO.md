@@ -2,6 +2,10 @@
 
 Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md](PLAN.md) §10–§11.
 
+The AWS deployment track (PLAN.md revision 3, branch `main_AWS`) also builds the Phase 1 API and the frontends; its
+work packages are tracked in detail in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_DONE.md) and
+[docs/aws/TODO.md](docs/aws/TODO.md). Items below that the AWS track changed say so.
+
 ## Checkpoints
 
 - [x] 1. Repository created and first push
@@ -29,8 +33,9 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 
 ## Phase 0: Foundations (PLAN.md §11)
 
-- [ ] Doppler, Supabase and OpenRouter keys provisioned (OpenRouter key exists; Doppler and Supabase not yet;
-      Qdrant Cloud is no longer needed, see below)
+- [ ] Accounts and keys provisioned. OpenRouter key: done. Revision 3 replaces Doppler and Supabase with the AWS
+      account, a Cognito user pool and SSM Parameter Store (docs/aws/TODO.md, "Accounts and external setup");
+      Qdrant Cloud is no longer needed, see below
 - [x] Existing scripts moved into `sbc_ingest` (PR #2; byte-identical regression test in place)
 - [x] Full-corpus run: strict verifier passes on all 9,690 files (0 FAIL), converter-fix diff report
       (`docs/reviews/converter-fix-2027.md`), regenerated Markdown installed
@@ -107,10 +112,10 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
       retry, template fallback; `sbc-ask` dev CLI. Live checks on BTCU8/0JF1 lookups, a comparison, a coverage
       check and four adversarial golden questions: about $0.003 per fast-path turn, $0.02-0.04 per agent turn
 - [ ] Generation eval harness on golden 0.2.0 (answers, not just retrieval) with recorded responses
-- [ ] FastAPI with SSE, PostgresSaver checkpoints on Supabase
-- [ ] Align the Supabase settings with its current key model: publishable and secret keys instead of anon and
-      service-role, and JWT verification through the project's JWKS URL instead of `SUPABASE_JWT_SECRET`
-      (`.env.example`, `EnvSettings`)
+- [x] FastAPI with SSE (`sbc_api`, AWS WP4): `POST /api/{bot}/chat` and `/chat/choose` stream status events and
+      the verified answer; checkpoints in DynamoDB (`DynamoDBSaver`) instead of PostgresSaver on Supabase (rev. 3)
+- [x] ~~Align the Supabase settings with its current key model~~ Superseded by revision 3: Supabase is gone;
+      broker tokens are Cognito access tokens verified through the pool's JWKS URL (AWS WP1, WP5)
 - [ ] Presidio NER for names and addresses (regex recognizers for SSN, member ID, phone, email, dates are in)
 - [x] Tools: `find_plans`, `get_plan_facts`, `search_sbc_text`, `compare_plans`, `ask_clarifying_question`
       (`sbc_tools`, `docs/agent-tools.md`): Pydantic I/O, plan gate and scope checks in code, per-turn
@@ -121,10 +126,15 @@ Status at a glance. Deliverables and acceptance criteria are defined in [PLAN.md
 - [x] Decided (2026-11-02): the 1,383 SBCs without a public PDF URL get an API endpoint,
       `GET /sbc/{plan_key}.pdf`, that fetches the PDF from the portal's preview form, checks its sha256 and
       streams it (PLAN.md 3.7)
-- [ ] Build that endpoint with the API, and point those plans' citations at it
+- [x] Build that endpoint with the API, and point those plans' citations at it (AWS WP3 + WP7:
+      `GET /api/sbc/{plan_key}.pdf`; the bundle's `plan_source` table holds the form fields and sha256; the real
+      bundle `2027.2` still has to be rebuilt where the corpus lives)
 - [ ] Broker web app with plan picker
-- [ ] Supabase auth
-- [ ] Langfuse tracing
+- [x] Broker auth, as Amazon Cognito instead of Supabase (revision 3; AWS WP5): invite-only, TOTP MFA, groups,
+      JWKS verification; anonymous public sessions after Turnstile. A real Cognito pool is created in WP9
+- [x] Guards (AWS WP6): rate limits, global daily cap, exact-answer cache, kill switches, quarantine, thread
+      ownership, audit log, feedback, admin endpoints
+- [ ] Langfuse tracing (optional on the AWS track; AWS WP12)
 - [ ] Model bake-off report
-- [ ] Deployed to `api-dev`
+- [ ] Deployed: on the AWS track, the portfolio deployment (Lambda + CloudFront; AWS WP8–WP13)
 - [ ] MVP gating set (353 items of golden 0.2.0) passing all hard gates; the other 57 reported

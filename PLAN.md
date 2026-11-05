@@ -1,6 +1,6 @@
 # PLAN.md: Agentic RAG chatbots over 2027 SBCs
 
-**Status:** approved, revision 2 (2026-11-01) plus the approved changes listed below. Implementation is in progress; `TODO.md` tracks it.
+**Status:** approved, revision 3 (2026-11-05): revision 2 (2026-11-01), the approved changes listed below, and the AWS deployment track. Implementation is in progress; `TODO.md` and `docs/aws/TODO.md` track it.
 **Scope:** two chatbots on one shared core:
 
 - **Broker Assistant**: authenticated brokers and HR teams, all markets.
@@ -13,8 +13,8 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 - Every model call goes through OpenRouter: LLMs, embeddings and reranker (Voyage in revision 2; `baai/bge-m3` and `qwen/qwen3-reranker-8b` since 2026-11-02, below). PII detection is the one exception and stays local (§3.8).
 - No SLM or vLLM; this is now a firm decision.
 - ~~Qdrant Cloud holds the text-search index.~~ Superseded on 2026-11-02 (below): the text-search index lives in the SQLite facts bundle with the structured facts, shipped inside the API image.
-- Hosting stays on Cloud Run. Hugging Face Spaces was evaluated and rejected (§1.3).
-- Doppler is the source of truth for secrets.
+- ~~Hosting stays on Cloud Run.~~ Superseded by revision 3 (AWS Lambda). Hugging Face Spaces was evaluated and rejected (§1.3).
+- ~~Doppler is the source of truth for secrets.~~ Superseded by revision 3 (SSM Parameter Store; Doppler optional through its Parameter Store sync).
 - Appendix C adds a functional overview with sample interactions.
 - §3.2.4 now explains the chunking strategy in full, with an example chunk and the reasoning behind it.
 - §3.2.1 and §11 (approved in Phase 0): converter sub-label fix and punctuation-exact verification; the byte-identical criterion now applies to the move, and the fix's changes are listed in a diff report.
@@ -22,6 +22,18 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 - **Search index back in SQLite (approved 2026-11-02).** Qdrant Cloud is dropped. Every plan-filtered search scores at most about 370 chunks (about 61 per plan, up to 6 plans), and even broker discovery scans only about 30K chunks, so no approximate-nearest-neighbour service is needed. The bundle now holds BM25 term weights and float16 embeddings next to the facts (about 60 MB more), so code, facts and index ship and roll back as one file, with no network hop per search, no free-cluster suspension risk, no collection pinning and no Qdrant keys. A vector service is reconsidered only if a much larger corpus arrives (for example EOCs). Sections 0, 1.3, 2.3, 3, 4, 7, 8, 9, 10, 11, 12 and the appendices are updated.
 - **Embedding and rerank models replaced for ZDR (approved 2026-11-02).** The Phase 0 smoke test found that OpenRouter has no zero-data-retention endpoint for `voyageai/voyage-4-lite`, `voyageai/rerank-3-lite` or the listed alternative `cohere/rerank-4-fast`, so §8 rules them out. Embeddings are now `baai/bge-m3` (the listed alternative: 1024 dimensions, ZDR through Parasail and DeepInfra, $0.01 per 1M tokens). Rerank is `qwen/qwen3-reranker-8b`, the only ZDR reranker on OpenRouter (Fireworks), and stays eval-gated (§3.4.3). Sections 0, 1.3, 3.4.3, 3.6 and 4 are updated.
 - **Phase 1 gate scope (approved 2026-11-02).** Golden 0.2.0 has 57 items that need Phase 2 features: 24 expect `estimate_cost`, 8 expect `rank_plans`, and 25 multi-turn items need session references. Phase 1 (checkpoint 3) is gated on the other 353 items; the 57 are run and reported separately, and gate Phase 2. Section 11 is updated.
+- **Revision 3: AWS deployment track (approved 2026-11-05).** The app is deployed on AWS as a personal portfolio project (both bots, interviewer access, at least 5–6 months, near-$0 idle cost). The analysis is in `docs/aws/DEPLOYMENT_ANALYSIS.md` and the work packages in `docs/aws/MIGRATION_PLAN.md`; this revision applies its §11:
+  - API: Cloud Run → **AWS Lambda** (container image, arm64, 2 GB) with the Lambda Web Adapter and a Function URL with response streaming, behind **CloudFront**.
+  - Frontends: Cloudflare Pages → **S3 + CloudFront** (one origin for the apps and `/api/*`).
+  - Broker auth: Supabase Auth → **Amazon Cognito** (invite-only, TOTP MFA, JWKS verification).
+  - Operational data: Supabase Postgres → **DynamoDB** (on-demand): LangGraph checkpoints via `langgraph-checkpoint-aws` `DynamoDBSaver` (S3 offload), sessions, feedback, kill switches, rate limits, caches, and a separate append-only audit table (IAM `PutItem` only). Postgres row-level security becomes ownership in the key design plus API checks.
+  - Rate limits and caches: Upstash Redis → DynamoDB conditional fixed-window counters and TTL items.
+  - Secrets: Doppler → GCP Secret Manager becomes **SSM Parameter Store** SecureString, loaded into the environment at cold start.
+  - Backups: `pg_dump` to GCS → DynamoDB on-demand backups when needed; bundles versioned in **S3**.
+  - CI/CD: GCP Workload Identity Federation and Artifact Registry → **GitHub OIDC to an IAM role** and **ECR**; Cloud Run revisions → Lambda versions and a weighted alias.
+  - Offline build: GitHub Actions → an on-demand **ECS Fargate Spot** task (GitHub Actions keeps CI).
+  - Langfuse becomes optional; CloudWatch covers operations. Cloudflare Turnstile and OpenRouter stay (external). Amazon Bedrock is a later option (BAA, §1.4).
+  - Sections 0, 1.3, 2.2, 3.1, 3.5, 4, 7, 8, 9, 10, 12 and Appendix B are updated. Models, the bundle, retrieval, the verifier and the evals are unchanged.
 - **SBC links for preview-only documents (approved 2026-11-02).** 1,383 SBCs (1,071 Small Group, 310 Individual) are served only through the Anthem portal's preview form, so they have no public PDF URL to cite. The API gets an endpoint, `GET /sbc/{plan_key}.pdf`, that fetches the PDF from the portal on request (the same preview call `sbc-portal download` uses), checks its sha256 against the bundle's manifest, caches it briefly and streams it. Citations of those plans link there with `#page=N`. The insurer stays the source and no PDFs are hosted. Section 3.7 is updated.
 
 ---
@@ -46,15 +58,15 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
   - Embeddings: `baai/bge-m3`. Reranker: `qwen/qwen3-reranker-8b` (both on zero-data-retention endpoints).
   - The Phase 1 bake-off decides whether Haiku 5.5 can take the fast path; that changes cost by roughly 10×.
 - **No SLM or vLLM.** This is a firm decision: the cost strings parse deterministically, hosted Haiku routing costs about $0.0003 per query, and GPU hosting would break the free-deployment constraint (§3.6).
-- **Free deployment stack:**
-  - API: Cloud Run free tier.
-  - Frontends: Cloudflare Pages.
-  - Broker auth and operational database: Supabase free.
+- **Near-free AWS deployment stack (revision 3):**
+  - API: AWS Lambda (container image, scales to zero) behind CloudFront; no load balancer, no VPC, no NAT.
+  - Frontends: S3 + CloudFront.
+  - Broker auth: Amazon Cognito. Operational data, rate limits and caches: DynamoDB on-demand.
   - Search index: inside the facts bundle (no service).
-  - Secrets: Doppler (free Developer plan).
-  - Rate limits: Upstash Redis free.
-  - Tracing, evals and review queues: Langfuse Cloud Hobby.
-  - CI: GitHub Actions.
+  - Secrets: SSM Parameter Store.
+  - Tracing, evals and review queues: Langfuse Cloud Hobby (optional); CloudWatch for operations.
+  - CI: GitHub Actions; offline build: ECS Fargate Spot on demand.
+  - AWS costs about $0.30–2 a month (mostly inside the free tier and new-account credits; `docs/aws/DEPLOYMENT_ANALYSIS.md` §17).
   - The only metered spend is OpenRouter tokens: about $0.02 per query on Sonnet 5.5, about $0.014 with Haiku on the fast path, or about $0.0015 if Haiku 5.5 passes evals everywhere.
 - **Release gates that cannot be waived:**
   - 100% numeric exact match.
@@ -104,11 +116,11 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
 | SLM / vLLM | "What is the SLM for?", then (revision 2) **no SLM or vLLM** | Explained in §3.6. Now a firm decision, not a deferral. |
 | Premiums | Cost-sharing only | Rankings use deductible, OOP max, copays and coverage-example totals, always with a "premiums not included" statement. |
 | Hosting | **OpenRouter for LLM calls; free deployment options** | All models go through OpenRouter. Infrastructure uses free tiers (§4, §9), with the first paid upgrades named. |
-| Host everything on Supabase? | **No; keep the current split** | Supabase handles broker auth and the operational Postgres only. Edge Functions are TypeScript/Deno with 256 MB memory and a 20 MB size cap, so they can't run the Python agent with the in-image index and ONNX models. An all-Supabase setup would need a TypeScript rewrite and an index in Postgres (likely Supabase Pro). The Python API runs on Cloud Run. |
+| Host everything on Supabase? | **No; keep the current split** (superseded by revision 3: AWS) | Supabase handled broker auth and the operational Postgres only. Edge Functions are TypeScript/Deno with 256 MB memory and a 20 MB size cap, so they can't run the Python agent with the in-image index. Revision 3 moves auth to Cognito and the operational data to DynamoDB. |
 | Models via OpenRouter (revision 2) | **LLMs, embeddings and reranker all through OpenRouter** | Embeddings `baai/bge-m3`, rerank `qwen/qwen3-reranker-8b` (Voyage until 2026-11-02, replaced for ZDR); no model weights in the container (§3.6). PII detection stays local, because finding PII by sending raw text to an external model would defeat the purpose (§3.8). |
 | Qdrant Cloud for the read store (revision 2) | Yes, for the search index only; **reversed on 2026-11-02** | Plan-filtered candidate sets are a few hundred chunks, so exact scoring inside the API is faster and simpler than a network search service. The search index now lives in the SQLite facts bundle with the facts (§3.2.4, §3.4.3). |
-| Hugging Face for API hosting (revision 2) | Asked for; **rejected after review, Cloud Run kept** | Docker Spaces now require a paid HF plan (PRO, $9/month). Spaces can only make outbound connections on ports 80, 443 and 8080. That blocks Qdrant Cloud's documented API ports (6333/6334) and Supabase Postgres (5432/6543). |
-| Doppler for secrets (revision 2) | **Yes** | Doppler is the source of truth. It syncs to GCP Secret Manager for Cloud Run and to GitHub Actions for CI, so the API has no runtime dependency on Doppler (§8). |
+| Hugging Face for API hosting (revision 2) | Asked for; **rejected after review** | Docker Spaces now require a paid HF plan (PRO, $9/month) and limit outbound ports. Cloud Run was kept in revision 2; revision 3 moved the API to AWS Lambda. |
+| Doppler for secrets (revision 2) | **Yes**, then **SSM Parameter Store** (revision 3) | Revision 2 synced Doppler to GCP Secret Manager. On AWS the secrets live in SSM Parameter Store (free standard SecureStrings), loaded at cold start; Doppler can stay the source of truth through its Parameter Store sync. |
 
 ### 1.4 Assumptions to confirm during review
 
@@ -152,7 +164,7 @@ None of these block the plan; each has a default.
 | Aspect | Broker Assistant | Plan Shopper (public) |
 |---|---|---|
 | Plan scope | All 9,690 SBCs, all statuses (status shown) | 1,468 Individual SBCs, active only |
-| Auth | Supabase Auth, invite-only, TOTP MFA, `role=broker` | Anonymous signed session JWT, plus a Cloudflare Turnstile check when the session starts |
+| Auth | Amazon Cognito, invite-only, TOTP MFA, `broker`/`admin` groups (revision 3) | Anonymous signed session JWT, plus a Cloudflare Turnstile check when the session starts |
 | Plan selection | Plan picker with filters (state, market, network, type, metal, contract code, deductible range); selected plans attach to every turn | Guided start: state → plan picker or "help me compare"; name search inside the state |
 | Tools | All, including cross-state discovery and CSV export of comparisons | No cross-state discovery; comparison capped at 3 plans |
 | Tone | Dense, tables, contract codes shown | Plain language (Flesch-Kincaid grade ≤ 8), glossary links, no jargon without definition |
@@ -202,12 +214,12 @@ flowchart LR
     EMB --> FACTS
   end
 
-  subgraph CLIENTS["Frontends (Cloudflare Pages)"]
+  subgraph CLIENTS["Frontends (S3 + CloudFront)"]
     WB["Broker web app"]
     WP["Plan Shopper web app"]
   end
 
-  subgraph RUN["API on Cloud Run (FastAPI)"]
+  subgraph RUN["API on AWS Lambda (FastAPI, Web Adapter, streaming)"]
     EDGE["Edge layer<br/>auth, Turnstile, rate limit,<br/>PII redaction, bot profile"]
     AGENT["LangGraph agent"]
     TOOLS["Tools<br/>find_plans, get_plan_facts,<br/>search_sbc_text, compare_plans,<br/>estimate_cost, ask_clarifying_question"]
@@ -216,10 +228,10 @@ flowchart LR
   end
 
   OR["OpenRouter<br/>LLMs, embeddings, rerank"]
-  SB[("Supabase<br/>Auth + Postgres")]
-  UP[("Upstash Redis<br/>rate limits, exact cache")]
-  LF["Langfuse<br/>traces, cost, evals, review queues"]
-  DP["Doppler<br/>secrets, synced at deploy"]
+  SB[("Cognito + DynamoDB<br/>broker auth, checkpoints,<br/>sessions, audit")]
+  UP[("DynamoDB<br/>rate limits, exact cache")]
+  LF["Langfuse (optional)<br/>traces, cost, evals, review queues"]
+  DP["SSM Parameter Store<br/>secrets, loaded at cold start"]
 
   WB --> EDGE
   WP --> EDGE
@@ -401,7 +413,7 @@ Text search also uses taxonomy synonym expansion. HyDE and multi-query LLM expan
 
 **3.5.1 Framework: LangGraph** (the OSS library, not LangGraph Platform).
 
-- *Why:* an explicit state graph; durable checkpoints (`PostgresSaver` on Supabase); `interrupt()` for clarifying questions that resume cleanly; recursion limits; and a native Langfuse callback for per-node tracing.
+- *Why:* an explicit state graph; durable checkpoints (`DynamoDBSaver` on DynamoDB since revision 3; `PostgresSaver` on Supabase before); `interrupt()` for clarifying questions that resume cleanly; recursion limits; and a native Langfuse callback for per-node tracing.
 - *Alternatives:* PydanticAI (simpler and typed, but weaker durable interrupt and resume) or a hand-rolled loop (no dependency, but checkpointing and tracing get rebuilt by hand).
 - *Trade-off:* framework weight and version churn. Mitigation: nodes are plain functions over a typed state, so the graph wiring is the only LangGraph-specific code.
 
@@ -479,7 +491,7 @@ flowchart TD
 - **Model failure:** OpenRouter `models:[primary, fallback]` lists only eval-approved models (Sonnet 5.5 → Sonnet 5 → Haiku 5.5).
 - **OpenRouter down:** *deterministic mode*. A keyword and regex router covers plan + field and plan + service lookups, renders facts through templates and states "limited mode". Everything else gets an apology plus the PDF link.
 - **Search index:** it is part of the facts bundle, so it is available whenever the API is. If query embedding fails, search runs on BM25 alone (above).
-- **Supabase down:** the public bot runs stateless (session state goes into a signed client token). Broker sign-in is unavailable, and a banner says so.
+- **DynamoDB unreachable:** the API fails closed: rate limits and the daily cap can't be checked, so turns return an error rather than run unmetered. Caches treat errors as misses. (Revision 2's Supabase fallback, a stateless public bot, no longer applies.)
 - **Kill switches** (hot-reloaded, read from Postgres and cached for 60 s):
   - turn off LLM answers per bot (deterministic mode only);
   - quarantine `plan_key`s, so the bot answers *"temporarily unavailable, see the official SBC"*.
@@ -557,31 +569,31 @@ Free-tier quotas are as of 2026-11; check them at signup.
 | LLM gateway | OpenRouter (your constraint), thin `llm` module on the OpenAI-compatible API | One key; model fallbacks; usage cost returned; ZDR routing | Direct Anthropic API (needed if a BAA is required) |
 | LLMs | Haiku 5.5 (router and guards), Sonnet 5.5 (agent and compose), Opus 5.5 (judge) | §3.6 | GPT-5.x or Gemini 3.x families (bake-off candidates) |
 | Embeddings | `baai/bge-m3` (1024-d) via OpenRouter, ZDR endpoints only | One gateway for every model (revision 2); a few cents to embed the corpus; no model weights in the container | Local `bge-small-en-v1.5` via fastembed (revision 1: free and no network hop, but lower quality) |
-| Reranker | `qwen/qwen3-reranker-8b` via OpenRouter, eval-gated | Same gateway; no reranking CPU load on Cloud Run; the only ZDR reranker available | Local MiniLM cross-encoder (revision 1); `voyageai/rerank-3-lite` and `cohere/rerank-4-fast` (no ZDR endpoint) |
+| Reranker | `qwen/qwen3-reranker-8b` via OpenRouter, eval-gated | Same gateway; no reranking CPU load on the API; the only ZDR reranker available | Local MiniLM cross-encoder (revision 1); `voyageai/rerank-3-lite` and `cohere/rerank-4-fast` (no ZDR endpoint) |
 | Search index | **Inside the SQLite facts bundle** (since 2026-11-02): BM25 term weights and float16 embeddings per unique chunk; plan filter in SQL; exact scoring with numpy and RRF fusion in the API process | Candidate sets are a few hundred chunks per search, so no ANN index is needed; no network hop; no extra service, keys or free-tier suspension; rolls back with the code | Qdrant Cloud free tier (revision 2: managed hybrid search, but a network hop, a P1 dependency and collection pinning for no gain at this size); sqlite-vec; Postgres + pgvector on Supabase |
 | Structured facts store | SQLite facts bundle in the image, opened read-only; FTS5 trigram over plan names for plan resolution | Exact SQL lookups, joins and ranking with no network hop; rolls back with the code; 139 MB for `2027.1` before embeddings, about 200 MB with them | Qdrant payloads (no joins or constraints, an extra hop on every lookup; rejected in review) |
-| Operational DB | Supabase Postgres free (500 MB): sessions and LangGraph checkpoints, feedback, audit log, kill-switch tables | Postgres plus Auth in one free project | Neon free (no auth) + Firebase Auth |
+| Operational DB | DynamoDB on-demand (revision 3): LangGraph checkpoints (`DynamoDBSaver`, S3 offload), sessions, feedback, kill switches, rate limits, caches; separate append-only audit table | Scales to zero, no VPC (so no NAT cost), 25 GB always free | Supabase Postgres free (revision 2); Aurora Serverless v2 (needs a VPC and NAT) |
 | Orchestration | LangGraph (OSS) | §3.5.1 | PydanticAI; hand-rolled loop |
 | API | FastAPI + Uvicorn, SSE streaming, Pydantic v2, OpenAPI | Standard, async, typed | Litestar |
-| Frontends | React + Vite + TypeScript + Tailwind; two apps sharing a `chat-ui` package (citations panel, comparison table, plan picker); hosted on Cloudflare Pages | Free, commercial use allowed, unlimited bandwidth, preview deploys per PR | Chainlit (fast Python MVP, weaker custom citation and table UX and embedding); Next.js on Vercel (Hobby tier is non-commercial) |
-| Auth | Supabase Auth for brokers (invite-only, TOTP MFA); public gets an anonymous JWT signed by the API + Cloudflare Turnstile (free) | Free; JWT verification in FastAPI middleware | Clerk; Firebase Auth |
-| Cache and rate limiting | Upstash Redis free (256 MB, about 500K commands/month): sliding-window limits + exact cache | Serverless; works across Cloud Run instances | Postgres-based counters (more DB load) |
-| Hosting (API) | Google Cloud Run, request-based billing (free tier: 180K vCPU-s, 360K GiB-s, 2M requests/month); budget alert at $1 | Autoscaling, revisions with traffic splitting for canary and rollback, managed TLS, no outbound port limits. Needs a card on file. | Hugging Face Spaces (rejected in revision 2: Docker Spaces need a paid plan; outbound traffic is limited to ports 80, 443 and 8080, which blocks Qdrant Cloud on 6333/6334 and Supabase Postgres on 5432/6543; free hardware sleeps after 48 h idle); Oracle Cloud Always Free ARM VM (always on, self-managed) |
-| Secrets | **Doppler** (free Developer plan: 3 users, service tokens, 5 config syncs) as the source of truth; synced to GCP Secret Manager for Cloud Run and to GitHub Actions for CI; `doppler run` for local dev | One place to rotate secrets across local, CI and prod; the API has no runtime dependency on Doppler | GCP Secret Manager alone (revision 1); Cloud Run fetching from Doppler at startup with `doppler run` (adds a startup dependency on Doppler's API) |
-| Observability | Langfuse Cloud Hobby (traces, cost, datasets, annotation queues; about 50K units/month, 30-day retention); Cloud Logging and Monitoring (free tier) for infra, uptime and alerts; Sentry free for exceptions | LangGraph-native tracing + eval + human review in one place | Arize Phoenix self-hosted; LangSmith free |
+| Frontends | React + Vite + TypeScript + Tailwind; two apps sharing a `chat-ui` package (citations panel, comparison table, plan picker); hosted on S3 + CloudFront (revision 3) | One origin with the API (no CORS), free tier covers the demo | Cloudflare Pages (revision 2); Chainlit; Next.js on Vercel (Hobby tier is non-commercial) |
+| Auth | Amazon Cognito for brokers (invite-only, TOTP MFA, groups; revision 3); public gets an anonymous JWT signed by the API + Cloudflare Turnstile (free) | Free up to 10K MAU; RS256 verification through the pool's JWKS in FastAPI | Supabase Auth (revision 2); Clerk; Firebase Auth |
+| Cache and rate limiting | DynamoDB (revision 3): conditional fixed-window counters, a global daily cap, an exact-answer cache and a query-embedding cache, all with TTL | No idle cost, works across Lambda instances | Upstash Redis free (revision 2); ElastiCache Serverless (≥ $6/month idle) |
+| Hosting (API) | AWS Lambda (revision 3): container image, arm64, 2 GB, Lambda Web Adapter, Function URL with response streaming behind CloudFront; versions + `live` alias | Scales to zero, Always Free allowance, rollback by alias | Google Cloud Run (revision 2); ECS Fargate + ALB (≈ $40/month idle); App Runner (closed to new customers); Hugging Face Spaces (rejected) |
+| Secrets | SSM Parameter Store SecureString (revision 3), loaded into the environment at cold start | Free; no runtime dependency on a third party | Doppler → GCP Secret Manager (revision 2); AWS Secrets Manager ($0.40/secret/month) |
+| Observability | CloudWatch Logs, metric filters and alarms, AWS Budgets and Cost Anomaly Detection (revision 3); Langfuse Cloud Hobby optional (traces, datasets, annotation queues) | Operations at $0; Langfuse when eval review is needed | Cloud Logging/Monitoring and Sentry (revision 2); Arize Phoenix; LangSmith |
 | Eval | Custom pytest harness with deterministic metrics + RAGAS (context precision, recall, faithfulness) + Langfuse experiments | Deterministic numeric checks need custom code anyway | DeepEval; promptfoo |
 | PII | Microsoft Presidio + regex + `en_core_web_sm`, run locally (§3.8) | OSS, configurable, small image; raw text never leaves the API before redaction | Hosted DLP APIs (cost, data egress) |
-| CI/CD | GitHub Actions; Workload Identity Federation to GCP (no long-lived keys); Artifact Registry | Free tier; standard | Cloud Build |
+| CI/CD | GitHub Actions; GitHub OIDC to an AWS IAM role (no long-lived keys); ECR (revision 3) | Free tier; standard | Workload Identity Federation + Artifact Registry (revision 2); CodeBuild |
 | Load testing | k6 | Scriptable, CI-friendly | Locust |
 
 **Monthly cost at launch:**
 
-- **Infrastructure:** about $0 within free tiers. Without ONNX weights, and with the facts bundle and its search index (about 200 MB), the image is about 0.4–0.5 GB, at the edge of Artifact Registry's free 0.5 GB; storage beyond it costs cents per month. Measured in Phase 1. Secret Manager may add up to about $0.50/month for synced secret versions beyond its free 6.
+- **Infrastructure (revision 3, AWS):** about $0.30–2 a month: Lambda, DynamoDB, CloudFront, Cognito and CloudWatch stay inside the Always Free allowance; S3, ECR and occasional Fargate builds cost cents. The image is about 0.55 GB uncompressed with the bundle (spike 3, `docs/aws/SPIKES.md`). Details and scenarios: `docs/aws/DEPLOYMENT_ANALYSIS.md` §8–§10 and §17.
 - **OpenRouter (usage-based), at 10K queries/month:** about $210 with Sonnet everywhere, $140 with Haiku on the fast path and Sonnet in the agent loop, or $13 with Haiku everywhere. Embeddings and rerank add well under $0.001 per text search.
 - **Evals:** about $100–250/month at the cadence in §5.5.
 - **First paid upgrades, in order:**
-  1. Cloud Run min-instances 1 ($7–10).
-  2. Supabase Pro ($25: no pausing, PITR).
+  1. Lambda provisioned concurrency 1 during known demo windows (≈ $0.024/hour), or 24/7 (≈ $17.50/month).
+  2. DynamoDB point-in-time recovery (≈ $0.20/GB-month).
   3. Langfuse Core, once traces exceed the Hobby limit.
 
 ---
@@ -777,7 +789,7 @@ Plan-filter correctness must be 100% in all three. Recall gates apply to the ful
   - embedding and rerank calls (model, tokens, latency), and each text search's latency, plan filter and hit count;
   - latency per span.
 - **Privacy:** user text is redacted before it reaches Langfuse (masking hook).
-- **Correlation:** a request ID flows from browser to API to Langfuse trace to Cloud Logging entry and back in response headers, so a user's "report" button links straight to the trace.
+- **Correlation:** a request ID flows from browser to API (`x-request-id`, from the Lambda request ID) to Langfuse trace to CloudWatch log line and back in response headers, so a user's "report" button links straight to the trace.
 
 ### 7.2 Dashboards
 
@@ -785,8 +797,8 @@ Plan-filter correctness must be 100% in all three. Recall gates apply to the ful
 |---|---|
 | Quality (Langfuse) | Verifier block rate, fallback rate, clarification and refusal rates, thumbs-down rate, wrong-number reports, eval trend per category |
 | Cost (Langfuse) | Cost per query by bot, path and model; embedding and rerank spend; cache hit rate; daily spend vs budget; top expensive traces |
-| Latency (Langfuse + Cloud Monitoring) | TTFT and total p50/p95 by path; per-node latency; OpenRouter chat, embedding and rerank latency; text-search latency; cold-start count |
-| Infra (Cloud Monitoring) | Requests, 4xx/5xx, instance count, memory, rate-limit rejections, uptime check |
+| Latency (Langfuse + CloudWatch) | TTFT and total p50/p95 by path; per-node latency; OpenRouter chat, embedding and rerank latency; text-search latency; cold-start count |
+| Infra (CloudWatch) | Requests, 4xx/5xx, instance count, memory, rate-limit rejections, uptime check |
 
 ### 7.3 Alerting
 
@@ -801,7 +813,7 @@ Alerts go out by email plus a Slack webhook.
 | OpenRouter errors | > 5% over 10 min (fallbacks engaged) | P2 |
 | p95 latency | > 12 s over 15 min | P2 |
 | Daily LLM spend | > 80% of budget (also enforced by OpenRouter per-key credit limits) | P2 |
-| Supabase unreachable / paused | Health probe fails | P2 |
+| DynamoDB errors or throttles | Any `SystemErrors`, or Lambda errors > 0 over 5 min | P2 |
 | Plan-filter check violation in search results | Any | P1 |
 | Weekly build | FAIL or quarantine count > 0, or plan removals | P3 (blocks release) |
 
@@ -814,17 +826,17 @@ Alerts go out by email plus a Slack webhook.
    - **Fix:** add a regression item to the golden set and patch.
    - **Verify:** full gating run, then un-quarantine.
    - Write a postmortem within 5 business days.
-2. **Bad deploy.** Shift traffic to the previous revision (`gcloud run services update-traffic --to-revisions=<prev>=100`, under 1 minute). Code, facts and search index roll back together.
+2. **Bad deploy.** Move the `live` alias back to the previous Lambda version (`aws lambda update-alias --function-name sbc-api --name live --function-version <prev>`, under 1 minute). Code, facts and search index roll back together.
 3. **OpenRouter outage.** Fallback models engage automatically. If all fail, flip the bot to deterministic mode and post a status banner.
-4. **Cost spike.** Check traces for abuse. Tighten limits (Upstash config), require Turnstile on every public message, lower the per-key credit limit.
-5. **Supabase paused or down.** The public bot runs stateless automatically. Restore the project, and check checkpoint and audit-write backlogs (buffered to Cloud Logging).
+4. **Cost spike.** Check traces and logs for abuse. Tighten the limits (config), lower the global daily cap, require Turnstile on every public message, lower the per-key credit limit; as a last resort, turn LLM answers off with the kill switch.
+5. **DynamoDB errors.** The API fails closed (turns error rather than run unmetered). Check the AWS Health Dashboard and throttling metrics; nothing needs restoring for a transient error.
 6. **New plan year or mass SBC update.** Run the build, review the diff report, run the gating eval on the new bundle with the year-sliced golden set, then canary.
 7. **Prompt injection or abuse campaign.** Block IPs or sessions, add samples to the adversarial set, patch classifier heuristics.
 
 **Backups:**
 
-- A nightly `pg_dump` of Supabase to GCS (free 5 GB) gives RPO 24 h and RTO 1 h.
-- Bundles and their embedding caches can be rebuilt from PDFs and are also kept as GCS objects; the last 10 are retained.
+- DynamoDB on-demand backups before important changes (point-in-time recovery is optional, §4).
+- Bundles and their embedding caches can be rebuilt from PDFs and are also kept as S3 objects; the last 3 are retained.
 
 ---
 
@@ -832,12 +844,12 @@ Alerts go out by email plus a Slack webhook.
 
 | Area | Plan |
 |---|---|
-| AuthN | Brokers: Supabase Auth (invite-only, email + TOTP MFA, 12 h session, refresh rotation). Public: anonymous session JWT (HS256, 24 h) issued after Turnstile verification. Both verified in FastAPI middleware. |
-| AuthZ | `role` claim (`broker`, `admin`); the bot profile is selected by route *and* checked against the claim. Admin endpoints (kill switches, quarantine) require `admin` and are audited. Postgres row-level security keeps brokers to their own conversations. |
-| Secrets | Doppler is the source of truth: project `plan-info-chatbot`, configs `dev`, `ci` and `prd`. Doppler syncs `dev` and `prd` to GCP Secret Manager, which Cloud Run mounts as environment variables, and `ci` to GitHub Actions. Local dev uses `doppler run`. No secrets live in the repo, the images or plain Cloud Run env vars. Each environment and bot has its own OpenRouter key with a credit limit. Keys rotate quarterly in Doppler. `gitleaks` runs in CI. The free plan keeps 3 days of activity logs; the Team plan ($21/user/month) keeps 90 days if a secret-change audit trail becomes a requirement. |
+| AuthN | Brokers: Amazon Cognito (invite-only, TOTP MFA, 1 h access token, 12 h refresh; RS256 access tokens verified through the pool's JWKS). Public: anonymous session JWT (HS256, 24 h) issued after Turnstile verification, carrying the visitor's state. Both verified in FastAPI (`sbc_api.auth`). |
+| AuthZ | Cognito groups (`broker`, `admin`); the bot profile is selected by route *and* checked against the token type. Admin endpoints (kill switches, quarantine) require `admin`, are never open to the shared demo account, and are audited. Brokers can only reach their own conversations: ownership is part of every key (`OWNER#<sub>`), and the API returns 404 for anyone else's thread. |
+| Secrets | SSM Parameter Store SecureStrings under `/sbc/<env>/`, written from a shell (`scripts/aws/put-secrets.sh`), read by the Lambda role at cold start and copied into the environment. No secrets live in the repo, the images, the CloudFormation templates or plain Lambda environment variables. Each environment and bot has its own OpenRouter key with a credit limit. Keys rotate quarterly. `gitleaks` runs in CI. Doppler can remain the source of truth through its Parameter Store sync. |
 | LLM data handling | OpenRouter account prompt logging off. Provider routing is restricted to zero-data-retention endpoints with no data collection, for chat, embedding and rerank requests alike. Only redacted text is sent. Phase 0 confirmed the embedding and rerank endpoints meet that policy (`sbc-llm-smoke`, 2026-11-02); Voyage didn't, so it was replaced. Any model change re-runs the smoke test. |
 | PII / PHI | Redaction before LLM, logs and traces (§3.8). The UI warns: "Don't share personal or health information." No identity is ever requested. **BAA decision before GA** (assumption 1.4.2). |
-| Retention | Public: redacted content 30 days. Broker: 365 days. Audit metadata: 2 years. Langfuse: 30 days. Deletion runs as a daily job. Brokers can delete their own history. |
+| Retention | Public: redacted content 30 days. Broker: 365 days. Shared demo account: 24 hours. Audit metadata: 2 years. Langfuse: 30 days. Deletion is DynamoDB TTL (no job). |
 | Audit log | Append-only table: timestamp, actor (user ID or anonymous session hash), bot, request ID, `plan_keys`, tools called, verifier result, answer hash, bundle, model and prompt versions, admin actions. Insert-only database role. |
 | App security | Strict CORS (the two Pages origins); CSP for both apps; input size caps; dependency scanning (Dependabot, `pip-audit`, `npm audit`); SAST (Semgrep OSS, bandit); container scanning (Trivy); non-root container; read-only filesystem except `/tmp`. |
 | Legal | Disclaimers reviewed by counsel before the public launch; not-affiliated notice if applicable; accessibility to WCAG 2.1 AA for the public app; source PDFs linked so users can verify. |
@@ -850,37 +862,36 @@ Alerts go out by email plus a Slack webhook.
 
 | Env | API | DB / Auth | Frontends | Data |
 |---|---|---|---|---|
-| local | `uvicorn` or `docker compose` | Local Postgres container (or SQLite checkpointer) | Vite dev server | Full facts bundle (with its search index) or a 200-plan dev bundle |
-| dev / preview | Cloud Run service `api-dev`; each PR deploys a tagged revision with no traffic (`pr-123---api-dev…`) | Supabase project #1 (free) | Cloudflare Pages preview per PR | Latest bundle |
-| prod | Cloud Run service `api-prod` | Supabase project #2 (free) | Cloudflare Pages production | Signed-off bundle |
+| local | `uvicorn --factory sbc_api.app:create_app` or `docker compose` | In-process stores (or DynamoDB Local); local developer principal | Vite dev server | Full facts bundle (with its search index) or a 200-plan dev bundle |
+| dev (the portfolio deployment) | Lambda `sbc-api`, `live` alias (versions for canary and rollback) | DynamoDB + Cognito pool | S3 + CloudFront | Signed-off bundle |
+| prod (later) | A separate AWS deployment | Its own tables and pool | Its own distribution | Signed-off bundle |
 
 ### 9.2 Container
 
 - Multi-stage build on `python:3.13-slim` with `uv sync --frozen`. There are no model weights, because embeddings and rerank are OpenRouter calls.
-- The facts bundle, with its search index, is copied in (read-only). The image is about 0.4–0.5 GB and runs as non-root.
+- The facts bundle, with its search index, is copied in (read-only, opened with `immutable=1`). The Lambda Web Adapter is added as an extension. The image is about 0.55 GB uncompressed (spike 3) and runs as non-root.
 - The **image tag equals the git SHA plus the bundle version**. The bundle carries its own search index, so one image is one reproducible behavior.
 
-### 9.3 Cloud Run settings
+### 9.3 Lambda settings (revision 3)
 
-- 1 vCPU, 1 GiB (facts bundle mapped into memory; no local models).
-- Supabase Postgres is reached through its connection pooler in transaction mode (port 6543), with prepared statements disabled for the LangGraph checkpointer.
-- Concurrency 20 (the API is I/O-bound on OpenRouter).
-- min-instances 0 (free); max-instances 3 (cost cap); request timeout 60 s; startup CPU boost on; request-based billing.
+- arm64, 2,048 MB (about 1.15 vCPU), 60 s timeout, 1,024 MB `/tmp`; no VPC, so outbound HTTPS needs no NAT.
+- Function URL with `RESPONSE_STREAM` invoke mode and `AWS_IAM` auth, behind CloudFront with origin access control (POSTs carry `x-amz-content-sha256`).
+- One request per instance; scales to zero. Cost is capped by the app's rate limits and daily cap and the OpenRouter key limits, not by instance counts.
+- Provisioned concurrency only when a warm instance is worth paying for (§4).
 
 ### 9.4 Release pipeline
 
 ```text
 PR:   ruff, mypy → unit + integration (cassettes) → deterministic eval
       → LLM smoke eval (path-filtered) → build image → deploy tagged preview (no traffic)
-      → e2e smoke against preview
-main: if the bundle changed: build facts bundle → embed (only new chunks sent to OpenRouter)
-      → validate the search index (vector count, plan-filter test)
-      → build image → deploy api-prod revision with --no-traffic --tag rc → smoke on rc URL
-      → canary 10% for 30 min (auto-abort if 5xx > 2%, verifier block rate > 5%, or p95 > 12 s)
-      → 100%
+      → e2e smoke (later, against a deployed version)
+main_AWS: bundle from S3 (built by the Fargate task when the data changes)
+      → build arm64 image, push to ECR → update the function, publish a version
+      → smoke the new version directly (healthz?deep=1 and one fast-path question)
+      → move the live alias (optional 10% weighted canary first) → sync the SPAs, invalidate CloudFront
 ```
 
-**Rollback:** traffic goes to the previous revision in under a minute. Code, facts and search index roll back together (§3.2.5). Database migrations use expand-then-contract with one release of backward compatibility (Supabase migrations in `infra/supabase/`).
+**Rollback:** the `live` alias moves back to the previous version in under a minute. Code, facts and search index roll back together (§3.2.5). DynamoDB has no schema migrations; item shapes stay backward compatible for one release.
 
 ### 9.5 Scaling, vLLM, caching and rate limiting
 
@@ -889,10 +900,10 @@ main: if the bundle changed: build facts bundle → embed (only new chunks sent 
 - **Caching, in four layers:**
   1. **Prompt caching** of system and tool prefixes (§3.6).
   2. **In-process LRU** of tool results keyed by `(bundle_version, tool, args)`. The bundle is immutable, so entries never go stale.
-  3. **Query-embedding cache** (in-process LRU, then Upstash) keyed by `(embedding_model, normalized query)`, so repeated searches skip the OpenRouter embedding call.
-  4. **Exact resolved-answer cache** in Upstash, keyed by `(bot, bundle_version, prompt_versions, model, intent, sorted plan_keys, fields, normalized question)`, with a 24 h TTL.
+  3. **Query-embedding cache** (in-process LRU, then DynamoDB) keyed by `(embedding_model, normalized query)`, so repeated searches skip the OpenRouter embedding call.
+  4. **Exact-answer cache** in DynamoDB for a thread's first message, keyed by `(bot, bundle_version, prompt_versions, config_hash, selected plans, state, normalized question)`, with a 24 h TTL. Later messages depend on history and are never cached; a cache hit still records the turn in the new thread's history (`Agent.remember`).
   - **No semantic answer cache.** Embedding similarity would conflate "deductible" with "out-of-pocket max", which is a correctness risk not worth taking.
-- **Rate limiting.** Upstash sliding windows per §2.2, a global per-bot daily dollar budget tracked from OpenRouter usage, and OpenRouter per-key credit limits as the backstop.
+- **Rate limiting.** DynamoDB fixed-window counters per §2.2 (per user, per session, per IP for the public bot, tighter for the shared demo account), a global daily cap on model-calling turns (portfolio mode), and OpenRouter per-key credit limits as the backstop.
 
 ---
 
@@ -913,7 +924,8 @@ plan-info-chatbot/
 │   ├── retrieval/      # plan resolver, query expansion, text-search pipeline (hybrid search + rerank)
 │   ├── tools/          # agent tools incl. calculator (pure functions + Pydantic I/O)
 │   ├── agent/          # LangGraph graph, nodes, prompts/ (versioned .md), verifier, renderer, guards
-│   └── api/            # FastAPI app, auth, rate limit, SSE, admin endpoints, audit
+│   ├── aws/            # sbc_aws (revision 3): SSM secrets, DynamoDB checkpointer and stores, S3 PDF cache
+│   └── api/            # FastAPI app, auth, rate limit, SSE, admin endpoints, audit, PDF proxy
 ├── apps/
 │   ├── broker/         # React app
 │   ├── shopper/        # React app
@@ -929,10 +941,10 @@ plan-info-chatbot/
 │   ├── contract/       # schemathesis against OpenAPI
 │   └── load/           # k6 scripts
 ├── infra/
-│   └── docker/Dockerfile  cloudrun/*.yaml  supabase/migrations/  doppler.yaml
+│   └── docker/ (API and build images, compose)  cdk/ (AWS CDK app, revision 3)
 ├── .github/workflows/  # ci, eval, build-index, deploy, backup (GitHub only runs workflows from here)
 ├── docs/               # runbook.md, ADRs (one per major decision above)
-└── data/               # unchanged layout; raw/ and reference/ stay git-ignored; bundles and embedding caches in GCS
+└── data/               # unchanged layout; raw/ and reference/ stay git-ignored; bundles and embedding caches in S3
 ```
 
 **Module boundaries.** `core` depends on nothing internal. `sbc_extract` → `core`. `sbc_index` → `sbc_extract`, `core`. `retrieval` and `tools` → `core`. They read facts only through a `FactsReader` interface and search only through a `SearchIndex` interface (both implemented over the facts bundle in `core`, plus stubs for unit tests). Import names carry an `sbc_` prefix (`packages/core` is imported as `sbc_core`), so generic names like `core` or `api` never shadow third-party modules. import-linter enforces these rules in CI. `agent` → `tools`, `retrieval`, `core`. `api` → `agent`. No package imports `api`. The packages that build the bundle are never imported at runtime.
@@ -956,6 +968,8 @@ These are calendar estimates for about 1.5 engineers.
 | **4. Production hardening and GA** | 12–14 | GA both bots; SLO dashboards; weekly review cadence; nightly backups; 2028 readiness (multi-year bundle, year UX, crosswalk); cost review and paid-upgrade decisions; calculator conformance stretch | 30 days at ≥ 99.5% availability; on-call rota and postmortem template in place | Full v1 set (about 1,200) green 2 weeks in a row; online verifier block rate < 2%; thumbs-down < 8% |
 | Later | — | Spanish SBCs; EOC ingestion for deeper exclusions (separate parser and verifier); premium data if it becomes available | Each behind its own eval slice | |
 
+**Revision 3 note.** On the AWS track, "Doppler, Supabase … keys provisioned" (Phase 0) means the AWS account, Cognito pool and SSM parameters; "Supabase auth" and "deploy to `api-dev`" (Phase 1) mean Cognito and the AWS portfolio deployment. The AWS work packages (WP0–WP14), which also build the Phase 1 API and the Phase 1/3 frontends, are tracked in `docs/aws/TODO.md` and `docs/aws/TASKS_DONE.md`.
+
 ---
 
 ## 12. Risks and mitigations
@@ -972,9 +986,9 @@ These are calendar estimates for about 1.5 engineers.
 | Inferred content (carried notes, event labels) shown as SBC text | Medium | Medium | Flags in facts and chunks; required labels; golden REVIEW-flag items |
 | LLM cost overrun | Medium | Medium | Haiku routing, fast path, prompt caching, exact cache, step and token budgets, per-key credit limits, spend alerts |
 | Latency above NFR | Medium | Medium | Fast path (no text search); streaming; small contexts; parallel tool calls; compare in one call; query-embedding cache; rerank only where eval shows a lift; min-instances upgrade for cold starts |
-| Free-tier limits (Supabase pause, Langfuse quota, Cloud Run cold starts) | Medium | Medium | Read path has no database dependency; public stateless fallback; quota alerts; paid upgrades named and priced (§4) |
+| Free-tier limits and cold starts (Langfuse quota, Lambda cold starts, new-account Free plan expiry) | Medium | Medium | Warm on page load; optional provisioned concurrency; quota and budget alerts; upgrade the account to the Paid plan early (credits carry over) |
 | OpenRouter as the single dependency for LLMs, embeddings and rerank | Low–Medium | High | Eval-approved fallback models; BM25-only search when embeddings fail; RRF order when rerank fails; deterministic mode for lookups; the `llm` interface allows a direct provider swap |
-| Bundle with embeddings grows the image past the Artifact Registry free 0.5 GB | Medium | Low (storage costs cents per month) | float16 vectors (Matryoshka 512 dimensions if needed); measure the image in Phase 1 |
+| Bundle with embeddings grows the image | Low | Low (ECR storage costs cents per month) | float16 vectors (Matryoshka 512 dimensions if needed); measured at about 0.55 GB uncompressed (spike 3) |
 | PHI/PII exposure or no BAA | Medium (public) | High | Redaction before LLM and logs; short retention; UI notice; BAA decision as a GA blocker |
 | Prompt injection or jailbreak | Medium | Medium (read-only tools, placeholders) | Layered guards; URL allowlist; adversarial gating set; red team |
 | Eval circularity (gold derived from the extractor) | Medium | High | Gating gold verified against the PDF by humans; PUF oracle; two-reviewer gold changes |
@@ -1009,8 +1023,8 @@ Cache writes are billed at about 1.25× input. Prefix reuse across turns and use
 | Agent framework | LangGraph | PydanticAI / hand-rolled | Durable interrupts, checkpoints, tracing |
 | Models | Haiku 5.5 router + Sonnet 5.5 agent (bake-off may change) | Opus 5.5 everywhere | About 2× cheaper; placeholders reduce what the model must get right |
 | SLM / vLLM | None (firm decision, revision 2) | Fine-tuned SLM for routing and extraction | Not free; no gap to close |
-| Hosting | Cloud Run free + Cloudflare Pages + Supabase/Upstash/Langfuse free | HF Spaces (rejected: paid plan, outbound port limits) / Oracle VM | Revisions, canary, autoscale at $0, no port limits |
-| Secrets | Doppler, synced to Secret Manager and GitHub Actions (revision 2) | Secret Manager alone | One source of truth, no runtime dependency on Doppler |
+| Hosting | AWS (revision 3): Lambda + CloudFront + S3 + Cognito + DynamoDB | Cloud Run + Cloudflare Pages + Supabase/Upstash (revision 2); DigitalOcean Droplet; Fargate + ALB | Scales to zero, no NAT or load balancer, ≈ $0 idle, a production path (Bedrock BAA) |
+| Secrets | SSM Parameter Store (revision 3) | Doppler → Secret Manager (revision 2); Secrets Manager | Free, AWS-native, no runtime third-party dependency |
 | Bots | One core, two profiles | Two codebases | Single correctness surface |
 
 ## Appendix C. Functional overview and sample interactions

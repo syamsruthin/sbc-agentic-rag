@@ -58,12 +58,12 @@ flowchart LR
     EMB --> FACTS
   end
 
-  subgraph CLIENTS["Frontends (Cloudflare Pages)"]
+  subgraph CLIENTS["Frontends (S3 + CloudFront)"]
     WB["Broker web app"]
     WP["Plan Shopper web app"]
   end
 
-  subgraph RUN["API on Cloud Run (FastAPI)"]
+  subgraph RUN["API on AWS Lambda (FastAPI, response streaming)"]
     EDGE["Edge layer<br/>auth, Turnstile, rate limit,<br/>PII redaction, bot profile"]
     AGENT["LangGraph agent"]
     TOOLS["Tools<br/>find_plans, get_plan_facts,<br/>search_sbc_text, compare_plans,<br/>estimate_cost, ask_clarifying_question"]
@@ -72,10 +72,10 @@ flowchart LR
   end
 
   OR["OpenRouter<br/>LLMs, embeddings, rerank"]
-  SB[("Supabase<br/>Auth + Postgres")]
-  UP[("Upstash Redis<br/>rate limits, exact cache")]
-  LF["Langfuse<br/>traces, cost, evals, review queues"]
-  DP["Doppler<br/>secrets, synced at deploy"]
+  SB[("Cognito + DynamoDB<br/>broker auth, checkpoints,<br/>sessions, audit")]
+  UP[("DynamoDB<br/>rate limits, caches")]
+  LF["Langfuse (optional)<br/>traces, evals, review queues"]
+  DP["SSM Parameter Store<br/>secrets, loaded at cold start"]
 
   WB --> EDGE
   WP --> EDGE
@@ -95,8 +95,10 @@ flowchart LR
 ```
 
 **Stack:** Python 3.13, uv workspace, LangGraph, FastAPI, SQLite (facts and search index in one file), OpenRouter (Claude Haiku 5.5,
-Sonnet 5.5 and Opus 5.5; bge-m3 embeddings and Qwen3 rerank), Supabase, Upstash, Langfuse, Doppler, Cloud Run,
-Cloudflare Pages. PLAN.md section 4 explains each choice.
+Sonnet 5.5 and Opus 5.5; bge-m3 embeddings and Qwen3 rerank). The deployment is on AWS (PLAN.md revision 3): Lambda
+behind CloudFront, S3, DynamoDB, Cognito, SSM Parameter Store, CloudWatch, ECS Fargate for the offline build, and AWS
+CDK; Cloudflare Turnstile and optional Langfuse are the external services. PLAN.md section 4 explains each choice, and
+[docs/aws/](docs/aws/MIGRATION_PLAN.md) has the deployment analysis, the migration plan and its progress.
 
 ## Repository layout
 
@@ -110,16 +112,18 @@ packages/      Python workspace packages (imported as sbc_<name>)
   retrieval/     plan resolver, query expansion, text-search pipeline
   tools/         agent tools, cost calculator
   agent/         LangGraph graph, prompts, verifier, renderer
-  api/           FastAPI app
+  aws/           AWS adapters (sbc_aws): SSM secrets, DynamoDB checkpointer and stores, S3 PDF cache
+  api/           FastAPI app: SSE chat, auth, guards, plan picker, PDF proxy, admin
 apps/          broker/, shopper/, chat-ui/ (React)
 evals/         golden datasets, judge calibration, harness
 tests/         unit/, integration/, contract/, load/
-infra/         Docker, Cloud Run, Supabase migrations
-docs/          pipeline, agent graph, tools and answer-path notes; review sheets; ADRs
+infra/         Docker images, AWS CDK app (in progress)
+spikes/        throwaway AWS experiments and their scripts (docs/aws/SPIKES.md)
+docs/          pipeline, agent graph, tools and answer-path notes; review sheets; ADRs; aws/ deployment track
 data/          fetched and generated SBC data (not committed)
 ```
 
-Module boundaries are enforced by import-linter: `api > agent > (tools | retrieval) > core`, build-time
+Module boundaries are enforced by import-linter: `api > (agent | aws) > (tools | retrieval) > core`, build-time
 packages (`sbc_ingest`, `sbc_extract`, `sbc_index`) are never imported at runtime, and `core` depends on
 nothing internal.
 
@@ -134,7 +138,7 @@ git clone https://github.com/syamsruthin/sbc-agentic-rag.git
 cd sbc-agentic-rag
 uv sync                # .venv with Python 3.13 and every workspace package
 pre-commit install     # gitleaks, ruff, mypy and import contracts on each commit
-cp .env.example .env   # or run commands through `doppler run --`
+cp .env.example .env   # local values; on AWS the secrets come from SSM Parameter Store
 ```
 
 Run the same checks as CI:
@@ -191,13 +195,15 @@ if any secret it needs is missing.
 | Repository setup and public-repo hygiene | Done |
 | Scaffolding: workspace, config, lint, types, tests, CI | Done (PR #1) |
 | Phase 0: extraction, facts bundle with search index, golden dataset | Eval bar met; human sign-offs left |
-| Phase 1: Broker Assistant MVP (internal alpha) | In progress (tools, answer path and agent graph done) |
+| Phase 1: Broker Assistant MVP (internal alpha) | In progress: tools, answer path, agent graph and the API (SSE chat, auth, guards, plan picker, PDF proxy) done; frontends, deployment and evals left |
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
+| AWS deployment track (branch `main_AWS`) | WP0–WP7 done (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy); WP8–WP14 left |
 
 [TODO.md](TODO.md) has the detailed checklist; PLAN.md section 11 has each phase's acceptance criteria and
-eval bar.
+eval bar. The AWS track's progress is in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_DONE.md) and
+[docs/aws/TODO.md](docs/aws/TODO.md).
 
 ## Data and disclaimer
 

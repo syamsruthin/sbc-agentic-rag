@@ -1,6 +1,7 @@
 # Base configuration shared by both bots and every environment.
 # Layering (later wins): base.yaml -> bots/<bot>.yaml -> env/<env>.yaml -> SBC_* environment variables.
-# Secrets never go in these files; they come from environment variables (Doppler). See .env.example.
+# Secrets never go in these files; they come from environment variables (on AWS, loaded from SSM Parameter Store
+# at cold start). See .env.example.
 
 models:
   # Every model call goes through OpenRouter (PLAN.md section 3.6).

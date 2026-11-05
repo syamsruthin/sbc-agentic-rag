@@ -32,7 +32,16 @@ answer  -> clarify (the agent asked) | end
 
 The checkpointed state holds only serializable values: the redacted message, classification, resolved plan
 keys, the reply and a short history. Facts exist only inside the answer node. Tests use `InMemorySaver` and
-scripted model responses (`tests/unit/test_graph.py`); the API will use `PostgresSaver` on Supabase.
+scripted model responses (`tests/unit/test_graph.py`); the API uses `DynamoDBSaver` from `langgraph-checkpoint-aws`
+(`sbc_aws.checkpoint`), so a clarifying question asked on one Lambda instance resumes on another.
+
+## Streaming and remembered turns
+
+- `Agent.stream(thread_id, message | choice=...)` yields a `Progress(node)` as each node finishes and the same
+  `Reply` as `ask`/`choose` last. The API relays the node names as status events; nothing the model wrote is
+  streamed before the verifier has passed it.
+- `Agent.remember(thread_id, message=..., reply=...)` records a turn answered outside the graph (the API's
+  exact-answer cache) in a new thread's history, so a follow-up keeps its plan and context.
 
 ## Trying it
 

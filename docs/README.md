@@ -8,6 +8,11 @@
 - [agent-tools.md](agent-tools.md): the tools the agent can call and the rules they enforce in code.
 - [answer-path.md](answer-path.md): placeholders, the number and citation firewall, the renderer and the
   template fallback.
+- [aws/](aws/): the AWS deployment track (PLAN.md revision 3):
+  - [DEPLOYMENT_ANALYSIS.md](aws/DEPLOYMENT_ANALYSIS.md): architecture, costs, free-tier fit, portfolio mode.
+  - [MIGRATION_PLAN.md](aws/MIGRATION_PLAN.md): work packages WP0–WP14 with specs and acceptance checks.
+  - [SPIKES.md](aws/SPIKES.md): results of the three de-risking spikes.
+  - [TASKS_DONE.md](aws/TASKS_DONE.md) and [TODO.md](aws/TODO.md): what is finished and what is left.
 - `reviews/`: human review sheets and sign-offs (cost grammar, converter fix, corpus snapshot).
 - `adr/`: architecture decision records, one per major decision (added as decisions are revisited).
 - `runbook.md`: incident runbook (Phase 4; PLAN.md section 7.4 has the draft).
