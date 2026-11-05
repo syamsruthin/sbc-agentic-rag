@@ -39,6 +39,7 @@ from sbc_api.memory import (
     MemoryRateLimiter,
     MemorySessionStore,
 )
+from sbc_api.portal_preview import PortalPreviewClient
 from sbc_api.ports import AnswerCache, AuditSink, DailyCap, KillSwitches, PdfCache, RateLimiter, SessionStore
 from sbc_aws.audit import DynamoAuditSink
 from sbc_aws.cache import DynamoAnswerCache, QueryEmbeddingCache
@@ -104,6 +105,7 @@ class ApiState:
     session_tokens: SessionTokens
     turnstile: TurnstileVerifier | None
     """None only in local runs without ``TURNSTILE_SECRET_KEY``: the session route then skips the check."""
+    portal: PortalPreviewClient = field(default_factory=PortalPreviewClient)
     init: dict[str, Any] = field(default_factory=dict)
 
 
@@ -222,7 +224,9 @@ def build_state(
         "ms": round((time.perf_counter() - started) * 1000), "secrets_loaded": len(secrets),
         "bundle_version": reader.bundle_version, "search": search_mode, "stores": stores.backend,
     }  # fmt: skip
-    return ApiState(env, reader, search_mode, bots, stores, authenticator, session_tokens, turnstile, init)
+    return ApiState(
+        env, reader, search_mode, bots, stores, authenticator, session_tokens, turnstile, init=init
+    )
 
 
 def _session_tokens(env: EnvSettings) -> SessionTokens:

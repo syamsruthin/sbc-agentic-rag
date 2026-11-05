@@ -82,13 +82,24 @@ def write_manifest(root: Path, rows: list[dict[str, str]] | None = None) -> Path
     return path
 
 
-def make_bundle(root: Path, edit: Callable[[str, str], str] | None = None, *, manifest: bool = True) -> Path:
-    """Build a two-plan test bundle under ``root`` and return its path (with ``plan_source`` rows unless
-    ``manifest`` is False)."""
+def make_bundle(
+    root: Path,
+    edit: Callable[[str, str], str] | None = None,
+    *,
+    manifest: bool = True,
+    rows: list[dict[str, str]] | None = None,
+) -> Path:
+    """Build a two-plan test bundle under ``root`` and return its path (with ``plan_source`` rows from
+    ``rows``, default :func:`manifest_rows`, unless ``manifest`` is False)."""
     md_dir, report = _corpus(root, edit)
     out = root / "facts.sqlite"
     stats = build_bundle(
-        md_dir, report, out, "test.1", root=root, manifest_csv=write_manifest(root) if manifest else None
+        md_dir,
+        report,
+        out,
+        "test.1",
+        root=root,
+        manifest_csv=write_manifest(root, rows) if manifest else None,
     )
     assert (stats.plans, stats.quarantined) == (2, 1)
     return out

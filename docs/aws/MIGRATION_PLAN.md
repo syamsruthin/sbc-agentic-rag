@@ -498,6 +498,18 @@ The query-embedding cache wraps `TextSearcher.embed_query` (`QueryEmbeddingCache
 
 ### WP7: SBC PDF proxy
 
+> **Status: done** on `main_AWS` (code and mocked-portal tests). The manual check against the live portal is still open: it needs a real `2027.2` bundle (WP3). Run `curl -o x.pdf localhost:8080/api/sbc/<a preview-only plan_key>.pdf` and confirm the hash matches.
+>
+> **As built** (`sbc_api/portal_preview.py`, `routes/sbc_pdf.py`):
+> - **Public PDFs:** plans with a public PDF are redirected (302) to it.
+> - **Preview-only PDFs:**
+>   1. Check the per-IP limit (30 an hour; 429 with `Retry-After`).
+>   2. Look in the S3 cache.
+>   3. Otherwise fetch from the portal: a fresh cookie session per fetch, then `GET /dps/`, `POST /dps/searchPage` and `POST /dps/search/previewDocument`, with a 30 s timeout and a 20 MB cap.
+>   4. Require the `%PDF` signature and a sha256 that matches the bundle, then cache and stream it inline.
+> - **Failures:** a portal failure or a hash mismatch gives 502 and nothing is served; a mismatch is logged as `pdf_hash_mismatch`.
+> - **Tests:** 9 in `tests/unit/api/test_sbc_pdf.py`. One asserts that the API's form is identical, field for field, to what `sbc_ingest.portal._preview_post` sends.
+
 **Files:** `packages/api/src/sbc_api/portal_preview.py`, `routes/sbc_pdf.py`, `tests/unit/api/test_sbc_pdf.py` (with a recorded response fixture; use a tiny test PDF, not a real SBC).
 
 **`GET /api/sbc/{plan_key}.pdf`:**
