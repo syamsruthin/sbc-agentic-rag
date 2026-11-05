@@ -5,6 +5,7 @@ description = "FastAPI app: auth, rate limits, SSE streaming, admin endpoints an
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.162",
+    "pyjwt[crypto]>=2.10",
     "uvicorn>=0.54",
     "sbc-agent",
     "sbc-aws",

@@ -402,6 +402,19 @@ def stream(self, thread_id, message=None, *, resume=None, ui_selected=(), user_s
 
 ### WP5: Authentication and authorization
 
+> **Status: done** on `main_AWS`.
+>
+> **As built:**
+> - **`auth/cognito.py`:** `CognitoVerifier` checks RS256 through the pool's JWKS (`PyJWKClient`: keys cached for 1 h, 5 s fetch timeout). It checks the issuer, `token_use == "access"`, `client_id`, expiry (30 s leeway) and that `cognito:groups` is a list.
+> - **`auth/anon.py`:** `SessionTokens` are HS256 with issuer `sbc-api` and audience `sbc-public`, 24 h, and need a secret of at least 32 bytes. The token's `st` (state) wins over any state in a request.
+> - **`auth/turnstile.py`:** calls Cloudflare siteverify with a 5 s timeout and passes the viewer IP from `CloudFront-Viewer-Address`.
+> - **`auth/principal.py`:** `BearerAuthenticator` sends each token only to its own bot's verifier. A broker token needs the `broker` or `admin` group (else 403). The demo account loses `admin` whatever its token claims. `admin_principal` is ready for the WP6 admin routes.
+> - **Wiring and routes:**
+>   - `POST /api/public/session` gives 403 on a failed check and 503 when Cloudflare is down.
+>   - `deps` uses `LocalAuthenticator` for `APP_ENV=local`, otherwise `BearerAuthenticator`.
+>   - Locally without `TURNSTILE_SECRET_KEY` the check is skipped, and without `SESSION_JWT_SECRET` a per-process secret is used. Outside local runs both are required.
+> - **Tests:** 21 in `tests/unit/api/test_auth.py`, with a generated RSA key behind a fake JWKS and a mock HTTP transport for Turnstile (no network). They cover 10 kinds of bad token (expired, wrong issuer, wrong client, ID token, foreign key, unknown `kid`, missing claim, malformed groups, HS256 algorithm confusion, garbage), cross-bot tokens, tampered, expired and foreign-audience sessions, the IP passed to Turnstile, admin checks and the demo account.
+
 **Files:** `packages/api/src/sbc_api/auth/*`, `routes/session.py`, `tests/unit/api/test_auth.py`.
 
 **Broker:**

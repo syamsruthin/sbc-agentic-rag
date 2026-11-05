@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets as stdlib_secrets
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -25,7 +26,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from sbc_agent.classify import ChatModel
 from sbc_agent.graph import Agent
 from sbc_agent.respond import Deps
-from sbc_api.auth.principal import Authenticator, LocalAuthenticator, RefuseAll
+from sbc_api.auth.anon import SessionTokens
+from sbc_api.auth.cognito import CognitoVerifier
+from sbc_api.auth.principal import Authenticator, BearerAuthenticator, LocalAuthenticator
+from sbc_api.auth.turnstile import TurnstileVerifier
 from sbc_api.memory import (
     MemoryAnswerCache,
     MemoryAuditSink,
@@ -90,6 +94,9 @@ class ApiState:
     bots: dict[BotName, BotRuntime]
     stores: Stores
     authenticator: Authenticator
+    session_tokens: SessionTokens
+    turnstile: TurnstileVerifier | None
+    """None only in local runs without ``TURNSTILE_SECRET_KEY``: the session route then skips the check."""
     init: dict[str, Any] = field(default_factory=dict)
 
 
@@ -188,13 +195,41 @@ def build_state(
         saver = saver_factory(bot, s) if saver_factory is not None else _saver(env, s)
         deps = Deps(reader=reader, chat=chat, config=s.config, taxonomy=taxonomy, search=searcher)
         bots[bot] = BotRuntime(s, Agent(deps, saver))
+    session_tokens = _session_tokens(env)
     if authenticator is None:
-        authenticator = LocalAuthenticator() if env.app_env is Env.LOCAL else RefuseAll()
+        authenticator = _authenticator(env, settings, session_tokens)
+    turnstile_secret = env.turnstile_secret_key.get_secret_value() if env.turnstile_secret_key else ""
+    turnstile = TurnstileVerifier(turnstile_secret) if turnstile_secret else None
     init = {
         "ms": round((time.perf_counter() - started) * 1000), "secrets_loaded": len(secrets),
         "bundle_version": reader.bundle_version, "search": search_mode, "stores": stores.backend,
     }  # fmt: skip
-    return ApiState(env, reader, search_mode, bots, stores, authenticator, init)
+    return ApiState(env, reader, search_mode, bots, stores, authenticator, session_tokens, turnstile, init)
+
+
+def _session_tokens(env: EnvSettings) -> SessionTokens:
+    secret = env.session_jwt_secret.get_secret_value() if env.session_jwt_secret else ""
+    if not secret:
+        if env.app_env is not Env.LOCAL:
+            raise RuntimeError("SESSION_JWT_SECRET is required outside local runs")
+        secret = stdlib_secrets.token_urlsafe(32)  # local only: sessions last for this process
+    return SessionTokens(secret)
+
+
+def _authenticator(
+    env: EnvSettings, settings: dict[BotName, Settings], sessions: SessionTokens
+) -> Authenticator:
+    if env.app_env is Env.LOCAL:
+        return LocalAuthenticator()
+    cognito = None
+    if env.cognito_user_pool_id and env.cognito_app_client_id:
+        cognito = CognitoVerifier(
+            region=env.aws_region,
+            user_pool_id=env.cognito_user_pool_id,
+            app_client_id=env.cognito_app_client_id,
+        )
+    demo = frozenset(settings[BotName.BROKER].config.portfolio.demo_user_ids)
+    return BearerAuthenticator(cognito=cognito, sessions=sessions, demo_user_ids=demo)
 
 
 def _saver(env: EnvSettings, settings: Settings) -> BaseCheckpointSaver[Any]:
