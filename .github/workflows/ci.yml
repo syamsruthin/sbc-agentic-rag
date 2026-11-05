@@ -87,3 +87,22 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run python -m evals.harness.ci_gate
+
+  image:
+    name: API image builds and passes the smoke test
+    needs: [lint, typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      # docs/aws/MIGRATION_PLAN.md WP8: the Lambda image, built on the synthetic fixture bundle (CI has no SBC
+      # corpus) and started the way Lambda runs it (read-only root). The arm64 build and push are WP11.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run python infra/docker/fixture_bundle.py bundles/fixture
+      - run: >-
+          docker build -f infra/docker/api.Dockerfile --build-context bundle=bundles/fixture
+          -t sbc-api:ci .
+      - run: infra/docker/smoke.sh sbc-api:ci

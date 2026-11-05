@@ -1,6 +1,6 @@
 # AWS track: to do
 
-Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-05**, after WP7. Finished
+Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-05**, after WP8. Finished
 work is in [TASKS_DONE.md](TASKS_DONE.md); each work package's full spec is in [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 
 Items marked 👤 need you (an account, credentials or data that isn't in this environment). Everything else can be
@@ -10,7 +10,7 @@ done in code here.
 
 ## 1. Next up, in order
 
-1. **WP8:** containers and the local stack.
+1. ~~WP8: containers and the local stack~~ (done).
 2. **WP9:** the CDK stack.
 3. **WP11:** CI/CD, which deploys automatically.
 4. **WP10:** frontends. It can start in parallel with WP9.
@@ -58,26 +58,16 @@ done in code here.
 
 ## 3. Work packages left
 
-### WP8: containers and the local stack
+### WP8: containers and the local stack: done
 
-- [ ] **`infra/docker/api.Dockerfile`**, multi-stage, arm64, non-root:
-  - [ ] Build stage: `python:3.13-slim`, uv pinned, `uv sync --frozen --no-dev --package sbc-api --no-editable` (runtime packages only: `sbc_api`, `sbc_agent`, `sbc_aws`, `sbc_tools`, `sbc_retrieval`, `sbc_core`).
-  - [ ] Runtime stage: Lambda Web Adapter (pinned) in `/opt/extensions`, the `.venv`, `config/`, and the bundle at `/opt/bundle/facts.sqlite`. Environment: `AWS_LWA_INVOKE_MODE=response_stream`, `AWS_LWA_READINESS_CHECK_PATH=/api/healthz`, `PORT=8080`, `FACTS_BUNDLE_PATH`.
-  - [ ] `CMD ["uvicorn", "--factory", "sbc_api.app:create_app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]`.
-  - [ ] An optional `ca` build secret for TLS-inspecting proxies, as in the spike Dockerfile.
-- [ ] **`infra/docker/build.Dockerfile`:** `python:3.13-slim`, `poppler-utils`, `awscli`, `uv sync --frozen` (all packages). The entrypoint script runs: S3 sync down → `sbc-portal catalog`/`download`/`manifest` → `sbc-to-markdown` → `sbc-verify` → `sbc-build-bundle --release` → `sbc-embed-bundle` → retrieval eval → S3 sync up. It has `full` and `incremental` modes.
-- [ ] **`infra/docker/compose.yaml`:** `amazon/dynamodb-local:2.6.1`; an init step that creates the tables with `sbc_aws.schema.create_tables`; the API with `AWS_ENDPOINT_URL_DYNAMODB` and the `DDB_TABLE_*` variables.
-- [ ] `.dockerignore` (or `Dockerfile.dockerignore`) so `data/`, `.venv`, `bundles/` (except the chosen bundle) and `spikes/` stay out of the build context.
-- [ ] Measure and record in `docs/aws/RUNBOOK.md`: image size (target < 1 GB), container start to ready, memory high-water mark.
-- [ ] A smoke test of the built image: `docker run --read-only --tmpfs /tmp`, then `healthz?deep=1` and plan search.
-- [ ] Document `docker compose up` for local development in README.
-- **Done when:** compose serves the app locally on DynamoDB Local, and the image runs on Lambda (checked in WP9).
+Done on `main_AWS` (TASKS_DONE.md, WP8). Open checks moved to §4: an end-to-end pipeline run against a real bucket,
+and an arm64 build (WP11).
 
 ### WP9: infrastructure as code (AWS CDK, Python)
 
 - [ ] **`infra/cdk/`** as its own uv project: `pyproject.toml`, `uv.lock`, `cdk.json`, `app.py`; `sbc_infra/config.py` with account, region, names, limits and the warmer flag; `sbc_infra/stack.py` with `SbcPortfolioStack`.
 - [ ] **`DataConstruct`:**
-  - [ ] S3 data bucket: SSE-S3, public access blocked, `RETAIN`. Lifecycle: `pdf-cache/` 1 day, `checkpoints/` with TTL-aligned expiry, old `bundles/` 90 days, optional `raw/` to Glacier IR at 30 days.
+  - [ ] S3 data bucket: SSE-S3, public access blocked, `RETAIN`. The layout is the one the build image writes (RUNBOOK §3): `data/…`, `bundles/cache/`, `bundles/<version>/`, `pdf-cache/`, `checkpoints/`. Lifecycle: `pdf-cache/` 1 day, `checkpoints/` with TTL-aligned expiry, old `bundles/<version>/` 90 days, optional `data/raw/` to Glacier IR at 30 days.
   - [ ] DynamoDB `app`, `audit` and `checkpoints` tables: on-demand, `PK`/`SK` strings, TTL `expires_at` (app, audit) and `ttl` (checkpoints), `RETAIN`, PITR off. They must match `sbc_aws.schema.TABLE_SPECS`.
 - [ ] **`AuthConstruct`:** Cognito user pool (self sign-up off, MFA **optional** with TOTP, password policy); SPA app client with SRP, no secret, and **without** the `aws.cognito.signin.user.admin` scope; access token 1 h, refresh 12 h; groups `broker` and `admin`.
 - [ ] **`ApiConstruct`:**
@@ -92,7 +82,13 @@ done in code here.
   - [ ] Behaviors: `/api/*` with `CachingDisabled`, `AllViewerExceptHostHeader` and all methods; `/broker/*`, `/shopper/*` and `/` from S3, with a CloudFront Function for SPA rewrites.
   - [ ] A response headers policy (CSP, HSTS, nosniff).
   - [ ] The `CloudFront-Viewer-Address` header forwarded to the origin (needed for the per-IP limits and Turnstile's `remoteip`).
-- [ ] **`BuildConstruct`:** ECS cluster; Fargate task definition (arm64, 4 vCPU, 8 GB, 50 GB ephemeral storage, `FARGATE_SPOT`); task role with S3 read/write on the data bucket and SSM read for the embedding key; run in the default VPC's public subnets with a public IP (no NAT).
+- [ ] **`BuildConstruct`:** ECS cluster; Fargate task definition for the `sbc-build` image (arm64, 4 vCPU, 8 GB, 50 GB ephemeral storage, `FARGATE_SPOT`).
+  - Environment: `S3_DATA_BUCKET`, `BUNDLE_VERSION` (overridden per run), `SBC_YEAR`, `AWS_REGION`.
+  - `OPENROUTER_API_KEY_BROKER` as an ECS secret from SSM.
+  - Command `full` or `bundle`.
+  - Task role: S3 read/write on the data bucket.
+  - Runs in the default VPC's public subnets with a public IP (no NAT).
+  - An ECR repository for the build image too (keep the last 2).
 - [ ] **`OpsConstruct`:**
   - [ ] SNS topic with email.
   - [ ] Alarms, at most 10: Lambda `Errors`, `Throttles`, p95 `Duration` > 20 s, and metric filters for `plan_filter_violation`, `global_cap_reached`, `pdf_hash_mismatch`, `audit_failed` and `demo_user_limit_reached` (rate-limited events from the demo account).
@@ -113,7 +109,7 @@ done in code here.
 - [ ] **Scripts** in `scripts/aws/`:
   - [ ] `bootstrap.sh`
   - [ ] `put-secrets.sh dev`: prompts for the values; writes SecureStrings `OPENROUTER_API_KEY_BROKER`, `OPENROUTER_API_KEY_PUBLIC`, `SESSION_JWT_SECRET` (generated, at least 32 bytes), `TURNSTILE_SECRET_KEY`, and optionally the Langfuse keys.
-  - [ ] `upload-bundle.sh`
+  - [ ] `upload-bundle.sh`: `bundles/facts-<v>.sqlite` → `s3://…/bundles/<v>/`, and `bundles/embeddings.sqlite` → `s3://…/bundles/cache/` (it can use `infra/docker/s3_sync.py`).
   - [ ] `seed-users.sh`: admin with TOTP enrollment, and `demo-broker` with no MFA in the `broker` group; outputs the demo `sub`.
   - [ ] `rotate-demo-password.sh`: Cognito plus `/landing/demo.json` plus invalidation.
   - [ ] `run-build.sh`: `aws ecs run-task`.
@@ -142,6 +138,7 @@ done in code here.
 
 ### WP11: CI/CD
 
+- [x] **`ci.yml`:** the `image` job (API image on the fixture bundle + `smoke.sh`) landed with WP8.
 - [ ] **`ci.yml` additions:** a `cdk` job (`uv --project infra/cdk run pytest`, `cdk synth`), a `frontend` job, and the existing jobs already covering `sbc_aws` and `sbc_api`. A DynamoDB Local integration job is optional (`services:` container plus `DDB_LOCAL_ENDPOINT`).
 - [ ] **`deploy-aws.yml`** (on push to `main_AWS`, plus `workflow_dispatch`; `permissions: id-token: write, contents: read`; actions pinned by SHA):
   1. [ ] Assume `sbc-github-deploy` through OIDC.
@@ -198,6 +195,8 @@ done in code here.
 | WP4 | A live streamed answer with a real OpenRouter key and bundle | 👤 |
 | WP5 | Sign-in against a real Cognito pool, and Turnstile with a real widget (after WP9) | 👤 + WP13 |
 | WP7 | A live portal fetch of one preview-only SBC, with its hash matching | 👤 |
+| WP8 | An end-to-end `build-pipeline bundle` (then `full`) run against the real data bucket, as an ECS task | 👤 after WP9 |
+| WP8 | The arm64 API image builds (`buildx --platform linux/arm64`) and passes `smoke.sh` | WP11 (CI) |
 
 ---
 

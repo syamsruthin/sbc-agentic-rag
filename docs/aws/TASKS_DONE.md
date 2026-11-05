@@ -2,7 +2,7 @@
 
 Everything finished so far on the AWS deployment track (PLAN.md revision 3), on branch `main_AWS`.
 
-- Status as of **2026-11-05**, after WP7.
+- Status as of **2026-11-05**, after WP8.
 - What's left is in [TODO.md](TODO.md).
 - The plan these tasks follow is [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 - The analysis behind it is [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md).
@@ -23,14 +23,16 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | WP5 | Authentication | `db6b62a` | 2026-11-05 | Cognito JWKS verification, public sessions after Turnstile; 21 tests |
 | WP6 | Guards | `44ca2fc` | 2026-11-05 | Limits, daily cap, answer cache, kill switch, quarantine, ownership, audit, feedback, admin; 17 tests |
 | WP7 | SBC PDF proxy | `2a29bde` | 2026-11-05 | `GET /api/sbc/{plan_key}.pdf`; 9 tests |
-| D | Documentation sync and these tracking files | (this commit) | 2026-11-05 | PLAN.md revision 3, README, TODO.md, docs, `TASKS_DONE.md`, `TODO.md` |
+| D | Documentation sync and these tracking files | `af59ee0` | 2026-11-05 | PLAN.md revision 3, README, TODO.md, docs, `TASKS_DONE.md`, `TODO.md` |
+| WP8 | Containers and the local stack | (this commit) | 2026-11-05 | API and build images, compose with DynamoDB Local, smoke test, CI image job, RUNBOOK.md; 5 tests |
 
 **Health at the time of writing:**
 
-- ruff check and ruff format pass on 162 files.
-- mypy passes on 134 source files; `sbc_core`, `sbc_extract`, `sbc_tools` and `sbc_aws` are strict.
+- ruff check and ruff format pass on 167 files.
+- mypy passes on 135 source files; `sbc_core`, `sbc_extract`, `sbc_tools` and `sbc_aws` are strict.
 - import-linter keeps all 7 contracts.
-- Unit tests: **411 passed**.
+- Unit tests: **416 passed**.
+- The API image builds and passes `smoke.sh`, and the compose stack runs on DynamoDB Local.
 - Deterministic eval gate: plan filter 1.0, resolution 1.0, 0 confident wrong-plan, service mapping 1.0, recall@5 1.0 on the fixture.
 - DynamoDB Local integration tests: 3 passed (the 2 ingest regression tests skip without corpus data).
 
@@ -243,7 +245,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 - **Fixture change:** `make_bundle(rows=...)` can take custom manifest rows.
 - **Tests:** 9 in `tests/unit/api/test_sbc_pdf.py`.
 
-### D: documentation sync (this commit)
+### D: documentation sync (`af59ee0`)
 
 - **PLAN.md, revision 3:**
   - Status line and a "Revision 3: AWS deployment track" change block that maps each replaced service.
@@ -260,6 +262,40 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 - **`docs/aws/MIGRATION_PLAN.md`:** status notes on risks 1–7.
 - **New:** `docs/aws/TASKS_DONE.md` (this file) and `docs/aws/TODO.md`.
 
+### WP8: containers and the local stack (this commit)
+
+- **`infra/docker/api.Dockerfile`:**
+  - Multi-stage on `python:3.13-slim`; uv 0.11.32 runs `uv sync --frozen --no-dev --package sbc-api --no-editable` into `/app/.venv`, so only runtime packages are installed and ingest/extract/index stay out.
+  - Lambda Web Adapter 0.9.1 at `/opt/extensions/lambda-adapter`; `config/`; the bundle from the named `bundle` build context (`BUNDLE_FILE` build arg) at `/opt/bundle/facts.sqlite`.
+  - Environment: `AWS_LWA_INVOKE_MODE=response_stream`, `AWS_LWA_READINESS_CHECK_PATH=/api/healthz`, `PORT=8080`, `PYTHONDONTWRITEBYTECODE=1`.
+  - Non-root uid 10001; `CMD uvicorn --factory sbc_api.app:create_app --workers 1 --no-access-log`.
+  - An optional `ca` build secret for TLS-inspecting proxies, and a uv cache mount.
+- **`infra/docker/build.Dockerfile`:**
+  - `python:3.13-slim` + `poppler-utils`; every workspace package; `config/` and `evals/` (golden sets) in `/app`.
+  - Works in `/work` (`SBC_PROJECT_ROOT`) as the non-root `builder`; entrypoint `build-pipeline`, default `full`.
+- **`infra/docker/build-pipeline.sh`:**
+  - Modes `full` (catalog → download → manifest → early sync up → convert new PDFs → verify → bundle `--release` → embed → retrieval eval → sync up) and `bundle` (bundle → embed → eval from the Markdown in S3).
+  - Environment: `S3_DATA_BUCKET`, `BUNDLE_VERSION`, `SBC_YEAR`, `OPENROUTER_API_KEY_BROKER`, `FORCE_CONVERT`, `EVAL_SETUP`.
+  - Links `config/` into `/work`, since the CLIs read config relative to the project root.
+  - Uploads the bundle and its eval report to `bundles/<version>/`, and the embedding cache to `bundles/cache/`.
+- **`infra/docker/s3_sync.py`:**
+  - Up and down by sha256 (stored as object metadata, so a same-size change is still noticed); SSE-S3; never deletes.
+  - Written instead of the AWS CLI: v1 pins an exact botocore that conflicts with the locked boto3.
+- **`infra/docker/compose.yaml`:**
+  - `dynamodb` (DynamoDB Local 2.6.1).
+  - `tables`: the API image running `sbc-create-tables`.
+  - `api`: read-only root and `/tmp` tmpfs; `.env` optional; `AWS_ENDPOINT_URL_DYNAMODB`, the `DDB_TABLE_*` variables and `APP_ENV=local`.
+- **`sbc_aws.schema.main`** is the new `sbc-create-tables` console script, which waits for the endpoint (default 30 s).
+- **`infra/docker/fixture_bundle.py`** writes the synthetic two-plan bundle; **`infra/docker/smoke.sh`** runs the image read-only and checks health, deep health, plan search, prompts and taxonomy, and the non-root user, then prints size, start-up time and memory.
+- **Ignore files:** per-Dockerfile `.dockerignore` files keep `data/`, `.venv/`, `bundles/` and `spikes/` out of the build contexts.
+- **CI:** an `image` job in `.github/workflows/ci.yml` builds the API image on the fixture bundle and runs `smoke.sh`.
+- **Tests:** 5 for `s3_sync.py` in `tests/unit/test_s3_sync.py` (moto).
+- **Verified here:**
+  - The API image builds (36 s) and `smoke.sh` passes.
+  - The compose stack: tables created, `"stores": "dynamodb"`, a rate-limit counter written to DynamoDB Local, a public session issued.
+  - The build image builds (39 s) with `pdftotext` 25.03, every pipeline CLI, the eval harness and the golden sets, and it refuses to run without `S3_DATA_BUCKET`.
+- **Docs:** `docs/aws/RUNBOOK.md` (sections 1–3 filled), README, `infra/README.md`, the docs index, MIGRATION_PLAN (WP8 status, the S3 layout, the bundle path for deploys), the DEPLOYMENT_ANALYSIS note and TODO.md.
+
 ---
 
 ## 4. Measurements recorded so far
@@ -271,5 +307,9 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | Image size | ≈ 331 MB without bundle, ≈ 549 MB with a 217 MB stand-in (uncompressed) | Spike 3 |
 | Container start to ready | 2.1–2.3 s locally (imports 1.2–1.6 s) | Spike 3 |
 | API init on the fixture bundle | 32 ms (uvicorn, in-process stores) | WP4 |
+| API image (fixture bundle) | ≈ 350 MB uncompressed, ≈ 109 MB compressed; ≈ 570 MB expected with the real bundle | WP8 |
+| Image start to ready | 2.6–2.8 s warm, 7.1 s cold first start; ≈ 2.3 s of imports; `build_state` 55 ms (174 ms with DynamoDB) | WP8 |
+| Memory after start | ≈ 89 MiB | WP8 |
+| Offline build image | ≈ 681 MB | WP8 |
 | Rate limiter under concurrency | Exactly the limit, at 16 threads | WP2 integration |
 | Live LLM cost (from `main`, before the AWS track) | ≈ $0.003 per fast-path turn, $0.02–0.04 per agent turn | TODO.md, Phase 1 |

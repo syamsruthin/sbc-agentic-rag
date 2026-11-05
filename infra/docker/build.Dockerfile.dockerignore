@@ -1,0 +1,12 @@
+*
+!pyproject.toml
+!uv.lock
+!packages/
+!config/
+!evals/
+!infra/docker/build-pipeline.sh
+!infra/docker/s3_sync.py
+evals/reports/
+**/__pycache__
+**/.mypy_cache
+**/*.pyc

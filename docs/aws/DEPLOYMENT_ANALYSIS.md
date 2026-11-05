@@ -547,6 +547,7 @@ PITR is off for the demo. Take an on-demand backup before important demos (cents
 - **Task definition:** `sbc-build`, 4 vCPU and 8 GB, Linux/arm64, 50 GB ephemeral storage.
 - **Image:** `python:3.13-slim` + `poppler-utils` + `uv sync --frozen`.
 - **Command:**
+  *(As built in WP8, the steps are `infra/docker/build-pipeline.sh`, with a content-based `s3_sync.py` instead of the AWS CLI; see RUNBOOK.md §3.)*
   1. `aws s3 sync s3://…/data/ ./data/`
   2. `sbc-portal catalog && sbc-portal download && sbc-portal manifest`
   3. `sbc-to-markdown && sbc-verify`

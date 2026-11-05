@@ -9,6 +9,9 @@ dependencies = [
     "sbc-core",
 ]
 
+[project.scripts]
+sbc-create-tables = "sbc_aws.schema:main"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"

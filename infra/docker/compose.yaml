@@ -1,0 +1,50 @@
+# Local stack: the API image on DynamoDB Local, the same way it runs on AWS (minus Cognito and S3).
+#
+#   uv run python infra/docker/fixture_bundle.py bundles/fixture      # or put a real facts.sqlite in a folder
+#   SBC_BUNDLE_DIR=../../bundles/fixture docker compose -f infra/docker/compose.yaml up --build
+#   curl -s 'localhost:8080/api/healthz?deep=1'
+#
+# APP_ENV=local: every request is the local developer and Turnstile is skipped; the stores, checkpoints and
+# caches are real DynamoDB (Local). OpenRouter keys come from the repository's .env file when it exists.
+name: sbc-local
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:2.6.1
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+    ports: ["8000:8000"]
+
+  tables:
+    image: sbc-api:local
+    depends_on: [dynamodb]
+    environment: &aws-local
+      APP_ENV: local
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb:8000
+      DDB_TABLE_APP: sbc-local-app
+      DDB_TABLE_AUDIT: sbc-local-audit
+      DDB_TABLE_CHECKPOINTS: sbc-local-checkpoints
+    command: ["sbc-create-tables", "--wait-seconds", "60"]
+    restart: "no"
+
+  api:
+    image: sbc-api:local
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      additional_contexts:
+        bundle: ${SBC_BUNDLE_DIR:?set SBC_BUNDLE_DIR to a folder containing facts.sqlite}
+    depends_on:
+      tables:
+        condition: service_completed_successfully
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      <<: *aws-local
+      FACTS_BUNDLE_PATH: /opt/bundle/facts.sqlite
+    ports: ["8080:8080"]
+    read_only: true
+    tmpfs: ["/tmp"]

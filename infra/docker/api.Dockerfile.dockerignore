@@ -1,0 +1,9 @@
+# Build context for api.Dockerfile: only what the image needs (the bundle comes from the "bundle" context).
+*
+!pyproject.toml
+!uv.lock
+!packages/
+!config/
+**/__pycache__
+**/.mypy_cache
+**/*.pyc

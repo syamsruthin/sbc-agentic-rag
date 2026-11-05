@@ -117,7 +117,7 @@ packages/      Python workspace packages (imported as sbc_<name>)
 apps/          broker/, shopper/, chat-ui/ (React)
 evals/         golden datasets, judge calibration, harness
 tests/         unit/, integration/, contract/, load/
-infra/         Docker images, AWS CDK app (in progress)
+infra/         Docker images and compose (docker/), AWS CDK app (cdk/, next)
 spikes/        throwaway AWS experiments and their scripts (docs/aws/SPIKES.md)
 docs/          pipeline, agent graph, tools and answer-path notes; review sheets; ADRs; aws/ deployment track
 data/          fetched and generated SBC data (not committed)
@@ -177,8 +177,17 @@ curl -sN -X POST localhost:8080/api/broker/chat -H 'content-type: application/js
 ```
 
 Locally every request is a developer principal and the stores are in-process; set the `DDB_TABLE_*` variables
-(and `AWS_ENDPOINT_URL_DYNAMODB` for DynamoDB Local) to use DynamoDB instead. The AWS deployment track is in
-[docs/aws/](docs/aws/MIGRATION_PLAN.md).
+(and `AWS_ENDPOINT_URL_DYNAMODB` for DynamoDB Local) to use DynamoDB instead.
+
+To run the Lambda image itself on DynamoDB Local:
+
+```bash
+uv run python infra/docker/fixture_bundle.py bundles/fixture        # or a folder with a real facts.sqlite
+SBC_BUNDLE_DIR=../../bundles/fixture docker compose -f infra/docker/compose.yaml up --build
+```
+
+[docs/aws/RUNBOOK.md](docs/aws/RUNBOOK.md) covers the images, the smoke test and the offline build; the AWS
+deployment track is in [docs/aws/](docs/aws/MIGRATION_PLAN.md).
 
 ## Configuration
 
@@ -199,7 +208,7 @@ if any secret it needs is missing.
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
-| AWS deployment track (branch `main_AWS`) | WP0–WP7 done (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy); WP8–WP14 left |
+| AWS deployment track (branch `main_AWS`) | WP0–WP8 done (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers); WP9–WP14 left |
 
 [TODO.md](TODO.md) has the detailed checklist; PLAN.md section 11 has each phase's acceptance criteria and
 eval bar. The AWS track's progress is in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_DONE.md) and

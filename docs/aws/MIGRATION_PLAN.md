@@ -156,7 +156,7 @@ infra/
 scripts/aws/                  # WP9/WP13: helper scripts (bash, aws CLI)
   bootstrap.sh                # cdk bootstrap + OIDC check
   put-secrets.sh              # writes SSM SecureStrings from your shell (no values in git)
-  upload-bundle.sh            # bundles/*.sqlite → s3://…/bundles/
+  upload-bundle.sh            # bundles/facts-<v>.sqlite → s3://…/bundles/<v>/, embeddings.sqlite → bundles/cache/
   seed-users.sh               # admin + demo-broker Cognito users
   rotate-demo-password.sh     # new demo password → Cognito + /landing/demo.json + invalidation
   run-build.sh                # aws ecs run-task for the offline pipeline
@@ -531,6 +531,28 @@ The query-embedding cache wraps `TextSearcher.embed_query` (`QueryEmbeddingCache
 
 ### WP8: Containers and local stack
 
+> **Status: done** on `main_AWS`. The run book (`docs/aws/RUNBOOK.md`) has how to use it and the measurements.
+>
+> **As built:**
+> - **`infra/docker/api.Dockerfile`:**
+>   - uv 0.11.32 builds only the runtime packages (`--package sbc-api --no-editable`) into `/app/.venv`; Lambda Web Adapter 0.9.1 is installed as an extension.
+>   - The bundle comes from the named `bundle` build context (`BUNDLE_FILE` picks the file) and lands at `/opt/bundle/facts.sqlite`.
+>   - It runs as non-root uid 10001 with `uvicorn --factory sbc_api.app:create_app`.
+>   - An optional `ca` secret covers TLS-inspecting proxies.
+> - **`infra/docker/build.Dockerfile`** + `build-pipeline.sh` (modes `full` and `bundle`) + `s3_sync.py`:
+>   - It syncs by sha256 metadata and never deletes. It replaces the AWS CLI, whose v1 package pins a botocore that conflicts with the locked boto3.
+>   - The S3 layout mirrors the repository: `data/…`, `bundles/cache/embeddings.sqlite`, `bundles/<version>/facts-<version>.sqlite`.
+> - **`infra/docker/compose.yaml`:** DynamoDB Local; a `tables` service running the new `sbc-create-tables` command (`sbc_aws.schema.main`); the API image with a read-only root.
+> - **Supporting files:** `fixture_bundle.py` (the synthetic bundle, for images without SBC data), `smoke.sh` (read-only start, deep health, plan search, prompts and taxonomy, non-root, size, time, memory), and a per-Dockerfile `.dockerignore`.
+> - **CI:** a new `image` job builds the API image on the fixture bundle and runs `smoke.sh`.
+> - **Measured locally (x86_64):**
+>   - API image ≈ 350 MB uncompressed and ≈ 109 MB compressed with the fixture bundle; ≈ 570 MB expected with the real one.
+>   - Ready in 2.6–2.8 s warm (7.1 s on a cold first start).
+>   - ≈ 89 MiB memory; ≈ 2.3 s of imports.
+>   - The build image is ≈ 681 MB.
+> - **Tests:** 5 for `s3_sync.py` (moto).
+> - **Not yet run:** an end-to-end `full` or `bundle` pipeline against a real bucket (needs WP9's bucket and the corpus), and an arm64 build (done in WP11 with `buildx --platform linux/arm64`).
+
 **Files:** `infra/docker/api.Dockerfile`, `infra/docker/build.Dockerfile`, `infra/docker/compose.yaml`, `.dockerignore`.
 
 **`api.Dockerfile`** (multi-stage; arm64; non-root):
@@ -561,7 +583,7 @@ CMD ["uvicorn", "sbc_api.app:app", "--host", "0.0.0.0", "--port", "8080", "--wor
 - **Presidio and spaCy are not in the launch image** (decision D3). When they're added after launch, add `en_core_web_sm` in the build stage and load it at import time, so the cost is paid in init (or in `healthz?deep=1`). Then re-measure the cold start.
 - **Measure:** image size (target < 1 GB), cold start (`Init Duration` in the REPORT log line), memory high-water mark.
 
-**`build.Dockerfile`:** `python:3.13-slim` + `poppler-utils` + `awscli` + `uv sync --frozen` (all packages). The entrypoint script does: `s3 sync` down → pipeline steps (DEPLOYMENT_ANALYSIS.md §7.6) → retrieval eval → `s3 sync` up.
+**`build.Dockerfile`:** `python:3.13-slim` + `poppler-utils` + `uv sync --frozen` (all packages) + `s3_sync.py` (as built; the plan first said `awscli`). The entrypoint script does: `s3 sync` down → pipeline steps (DEPLOYMENT_ANALYSIS.md §7.6) → retrieval eval → `s3 sync` up.
 
 **`compose.yaml`** (local):
 
@@ -577,7 +599,7 @@ CMD ["uvicorn", "sbc_api.app:app", "--host", "0.0.0.0", "--port", "8080", "--wor
 
 | Construct | Resources | Key settings |
 |---|---|---|
-| `DataConstruct` | S3 `data` bucket; DynamoDB `app`, `audit` and `checkpoints` tables | SSE-S3; block public access; lifecycle rules (`pdf-cache/` 1 day, `bundles/` keep 3 or 90 days, optional `raw/` → Glacier IR at 30 days); tables on-demand; TTL on `expires_at` for `app` and `audit`, and on **`ttl`** for `checkpoints` (the attribute `DynamoDBSaver` writes; spike 1); PITR off (flag); `RemovalPolicy.RETAIN` on data |
+| `DataConstruct` | S3 `data` bucket; DynamoDB `app`, `audit` and `checkpoints` tables | SSE-S3; block public access; lifecycle rules (`pdf-cache/` 1 day, `bundles/<version>/` 90 days for old versions, optional `data/raw/` → Glacier IR at 30 days; the layout is in RUNBOOK §3); tables on-demand; TTL on `expires_at` for `app` and `audit`, and on **`ttl`** for `checkpoints` (the attribute `DynamoDBSaver` writes; spike 1); PITR off (flag); `RemovalPolicy.RETAIN` on data |
 | `AuthConstruct` | Cognito user pool, app client, groups `broker` and `admin` | Self sign-up off; MFA **OPTIONAL** with TOTP; password policy; SPA client with SRP and no secret; OAuth scopes **without** `aws.cognito.signin.user.admin`; access token 1 h, refresh 12 h |
 | `ApiConstruct` | ECR repo; Lambda `DockerImageFunction` (arm64, 2,048 MB, 60 s, `/tmp` 1,024 MB); `live` alias; Function URL (`AWS_IAM`, `RESPONSE_STREAM`); log group (14 days) | Environment from WP1; IAM per DEPLOYMENT_ANALYSIS.md §6.5 (audit table `PutItem` only); ECR lifecycle keeps 3 |
 | `WebConstruct` | S3 `web` bucket; CloudFront distribution; OAC for S3 and for the Lambda URL; CloudFront Function for SPA rewrites; response headers policy | Behaviors: `/api/*` → Function URL (CachingDisabled, AllViewerExceptHostHeader, all methods); `/broker/*`, `/shopper/*`, `/` → S3; PriceClass_100; default domain |
@@ -640,7 +662,7 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 **`deploy-aws.yml`** (on push to `main_AWS` and manually; `permissions: id-token: write, contents: read`):
 
 1. `aws-actions/configure-aws-credentials` with `role-to-assume` set to `sbc-github-deploy` (pinned by SHA, like the existing actions).
-2. Download `bundles/facts-<version>.sqlite` from S3 (the version is pinned in `infra/cdk/sbc_infra/config.py`).
+2. Download `bundles/<version>/facts-<version>.sqlite` from S3 (the layout the build image writes; the version is pinned in `infra/cdk/sbc_infra/config.py`).
 3. `docker buildx build --platform linux/arm64`, and push to ECR with the tag `<git-sha>-<bundle-version>` (PLAN.md §9.2).
 4. `aws lambda update-function-code`, `wait function-updated` and `publish-version`.
 5. Smoke-test the new version directly with `aws lambda invoke` on `/api/healthz?deep=1`, plus one fast-path question against the fixture plan.
