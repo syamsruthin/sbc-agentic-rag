@@ -181,3 +181,7 @@ def test_slow_turns_get_keepalives_and_then_time_out() -> None:
     assert (":", {}) in events
     assert [e for e, _ in events if e != ":"] == ["thread", "error", "done"]
     assert events[-2][1]["code"] == "timeout"
+
+
+def test_warmer_pings_are_accepted(harness: Harness) -> None:
+    assert harness.client().post("/events", json={"warm": True}).status_code == 204

@@ -506,7 +506,7 @@ Infrastructure as code: **AWS CDK (Python)** fits a Python team best, in one sta
 
 | Behavior (path) | Origin | Cache policy | Origin request policy | Other |
 |---|---|---|---|---|
-| `/api/*` | Lambda Function URL (OAC, SigV4, always sign) | `CachingDisabled` | `AllViewerExceptHostHeader` | Methods GET/HEAD/OPTIONS/PUT/POST/PATCH/DELETE; origin response timeout 60 s (SSE status events keep the stream alive) |
+| `/api/*` | Lambda Function URL (OAC, SigV4, always sign) | `CachingDisabled` | `AllViewerExceptHostHeader` (as built in WP9: an allow-list including `X-Sbc-Authorization`, because signing replaces `Authorization`, and `CloudFront-Viewer-Address`) | Methods GET/HEAD/OPTIONS/PUT/POST/PATCH/DELETE; origin response timeout 60 s (SSE status events keep the stream alive) |
 | `/broker/*` | S3 web bucket (OAC) | `CachingOptimized` | — | CloudFront Function rewrites routes to `/broker/index.html` |
 | `/shopper/*` (and `/` → redirect) | S3 web bucket (OAC) | `CachingOptimized` | — | Same rewrite |
 

@@ -595,6 +595,31 @@ CMD ["uvicorn", "sbc_api.app:app", "--host", "0.0.0.0", "--port", "8080", "--wor
 
 ### WP9: Infrastructure as code (CDK, Python)
 
+> **Status: done** on `main_AWS` (code, template tests, synth). The first real deploy is yours (RUNBOOK §4). How to use it: `infra/cdk/README.md`.
+>
+> **As built, and how it differs from the sketch below:**
+> - **Two stacks instead of one:** `SbcFoundation-<env>` (data bucket, tables, Cognito, ECR, budget and anomaly alerts) and `SbcApp-<env>` (Lambda + `live` alias + Function URL, CloudFront + web bucket, ECS build task, alarms, optional warmer, GitHub OIDC role). The split solves the first-deploy chicken-and-egg: a Lambda needs an image in ECR before it can exist. `SbcApp` is synthesized only with `-c apiImageTag`.
+> - **Bearer tokens travel in `X-Sbc-Authorization`.** Found while wiring CloudFront: with origin access control set to sign always, CloudFront replaces the request's `Authorization` header with its SigV4 signature, so a browser's Bearer token would never reach the API. The API now reads `X-Sbc-Authorization` first (falling back to `Authorization`), CloudFront forwards it, and WP10's `chat-ui` must send it. Tested in `tests/unit/api/test_auth.py`.
+> - **Forwarded headers:** the origin request policy for `/api/*` is an allow-list: `X-Sbc-Authorization`, `Content-Type`, `Accept`, `x-amz-content-sha256` and `CloudFront-Viewer-Address`. Host isn't forwarded, which signing needs.
+> - **No `PUBLIC_BASE_URL` on the Lambda:** it would make a circular dependency (the distribution needs the Function URL, and the URL's function would need the distribution's domain). Nothing reads it yet.
+> - **ECS without a VPC:** an L1 `CfnCluster` (Fargate + Fargate Spot) and a task definition (arm64, 4 vCPU, 8 GB, 50 GB, OpenRouter key as an ECS secret from SSM, default command `bundle`). `scripts/aws/run-build.sh` passes the default-VPC public subnets at run time, so no VPC or NAT is ever created.
+> - **Ops:**
+>   - 8 alarms (Lambda errors, throttles, p95 > 20 s, and 5 metric filters on the API's JSON logs: `global_cap_reached`, `pdf_hash_mismatch`, `audit_failed`, demo-account limits, `PlanFilterViolationError`) to an SNS topic.
+>   - Budget and Cost Anomaly Detection, created when `alarmEmail` is set.
+>   - Optional warmer (`warmer=true`): an EventBridge Scheduler rule pinging the alias every 5 minutes, weekday business hours (US Eastern). Its events reach the API as `POST /events` through the Lambda Web Adapter; the new route answers 204.
+> - **CloudFormation owns the `live` alias.** A deploy is `cdk deploy SbcApp -c apiImageTag=<tag>`. Moving the alias by hand is undone by the next deploy, so WP11 should deploy through the CDK.
+> - **Tables:** `infra/cdk/sbc_infra/tables.py` must equal `sbc_aws.schema.TABLE_SPECS`; a root test (`tests/unit/test_infra_tables.py`) compares them.
+> - **Scripts** in `scripts/aws/`: `bootstrap.sh`, `deploy.sh`, `put-secrets.sh`, `upload-bundle.sh`, `push-images.sh` (arm64 build + ECR push, for the first deploy), `seed-users.sh`, `rotate-demo-password.sh`, `run-build.sh` (polls when given `--wait`, since a full build outlasts `aws ecs wait`). All pass shellcheck; none has been run against AWS yet.
+> - **Tests:** 12 template tests in `infra/cdk/tests/test_stack.py`:
+>   - nothing that bills idle (no NAT, VPC, load balancer, Secrets Manager, KMS key, RDS, ElastiCache, WAF or custom resources);
+>   - tables equal the schema;
+>   - Lambda arm64 2 GB with an `AWS_IAM` + `RESPONSE_STREAM` URL on `live`, plus both CloudFront permissions;
+>   - audit `PutItem` only; SSM limited to `/sbc/dev`, with `kms:Decrypt` through SSM only; every log group expires;
+>   - forwarded headers and Lambda OAC; buckets private, encrypted, retained, with the `pdf-cache/` 1-day rule;
+>   - Cognito MFA optional with TOTP, admin-created users only, no OAuth scopes, SRP only, and both groups;
+>   - the ECS task shape and secret; the OIDC role limited to `main_AWS`; no IAM users or keys; ≤ 10 alarms, the budget and the warmer.
+>   CI gets a `cdk` job: tests, synth and shellcheck.
+
 **Files:** `infra/cdk/**`, `scripts/aws/*.sh`.
 
 | Construct | Resources | Key settings |
@@ -790,7 +815,7 @@ event: done      data: {}
 | `DDB_TABLE_APP` / `_AUDIT` / `_CHECKPOINTS` | DynamoDB Local names, or unset | CDK outputs | CDK |
 | `S3_DATA_BUCKET` | unset (local filesystem cache) | CDK output | CDK |
 | `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | a dev pool, or unset (broker auth stubbed) | CDK outputs | CDK |
-| `PUBLIC_BASE_URL` | `http://localhost:5173` | `https://dxxxx.cloudfront.net` | CDK |
+| `PUBLIC_BASE_URL` | `http://localhost:5173` | not set (it would make a circular stack dependency; nothing reads it yet) | — |
 | `OPENROUTER_API_KEY_BROKER` / `_PUBLIC` | `.env` | SSM | `put-secrets.sh` |
 | `SESSION_JWT_SECRET`, `TURNSTILE_SECRET_KEY` | `.env` (Turnstile test keys) | SSM | `put-secrets.sh` |
 | `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` | optional | optional (SSM) | `put-secrets.sh` |
@@ -894,6 +919,7 @@ The PLAN.md decisions on models, the bundle, retrieval, the verifier and the eva
 |---|---|---|
 | 1 | `langgraph-checkpoint-aws` compatibility with the locked `langgraph 1.2.x`, its table schema, and S3 offload behavior | Spike first in WP2: pin a version and run the interrupt/resume test across two saver instances. Fallback: a small custom `BaseCheckpointSaver` over DynamoDB (≈ 200 lines) **Status (2026-11-05): resolved.** Spike 1 and WP2: version 1.2.6 works with langgraph 1.2.19; table keys `PK`/`SK`, TTL attribute `ttl`; resume verified across processes, saver instances and app instances (moto and DynamoDB Local). |
 | 2 | SSE through CloudFront → Function URL (buffering, timeouts) | WP4/WP9 spike early: deploy a canned SSE endpoint first and check incremental delivery and 10 s keepalives through CloudFront **Status: passed locally** (spike 2: the container streams SSE event by event; WP4 adds 10 s keepalives). The CloudFront leg needs `spikes/aws/deploy_spike.sh up` in an AWS account. |
+| 3a | OAC replaces the browser's `Authorization` header with its SigV4 signature, so Bearer tokens would be lost | **Found and fixed in WP9:** tokens travel in `X-Sbc-Authorization`, which CloudFront forwards and the API reads first (`sbc_api.auth.principal.TOKEN_HEADER`). WP10's `chat-ui` must send it. |
 | 3 | OAC needs `x-amz-content-sha256` on POSTs | Built into `chat-ui` (WP10). Fallback: Function URL auth `NONE` + a secret origin header checked by the app **Status: verified locally** (spike 2 checks the header both ways); the frontend part is WP10. |
 | 4 | Cold start with a large image | Presidio and spaCy are deferred (D3), so the launch image has no NER model. Measure in WP8; warm on load + optional warmer (WP9). Re-measure when Presidio is added later **Status: measured locally** at 2.1–2.3 s from container start to ready (spike 3); the Lambda number needs the AWS run. |
 | 5 | The PDF proxy depends on the portal's preview form and on fields missing from the bundle | WP3 adds the fields; WP7 has a hash check and a graceful fallback link. Find out whether the portal rate-limits AWS IPs **Status: done in code** (WP3 adds the fields, WP7 the proxy, with a field-for-field test against the ingest form). Still open: rebuilding the real bundle `2027.2` and a live portal check. |

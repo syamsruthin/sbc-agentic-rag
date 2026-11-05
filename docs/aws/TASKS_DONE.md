@@ -2,7 +2,7 @@
 
 Everything finished so far on the AWS deployment track (PLAN.md revision 3), on branch `main_AWS`.
 
-- Status as of **2026-11-05**, after WP8.
+- Status as of **2026-11-05**, after WP9.
 - What's left is in [TODO.md](TODO.md).
 - The plan these tasks follow is [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 - The analysis behind it is [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md).
@@ -24,15 +24,17 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | WP6 | Guards | `44ca2fc` | 2026-11-05 | Limits, daily cap, answer cache, kill switch, quarantine, ownership, audit, feedback, admin; 17 tests |
 | WP7 | SBC PDF proxy | `2a29bde` | 2026-11-05 | `GET /api/sbc/{plan_key}.pdf`; 9 tests |
 | D | Documentation sync and these tracking files | `af59ee0` | 2026-11-05 | PLAN.md revision 3, README, TODO.md, docs, `TASKS_DONE.md`, `TODO.md` |
-| WP8 | Containers and the local stack | (this commit) | 2026-11-05 | API and build images, compose with DynamoDB Local, smoke test, CI image job, RUNBOOK.md; 5 tests |
+| WP8 | Containers and the local stack | `a2ec16b` | 2026-11-05 | API and build images, compose with DynamoDB Local, smoke test, CI image job, RUNBOOK.md; 5 tests |
+| B | Branch policy: `main_AWS` not merged into `main` | `8adb851` | 2026-11-05 | PR #14 closed unmerged; CI runs on pushes to `main_AWS` |
+| WP9 | CDK stacks, operator scripts | (this commit) | 2026-11-05 | `SbcFoundation` + `SbcApp`, 12 template tests, 8 scripts, CI `cdk` job; `X-Sbc-Authorization` fix; 4 more tests |
 
 **Health at the time of writing:**
 
-- ruff check and ruff format pass on 167 files.
-- mypy passes on 135 source files; `sbc_core`, `sbc_extract`, `sbc_tools` and `sbc_aws` are strict.
+- ruff check and ruff format pass on 185 files.
+- mypy passes on 136 source files; `sbc_core`, `sbc_extract`, `sbc_tools` and `sbc_aws` are strict.
 - import-linter keeps all 7 contracts.
-- Unit tests: **416 passed**.
-- The API image builds and passes `smoke.sh`, and the compose stack runs on DynamoDB Local.
+- Unit tests: **419 passed**; CDK template tests: **12 passed**; shellcheck clean on every script.
+- The API image builds and passes `smoke.sh`, the compose stack runs on DynamoDB Local, and both CDK stacks synthesize.
 - Deterministic eval gate: plan filter 1.0, resolution 1.0, 0 confident wrong-plan, service mapping 1.0, recall@5 1.0 on the fixture.
 - DynamoDB Local integration tests: 3 passed (the 2 ingest regression tests skip without corpus data).
 
@@ -263,7 +265,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 - **`docs/aws/MIGRATION_PLAN.md`:** status notes on risks 1–7.
 - **New:** `docs/aws/TASKS_DONE.md` (this file) and `docs/aws/TODO.md`.
 
-### WP8: containers and the local stack (this commit)
+### WP8: containers and the local stack (`a2ec16b`)
 
 - **`infra/docker/api.Dockerfile`:**
   - Multi-stage on `python:3.13-slim`; uv 0.11.32 runs `uv sync --frozen --no-dev --package sbc-api --no-editable` into `/app/.venv`, so only runtime packages are installed and ingest/extract/index stay out.
@@ -296,6 +298,40 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
   - The compose stack: tables created, `"stores": "dynamodb"`, a rate-limit counter written to DynamoDB Local, a public session issued.
   - The build image builds (39 s) with `pdftotext` 25.03, every pipeline CLI, the eval harness and the golden sets, and it refuses to run without `S3_DATA_BUCKET`.
 - **Docs:** `docs/aws/RUNBOOK.md` (sections 1–3 filled), README, `infra/README.md`, the docs index, MIGRATION_PLAN (WP8 status, the S3 layout, the bundle path for deploys), the DEPLOYMENT_ANALYSIS note and TODO.md.
+
+### B: branch policy (`8adb851`)
+
+- PR #14 (`main_AWS` → `main`) was closed without merging: `main_AWS` is the long-lived main branch of the AWS implementation. `main` is unchanged at `e7ec0e7`.
+- CI (`.github/workflows/ci.yml`) now runs on pushes to `main_AWS` as well as `main`.
+
+### WP9: CDK stacks and operator scripts (this commit)
+
+- **`infra/cdk/`:** its own uv project (`aws-cdk-lib` 2.275.0, CDK CLI 2.1147.0 through `npx`), with `cdk.json` context (`envName`, `apiImageTag`, `buildImageTag`, `alarmEmail`, `monthlyBudgetUsd`, `demoUserIds`, `warmer`, `githubOidcProviderArn`, `githubRepository`, `githubBranch`), `sbc_infra/config.py` and `sbc_infra/tables.py`.
+- **`SbcFoundation-<env>`:**
+  - **`Data`:** a private, SSE-S3, SSL-only, retained data bucket. Lifecycle: `pdf-cache/` 1 day, `checkpoints/` 400 days, `data/raw/` to Glacier IR after 30 days, incomplete uploads 2 days. Three on-demand tables with AWS-managed encryption, TTL and `RETAIN`.
+  - **`Auth`:** a Cognito pool (Essentials; self sign-up off; MFA optional with TOTP; 12-character passwords; no account recovery). An SPA client: SRP only, no secret, no OAuth (so no admin scope), 1 h access token, 12 h refresh, token revocation. Groups `broker` and `admin`.
+  - **`Registry`:** ECR `sbc-<env>-api` (keep 3) and `sbc-<env>-build` (keep 2), scanned on push.
+  - **`CostGuards`:** a monthly budget (50/80/100% actual, 100% forecast) and Cost Anomaly Detection (daily, ≥ $2), when `alarmEmail` is set.
+- **`SbcApp-<env>`:**
+  - **`Api`:** Lambda from ECR (arm64, 2,048 MB, 60 s, 1 GB `/tmp`, 14-day logs) with the AWS environment variables; the `live` alias; a Function URL (`AWS_IAM`, `RESPONSE_STREAM`).
+    - IAM: read/write on app and checkpoints, `PutItem` only on audit, S3 `pdf-cache/*` and `checkpoints/*`, `ssm:GetParametersByPath` on `/sbc/<env>`, `kms:Decrypt` only through SSM.
+  - **`Web`:**
+    - A private web bucket and a security-headers policy (CSP allowing Cognito and Turnstile, HSTS, nosniff, `DENY` frames, referrer policy).
+    - An `/api/*` origin request policy (an allow-list of 5 headers) and a CloudFront Function rewriting SPA routes.
+    - The distribution: S3 through OAC by default, `/api/*` to the Function URL through Lambda OAC (60 s read timeout, `CachingDisabled`, all methods), PriceClass_100, HTTP/2 and 3, default domain.
+  - **`Build`:** an ECS cluster (L1, Fargate + Spot, no VPC); the task definition (arm64, 4 vCPU, 8 GB, 50 GB) with environment variables, the OpenRouter key as an ECS secret from SSM, and default command `bundle`; data-bucket access.
+  - **`Ops`:** the SNS topic (+ email), 8 alarms (3 Lambda + 5 log metric filters), and the optional warmer.
+  - **`Cicd`:** a GitHub OIDC provider (or an existing one), and the `sbc-<env>-github-deploy` role, trusted only for `repo:…:ref:refs/heads/main_AWS`. Permissions: ECR push/pull, Lambda update/publish/alias, web bucket read/write/delete, data bucket `bundles/*` read, CloudFront invalidation, ECS `RunTask` on the build task in the build cluster, `PassRole` to ECS tasks, subnet lookup.
+- **API changes:**
+  - **Tokens:** `sbc_api.auth.principal` reads `X-Sbc-Authorization` first (CloudFront's signing replaces `Authorization`). Test added.
+  - **`POST /events`:** answers 204 for warmer pings arriving through the Lambda Web Adapter's pass-through path. Test added.
+- **Scripts** (`scripts/aws/`, `_common.sh` shared; all pass shellcheck): `bootstrap.sh`, `deploy.sh`, `put-secrets.sh`, `upload-bundle.sh`, `push-images.sh`, `seed-users.sh`, `rotate-demo-password.sh`, `run-build.sh`. None has been run against AWS yet.
+- **Tests:**
+  - 12 template tests (`infra/cdk/tests/test_stack.py`).
+  - `tests/unit/test_infra_tables.py` (CDK tables equal `sbc_aws.schema`).
+  - 2 API tests (the token header, the warmer route).
+- **CI:** a `cdk` job runs the template tests, `cdk synth` and shellcheck.
+- **Docs:** `infra/cdk/README.md`; RUNBOOK §4–§8 (first deployment, deploy and rollback, secrets and the demo password, costs and alarms, teardown outline); MIGRATION_PLAN (WP9 as built, risk 3a, `PUBLIC_BASE_URL`); DEPLOYMENT_ANALYSIS (forwarded headers); SPIKES (§4a, the `Authorization` finding); PLAN.md §9.3; README; `infra/README.md`; TODO.
 
 ---
 

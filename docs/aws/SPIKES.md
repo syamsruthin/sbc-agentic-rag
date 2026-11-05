@@ -118,6 +118,14 @@ SPIKE 2: PASS
 | "Pin the newest `langgraph-checkpoint-aws` that supports langgraph 1.2.x; check its constructor" (WP2) | **1.2.6** works: `DynamoDBSaver(table_name, session=..., endpoint_url=..., ttl_seconds=..., s3_offload_config={"bucket_name": ...})`. Pass an explicit `boto3.Session` (tests and local runs must not pick up shell credentials) |
 | OAC for the Lambda URL grants `lambda:InvokeFunctionUrl` (WP9) | CloudFront needs **both** `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction`; CDK's `FunctionUrlOrigin.with_origin_access_control` adds both |
 
+## 4a. Found later, in WP9
+
+The spike's client sent no `Authorization` header, so it couldn't show this: with origin access control
+signing every request (`SigningBehavior: always`), CloudFront writes its own SigV4 `Authorization` header to
+the Function URL, replacing the browser's. A Bearer token sent there would never reach the API. The app now
+sends tokens in `X-Sbc-Authorization` (forwarded by CloudFront, read first by the API). The AWS run of
+`deploy_spike.sh` doesn't exercise it either; the WP13 click-through does.
+
 ## 5. What's left
 
 - [ ] Run `spikes/aws/deploy_spike.sh up` in your AWS account, then `check` after 10+ minutes idle. Record:

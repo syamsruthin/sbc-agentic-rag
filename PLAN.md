@@ -875,7 +875,7 @@ Alerts go out by email plus a Slack webhook.
 ### 9.3 Lambda settings (revision 3)
 
 - arm64, 2,048 MB (about 1.15 vCPU), 60 s timeout, 1,024 MB `/tmp`; no VPC, so outbound HTTPS needs no NAT.
-- Function URL with `RESPONSE_STREAM` invoke mode and `AWS_IAM` auth, behind CloudFront with origin access control (POSTs carry `x-amz-content-sha256`).
+- Function URL with `RESPONSE_STREAM` invoke mode and `AWS_IAM` auth, behind CloudFront with origin access control (POSTs carry `x-amz-content-sha256`; bearer tokens travel in `X-Sbc-Authorization`, because signing replaces `Authorization`).
 - One request per instance; scales to zero. Cost is capped by the app's rate limits and daily cap and the OpenRouter key limits, not by instance counts.
 - Provisioned concurrency only when a warm instance is worth paying for (§4).
 

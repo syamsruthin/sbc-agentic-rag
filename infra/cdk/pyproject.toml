@@ -1,0 +1,16 @@
+[project]
+name = "sbc-infra"
+version = "0.0.0"
+description = "AWS CDK app for the AWS deployment (docs/aws/MIGRATION_PLAN.md WP9). Its own uv project, so CDK stays out of the runtime lock."
+requires-python = ">=3.13"
+dependencies = ["aws-cdk-lib==2.275.0", "constructs>=10.4,<11"]
+
+[dependency-groups]
+dev = ["pytest>=9.2"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers"]

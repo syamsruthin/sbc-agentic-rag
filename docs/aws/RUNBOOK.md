@@ -2,8 +2,7 @@
 
 How to build, run, deploy and operate the app on AWS (PLAN.md revision 3).
 
-- **Sections 1–3** are in place as of WP8.
-- **Sections 4–8** are filled in by WP9 (CDK), WP11 (CI/CD) and WP13 (portfolio readiness).
+- **Sections 1–7** are in place as of WP9; WP11 (CI/CD) and WP13 (portfolio readiness) complete 5 and 8.
 - The plan is [MIGRATION_PLAN.md](MIGRATION_PLAN.md); open items are in [TODO.md](TODO.md).
 
 ---
@@ -125,21 +124,58 @@ On AWS it runs as an ECS Fargate Spot task (4 vCPU, 8 GB, 50 GB ephemeral storag
 
 ## 4. First deployment
 
-*Added in WP9.* The outline is in MIGRATION_PLAN.md §9: account, bootstrap, secrets, `cdk deploy`, data, app, users, Turnstile, verify.
+You need: AWS CLI v2 with credentials for the account (an IAM Identity Center profile, `export AWS_PROFILE=…`),
+Docker with buildx (arm64), uv, Node (for `npx`), and the bundle `2027.2` built locally (TODO.md §2.3). Every
+script reads `SBC_ENV` (default `dev`) and uses `us-east-1`.
+
+| # | Step | Command |
+|---|---|---|
+| 1 | Account checks (Paid plan, quotas) and CDK bootstrap | `scripts/aws/bootstrap.sh` (prints `githubOidcProviderArn` if a GitHub provider already exists) |
+| 2 | Foundation: bucket, tables, Cognito, ECR, budgets | `ALARM_EMAIL=you@example.com scripts/aws/deploy.sh foundation` |
+| 3 | Secrets into SSM (OpenRouter keys with credit limits set first, Turnstile secret; session secret generated) | `scripts/aws/put-secrets.sh` |
+| 4 | Bundle and embedding cache into the data bucket | `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite` |
+| 5 | Build and push the arm64 images (prints the tags) | `scripts/aws/push-images.sh 2027.2` |
+| 6 | App: Lambda, CloudFront, build task, alarms, deploy role | `ALARM_EMAIL=… scripts/aws/deploy.sh app <api-tag> <build-tag>` (prints the site URL) |
+| 7 | Users: admin (TOTP at first sign-in) and demo-broker | `scripts/aws/seed-users.sh <admin> <admin-email>` (prints the demo `sub`) |
+| 8 | Redeploy with the demo account's ID | `DEMO_USER_IDS='["<sub>"]' ALARM_EMAIL=… scripts/aws/deploy.sh app <api-tag> <build-tag>` |
+| 9 | Publish the demo password to the landing page | `scripts/aws/rotate-demo-password.sh` |
+| 10 | Turnstile: add the CloudFront host name to the widget's allowed domains | Cloudflare dashboard |
+| 11 | Confirm the SNS subscription email, then check | `curl -s https://<site>/api/healthz?deep=1` → `"stores": "dynamodb"`, both bots `ready` |
+
+Until the frontends exist (WP10) the site root returns 403/404 from S3; the API answers under `/api/*`.
 
 ## 5. Deploy and roll back
 
-*Added in WP11.* Deploys publish a Lambda version and move the `live` alias; rolling back moves it back
-(`aws lambda update-alias --function-name sbc-api --name live --function-version <previous>`).
+- **Deploy a new API image:** push it (`scripts/aws/push-images.sh <bundle-version> api`), then
+  `scripts/aws/deploy.sh app <new-tag> <build-tag>`. CloudFormation publishes a new version and moves `live`.
+  From WP11 the `deploy-aws.yml` workflow does both on every push to `main_AWS`.
+- **Roll back:** deploy the previous tag the same way (ECR keeps the last 3 API images). In an emergency,
+  `aws lambda update-alias --function-name sbc-dev-api --name live --function-version <previous>` works at
+  once, but the next `cdk deploy` moves the alias to whatever tag it is given, so follow it with a deploy of
+  the tag you want.
+- **New data:** `scripts/aws/run-build.sh 2027.3 bundle --wait` (or `full`), then `push-images.sh 2027.3 api`
+  and deploy.
 
 ## 6. Secrets and the demo password
 
-*Added in WP9/WP13:* `scripts/aws/put-secrets.sh` and `scripts/aws/rotate-demo-password.sh`.
+- Secrets live only in SSM Parameter Store (`/sbc/<env>/…`, SecureString, AWS-managed key). Rotate one with
+  `scripts/aws/put-secrets.sh` (an empty answer keeps a value); the Lambda reads them at cold start, so force
+  new instances with a redeploy. `--rotate-session-secret` invalidates every public session.
+- `scripts/aws/rotate-demo-password.sh` sets a new random password for `demo-broker` and republishes
+  `/landing/demo.json` (no rebuild). The demo account can't change its own password (no
+  `aws.cognito.signin.user.admin` scope on the SPA client).
 
 ## 7. Costs and alarms
 
-*Added in WP9/WP13.* Budgets alert at $5 and $10 a month. The expected AWS bill is ≈ $0.30–2 a month (DEPLOYMENT_ANALYSIS §17.8).
+- **Budget:** `monthlyBudgetUsd` (default $10) with email at 50/80/100% actual and 100% forecast, plus daily
+  Cost Anomaly Detection (needs `alarmEmail`). Expected AWS bill ≈ $0.30–2 a month (DEPLOYMENT_ANALYSIS §17.8).
+- **Alarms (8, inside the free 10), to the SNS topic `sbc-<env>-alerts`:** Lambda errors, throttles, p95
+  duration > 20 s; and from the API's JSON logs: `global_cap_reached`, `pdf_hash_mismatch`, `audit_failed`, the
+  demo account hitting its limits, and any `PlanFilterViolationError` (P1).
+- **The hard LLM cap** is the OpenRouter key credit limits, not AWS.
 
 ## 8. Teardown
 
-*Added in WP13.* The outline is in MIGRATION_PLAN.md §10.
+*Completed in WP13.* `cdk destroy SbcApp-<env>` then `SbcFoundation-<env>`; the data bucket, web bucket, tables,
+user pool and ECR repositories are retained on purpose, so delete them by hand afterwards (MIGRATION_PLAN §10),
+then delete the SSM parameters and revoke the OpenRouter keys.

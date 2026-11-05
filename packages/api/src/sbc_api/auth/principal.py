@@ -55,8 +55,16 @@ def _unauthorized(detail: str) -> HTTPException:
     return HTTPException(status_code=401, detail=detail, headers={"WWW-Authenticate": "Bearer"})
 
 
+TOKEN_HEADER = "x-sbc-authorization"  # noqa: S105 - a header name, not a secret
+"""Where the apps send their bearer token. Behind CloudFront, origin access control signs every request to
+the Lambda Function URL with SigV4 in ``Authorization``, replacing the browser's value, so the token travels
+in this header instead (infra/cdk/sbc_infra/constructs/web.py). ``Authorization`` is still accepted for
+direct calls and local runs."""
+
+
 def bearer_token(request: Request) -> str:
-    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    raw = request.headers.get(TOKEN_HEADER) or request.headers.get("authorization", "")
+    scheme, _, token = raw.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise _unauthorized("sign in first")
     return token.strip()

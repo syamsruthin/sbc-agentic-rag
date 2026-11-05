@@ -67,3 +67,5 @@ node_modules/
 *.swp
 .claude/settings.local.json
 spikes/aws/cdk_sse/cdk.out/
+infra/cdk/cdk.out/
+infra/cdk/.venv/

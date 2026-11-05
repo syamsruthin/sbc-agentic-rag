@@ -1,6 +1,6 @@
 # AWS track: to do
 
-Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-05**, after WP8. Finished
+Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-05**, after WP9. Finished
 work is in [TASKS_DONE.md](TASKS_DONE.md); each work package's full spec is in [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 
 All work goes to `main_AWS`, the long-lived AWS branch; it isn't merged into `main`.
@@ -13,9 +13,9 @@ done in code here.
 ## 1. Next up, in order
 
 1. ~~WP8: containers and the local stack~~ (done).
-2. **WP9:** the CDK stack.
+2. ~~WP9: the CDK stacks~~ (done in code). 👤 **The first real deploy** (§2.4, RUNBOOK §4) can happen now: the API answers under `/api/*` before any frontend exists.
 3. **WP11:** CI/CD, which deploys automatically.
-4. **WP10:** frontends. It can start in parallel with WP9.
+4. **WP10:** frontends. It can start in parallel with WP11.
 5. **WP12:** observability.
 6. **WP13:** portfolio readiness and docs.
 7. **WP14 (later):** Bedrock.
@@ -43,6 +43,17 @@ done in code here.
 - [ ] Wait at least 10 minutes, then `spikes/aws/deploy_spike.sh check`. Record the cold start (`Init Duration` in the REPORT lines) and the first-request latency in `docs/aws/SPIKES.md`.
 - [ ] `spikes/aws/deploy_spike.sh destroy`.
 
+### 2.4 The first deploy (RUNBOOK §4)
+
+- [ ] `scripts/aws/bootstrap.sh` (quota check, existing OIDC provider, `cdk bootstrap`).
+- [ ] `ALARM_EMAIL=… scripts/aws/deploy.sh foundation`, then confirm the SNS/budget emails.
+- [ ] `scripts/aws/put-secrets.sh` (OpenRouter keys with credit limits, Turnstile secret; session secret generated).
+- [ ] `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite`.
+- [ ] `scripts/aws/push-images.sh 2027.2` (arm64 build and push; prints the tags).
+- [ ] `scripts/aws/deploy.sh app <api-tag> <build-tag>`; `seed-users.sh`; redeploy with `DEMO_USER_IDS`; `rotate-demo-password.sh`; add the CloudFront host to Turnstile.
+- [ ] Check `https://<site>/api/healthz?deep=1` (`"stores": "dynamodb"`, both bots `ready`), a public session, a broker sign-in token on `/api/broker/plans/search` sent as `X-Sbc-Authorization: Bearer …`, and a streamed chat turn through CloudFront.
+- [ ] Note any fixes the scripts needed (none has run against AWS yet) and update RUNBOOK §4.
+
 ### 2.3 Data and live checks
 
 - [ ] **Rebuild the real bundle as `2027.2`** where the corpus lives. The embeddings come from the cache, so nothing is re-embedded:
@@ -65,57 +76,10 @@ done in code here.
 Done on `main_AWS` (TASKS_DONE.md, WP8). Open checks moved to §4: an end-to-end pipeline run against a real bucket,
 and an arm64 build (WP11).
 
-### WP9: infrastructure as code (AWS CDK, Python)
+### WP9: infrastructure as code: done
 
-- [ ] **`infra/cdk/`** as its own uv project: `pyproject.toml`, `uv.lock`, `cdk.json`, `app.py`; `sbc_infra/config.py` with account, region, names, limits and the warmer flag; `sbc_infra/stack.py` with `SbcPortfolioStack`.
-- [ ] **`DataConstruct`:**
-  - [ ] S3 data bucket: SSE-S3, public access blocked, `RETAIN`. The layout is the one the build image writes (RUNBOOK §3): `data/…`, `bundles/cache/`, `bundles/<version>/`, `pdf-cache/`, `checkpoints/`. Lifecycle: `pdf-cache/` 1 day, `checkpoints/` with TTL-aligned expiry, old `bundles/<version>/` 90 days, optional `data/raw/` to Glacier IR at 30 days.
-  - [ ] DynamoDB `app`, `audit` and `checkpoints` tables: on-demand, `PK`/`SK` strings, TTL `expires_at` (app, audit) and `ttl` (checkpoints), `RETAIN`, PITR off. They must match `sbc_aws.schema.TABLE_SPECS`.
-- [ ] **`AuthConstruct`:** Cognito user pool (self sign-up off, MFA **optional** with TOTP, password policy); SPA app client with SRP, no secret, and **without** the `aws.cognito.signin.user.admin` scope; access token 1 h, refresh 12 h; groups `broker` and `admin`.
-- [ ] **`ApiConstruct`:**
-  - [ ] ECR repository, keeping the last 3 images.
-  - [ ] `DockerImageFunction`: arm64, 2,048 MB, 60 s timeout, 1,024 MB `/tmp`, 14-day log group.
-  - [ ] Environment: `APP_ENV=dev`, `SSM_PREFIX=/sbc/dev/`, table names, bucket, Cognito IDs, `PUBLIC_BASE_URL`, `SBC_PORTFOLIO__DEMO_USER_IDS`.
-  - [ ] `live` alias.
-  - [ ] Function URL: `AWS_IAM` auth, `RESPONSE_STREAM`.
-- [ ] **`WebConstruct`:**
-  - [ ] Web bucket (private) and a CloudFront distribution (`PriceClass_100`, default domain).
-  - [ ] Origin access control for S3, and `FunctionUrlOrigin.with_origin_access_control` for `/api/*`, which adds both Lambda permissions.
-  - [ ] Behaviors: `/api/*` with `CachingDisabled`, `AllViewerExceptHostHeader` and all methods; `/broker/*`, `/shopper/*` and `/` from S3, with a CloudFront Function for SPA rewrites.
-  - [ ] A response headers policy (CSP, HSTS, nosniff).
-  - [ ] The `CloudFront-Viewer-Address` header forwarded to the origin (needed for the per-IP limits and Turnstile's `remoteip`).
-- [ ] **`BuildConstruct`:** ECS cluster; Fargate task definition for the `sbc-build` image (arm64, 4 vCPU, 8 GB, 50 GB ephemeral storage, `FARGATE_SPOT`).
-  - Environment: `S3_DATA_BUCKET`, `BUNDLE_VERSION` (overridden per run), `SBC_YEAR`, `AWS_REGION`.
-  - `OPENROUTER_API_KEY_BROKER` as an ECS secret from SSM.
-  - Command `full` or `bundle`.
-  - Task role: S3 read/write on the data bucket.
-  - Runs in the default VPC's public subnets with a public IP (no NAT).
-  - An ECR repository for the build image too (keep the last 2).
-- [ ] **`OpsConstruct`:**
-  - [ ] SNS topic with email.
-  - [ ] Alarms, at most 10: Lambda `Errors`, `Throttles`, p95 `Duration` > 20 s, and metric filters for `plan_filter_violation`, `global_cap_reached`, `pdf_hash_mismatch`, `audit_failed` and `demo_user_limit_reached` (rate-limited events from the demo account).
-  - [ ] Budgets ($5 and $10) and a Cost Anomaly monitor.
-  - [ ] An optional business-hours warmer: EventBridge Scheduler pinging `/api/healthz?deep=1` every 5 min, Monday–Friday 08:00–20:00.
-- [ ] **`CicdConstruct`:** GitHub OIDC provider, and a `sbc-github-deploy` role trusted for `repo:syamsruthin/sbc-agentic-rag` on `refs/heads/main_AWS` (plus an environment), with least privilege: push to one ECR repo; `lambda:UpdateFunctionCode`, `PublishVersion`, `UpdateAlias` and `GetFunction`; S3 sync to the web bucket; `s3:GetObject` on `bundles/*`; `cloudfront:CreateInvalidation`.
-- [ ] **IAM for `sbc-api-exec`** (DEPLOYMENT_ANALYSIS.md §6.5):
-  - DynamoDB read/write on the app and checkpoints tables, and **`PutItem` only** on audit;
-  - S3 on `pdf-cache/*` and `checkpoints/*`;
-  - `ssm:GetParametersByPath` on `/sbc/dev/*`, plus `kms:Decrypt` through the `aws/ssm` key;
-  - logs.
-- [ ] **`infra/cdk/tests/test_stack.py`** (`aws_cdk.assertions`):
-  - no NAT gateway, load balancer, Secrets Manager secret or customer-managed KMS key;
-  - Function URL `RESPONSE_STREAM`;
-  - audit table `PutItem` only;
-  - every log group has retention set;
-  - table keys and TTL attributes equal `sbc_aws.schema.TABLE_SPECS`.
-- [ ] **Scripts** in `scripts/aws/`:
-  - [ ] `bootstrap.sh`
-  - [ ] `put-secrets.sh dev`: prompts for the values; writes SecureStrings `OPENROUTER_API_KEY_BROKER`, `OPENROUTER_API_KEY_PUBLIC`, `SESSION_JWT_SECRET` (generated, at least 32 bytes), `TURNSTILE_SECRET_KEY`, and optionally the Langfuse keys.
-  - [ ] `upload-bundle.sh`: `bundles/facts-<v>.sqlite` → `s3://…/bundles/<v>/`, and `bundles/embeddings.sqlite` → `s3://…/bundles/cache/` (it can use `infra/docker/s3_sync.py`).
-  - [ ] `seed-users.sh`: admin with TOTP enrollment, and `demo-broker` with no MFA in the `broker` group; outputs the demo `sub`.
-  - [ ] `rotate-demo-password.sh`: Cognito plus `/landing/demo.json` plus invalidation.
-  - [ ] `run-build.sh`: `aws ecs run-task`.
-- **Done when:** `cdk synth` and the stack tests pass in CI, and `cdk deploy` creates the stack.
+Done on `main_AWS` (TASKS_DONE.md, WP9): the two stacks, 12 template tests, the scripts and a CI `cdk` job.
+Open: the first real deploy (§2.4).
 
 ### WP10: frontends
 
@@ -123,6 +87,7 @@ and an arm64 build (WP11).
 - [ ] **`chat-ui`:**
   - [ ] SSE over `fetch`: read the body stream; parse `thread`, `status`, `answer`, `clarify`, `limit`, `error` and `done`; ignore keepalive comments.
   - [ ] Every POST gets `x-amz-content-sha256` (the body's SHA-256 through `crypto.subtle`).
+  - [ ] **The bearer token goes in `X-Sbc-Authorization: Bearer …`, never in `Authorization`.** CloudFront's signing replaces `Authorization` (WP9 finding).
   - [ ] Bearer token handling.
   - [ ] Components: chat stream with status line, citations panel (opening `/api/sbc/...pdf#page=N`), comparison table, plan picker (`/api/{bot}/plans/search`), clarification options, and a limit or kill-switch notice.
   - [ ] Feedback buttons (thumbs plus reason codes).
@@ -141,14 +106,15 @@ and an arm64 build (WP11).
 ### WP11: CI/CD
 
 - [x] **`ci.yml`:** the `image` job (API image on the fixture bundle + `smoke.sh`) landed with WP8.
-- [ ] **`ci.yml` additions:** a `cdk` job (`uv --project infra/cdk run pytest`, `cdk synth`), a `frontend` job, and the existing jobs already covering `sbc_aws` and `sbc_api`. A DynamoDB Local integration job is optional (`services:` container plus `DDB_LOCAL_ENDPOINT`).
+- [x] **`ci.yml`:** the `cdk` job (template tests, synth, shellcheck) landed with WP9.
+- [ ] **`ci.yml` additions:** a `frontend` job. A DynamoDB Local integration job is optional (`services:` container plus `DDB_LOCAL_ENDPOINT`).
 - [ ] **`deploy-aws.yml`** (on push to `main_AWS`, plus `workflow_dispatch`; `permissions: id-token: write, contents: read`; actions pinned by SHA):
   1. [ ] Assume `sbc-github-deploy` through OIDC.
   2. [ ] Download the pinned bundle from S3.
   3. [ ] `docker buildx --platform linux/arm64`; push with tag `<git-sha>-<bundle-version>`.
-  4. [ ] `update-function-code`, `wait function-updated`, `publish-version`.
-  5. [ ] Smoke the new version directly: `healthz?deep=1` and one fast-path question.
-  6. [ ] Move the `live` alias (optional 10% weighted canary for 10 minutes).
+  4. [ ] **Deploy through the CDK:** `cdk deploy SbcApp-<env> -c apiImageTag=<tag>` (the deploy role needs the CDK bootstrap roles' permissions, i.e. `sts:AssumeRole` on `cdk-*-deploy-role` and `cdk-*-file-publishing-role`). CloudFormation owns the `live` alias (WP9), so raw `update-alias` calls would be undone by the next deploy.
+  5. [ ] Smoke through CloudFront: `healthz?deep=1` and one fast-path question.
+  6. [ ] Optional canary: a CodeDeploy-style gradual alias shift needs `aws_codedeploy`; decide whether it's worth it for a portfolio deploy.
   7. [ ] Build the SPAs with the CDK outputs, `s3 sync --delete`, invalidate CloudFront.
 - [ ] **`build-data.yml`** (`workflow_dispatch`, inputs `version` and `full|incremental`): runs `scripts/aws/run-build.sh` and waits for the task.
 - **Done when:** a push deploys in under 10 minutes, and an alias rollback takes under 1 minute.
@@ -199,6 +165,9 @@ and an arm64 build (WP11).
 | WP7 | A live portal fetch of one preview-only SBC, with its hash matching | 👤 |
 | WP8 | An end-to-end `build-pipeline bundle` (then `full`) run against the real data bucket, as an ECS task | 👤 after WP9 |
 | WP8 | The arm64 API image builds (`buildx --platform linux/arm64`) and passes `smoke.sh` | WP11 (CI) |
+| WP9 | `cdk deploy` of both stacks in a real account, and the eight `scripts/aws/*.sh` against AWS | 👤 (§2.4) |
+| WP9 | The `X-Sbc-Authorization` path end to end through CloudFront with a real Cognito token | 👤 + WP13 |
+| WP9 | The warmer's events reach `POST /events` through the Lambda Web Adapter (if `warmer=true`) | 👤 |
 
 ---
 
@@ -228,6 +197,8 @@ The AWS track hosts the app; these are features and evaluations the application 
 
 ## 7. Known limitations to keep in mind
 
+- **Tokens never go in `Authorization` behind CloudFront.** Origin access control overwrites it, so the apps use `X-Sbc-Authorization`. Direct calls to the Function URL aren't possible anyway (IAM auth).
+- **`PUBLIC_BASE_URL` isn't set on AWS.** Setting it would create a circular stack dependency, and nothing reads it yet.
 - **Limits reply in the stream.** A refused turn is an SSE `limit` event with HTTP 200, not a 429, so the frontend must handle `limit` (WP10). The PDF proxy does use 429.
 - **DynamoDB errors fail closed.** If DynamoDB can't be reached, a turn returns a 500, because limits can't be checked. That is deliberate (PLAN.md §3.5.6).
 - **Answers are sent whole.** They are not streamed token by token, because nothing passes before the verifier; users see status events, then the answer.

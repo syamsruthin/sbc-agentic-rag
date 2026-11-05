@@ -279,3 +279,11 @@ def test_the_demo_account_is_a_broker_but_never_an_admin(harness: Harness) -> No
     principal = authenticator.authenticate(_Req(client.app, token), BotName.BROKER)
     assert principal.is_demo
     assert principal.groups == {"broker"}
+
+
+def test_behind_cloudfront_the_token_comes_in_x_sbc_authorization(harness: Harness) -> None:
+    client = secured(harness)
+    sigv4 = "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261105/us-east-1/lambda/aws4_request, Signature=abc"
+    headers = {"authorization": sigv4, "x-sbc-authorization": f"Bearer {cognito_token()}"}
+    assert client.get("/api/broker/plans/search?q=Gold", headers=headers).status_code == 200
+    assert client.get("/api/broker/plans/search?q=Gold", headers={"authorization": sigv4}).status_code == 401
