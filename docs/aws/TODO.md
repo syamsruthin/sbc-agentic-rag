@@ -1,6 +1,7 @@
 # AWS track: to do
 
-Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-05**, after WP9. Finished
+Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-05**, after WP9 and the
+port of the generation eval. Finished
 work is in [TASKS_DONE.md](TASKS_DONE.md); each work package's full spec is in [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 
 All work goes to `main_AWS`, the long-lived AWS branch; it isn't merged into `main`.
@@ -186,7 +187,12 @@ The AWS track hosts the app; these are features and evaluations the application 
 
 - [ ] **Phase 0 leftover:** taxonomy v2 synonyms from the eval ("delivering (a baby)" is unmapped; "pharmacy" maps to every drug tier; "hospital" adds inpatient rows to delivery questions).
 - [ ] **Phase 1:**
-  - [ ] Generation eval harness on golden 0.2.0 (answers, not just retrieval), with recorded responses.
+  - [x] Generation eval harness on golden 0.2.0 (`evals/harness/generation.py`, ported from
+        `feat/phase-1-generation-eval`; TASKS_DONE.md, P).
+  - [ ] 👤 The full gating run (353 items, about $5): blocked by the OpenRouter key's $5 total limit. Raise the
+        limit or use a new key, then `python -m evals.harness.generation --bundle … --golden evals/golden/0.2.0`.
+  - [ ] Recorded model responses, so CI can replay the generation eval without keys.
+  - [ ] The LLM judge for faithfulness and citation accuracy, after the calibration set (PLAN.md 5.4).
   - [ ] Model bake-off report (Haiku 5.5 vs Sonnet 5.5 vs Opus 5.5, per bot and per path; the cheapest model that passes every hard gate).
   - [ ] The MVP gating set (353 items of golden 0.2.0) passing all hard gates; the other 57 reported separately.
 - [ ] **Phase 2:** `estimate_cost` (the calculator, with property tests), `rank_plans`, `glossary_lookup`, multi-turn session references, feedback review queues, CI eval gates enforced, deterministic mode, canary deploys, 5–10 external brokers.

@@ -2,7 +2,7 @@
 
 Everything finished so far on the AWS deployment track (PLAN.md revision 3), on branch `main_AWS`.
 
-- Status as of **2026-11-05**, after WP9.
+- Status as of **2026-11-05**, after WP9 and the port of the generation eval.
 - What's left is in [TODO.md](TODO.md).
 - The plan these tasks follow is [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 - The analysis behind it is [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md).
@@ -26,17 +26,19 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | D | Documentation sync and these tracking files | `af59ee0` | 2026-11-05 | PLAN.md revision 3, README, TODO.md, docs, `TASKS_DONE.md`, `TODO.md` |
 | WP8 | Containers and the local stack | `a2ec16b` | 2026-11-05 | API and build images, compose with DynamoDB Local, smoke test, CI image job, RUNBOOK.md; 5 tests |
 | B | Branch policy: `main_AWS` not merged into `main` | `8adb851` | 2026-11-05 | PR #14 closed unmerged; CI runs on pushes to `main_AWS` |
-| WP9 | CDK stacks, operator scripts | (this commit) | 2026-11-05 | `SbcFoundation` + `SbcApp`, 12 template tests, 8 scripts, CI `cdk` job; `X-Sbc-Authorization` fix; 4 more tests |
+| WP9 | CDK stacks, operator scripts | `98a021a` | 2026-11-05 | `SbcFoundation` + `SbcApp`, 12 template tests, 8 scripts, CI `cdk` job; `X-Sbc-Authorization` fix; 4 more tests |
+| P | Port of the Phase 1 generation eval from `feat/phase-1-generation-eval` | `b69e3f8`, `e912d3a`, `fb21e97` | 2026-11-05 | `find_plans` list discovery, plan-reference and fast-path fixes, `evals/harness/generation.py`; 13 more tests |
 
 **Health at the time of writing:**
 
-- ruff check and ruff format pass on 185 files.
-- mypy passes on 136 source files; `sbc_core`, `sbc_extract`, `sbc_tools` and `sbc_aws` are strict.
+- ruff check and ruff format pass on 189 files.
+- mypy passes on 138 source files; `sbc_core`, `sbc_extract`, `sbc_tools` and `sbc_aws` are strict.
 - import-linter keeps all 7 contracts.
-- Unit tests: **419 passed**; CDK template tests: **12 passed**; shellcheck clean on every script.
+- Unit tests: **432 passed**; CDK template tests: **12 passed**; shellcheck clean on every script.
 - The API image builds and passes `smoke.sh`, the compose stack runs on DynamoDB Local, and both CDK stacks synthesize.
 - Deterministic eval gate: plan filter 1.0, resolution 1.0, 0 confident wrong-plan, service mapping 1.0, recall@5 1.0 on the fixture.
-- DynamoDB Local integration tests: 3 passed (the 2 ingest regression tests skip without corpus data).
+- Integration tests: 5 passed on DynamoDB Local 2.6.1 with the corpus present (without corpus data, the 2 ingest
+  regression tests skip).
 
 ---
 
@@ -304,7 +306,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 - PR #14 (`main_AWS` → `main`) was closed without merging: `main_AWS` is the long-lived main branch of the AWS implementation. `main` is unchanged at `e7ec0e7`.
 - CI (`.github/workflows/ci.yml`) now runs on pushes to `main_AWS` as well as `main`.
 
-### WP9: CDK stacks and operator scripts (this commit)
+### WP9: CDK stacks and operator scripts (`98a021a`)
 
 - **`infra/cdk/`:** its own uv project (`aws-cdk-lib` 2.275.0, CDK CLI 2.1147.0 through `npx`), with `cdk.json` context (`envName`, `apiImageTag`, `buildImageTag`, `alarmEmail`, `monthlyBudgetUsd`, `demoUserIds`, `warmer`, `githubOidcProviderArn`, `githubRepository`, `githubBranch`), `sbc_infra/config.py` and `sbc_infra/tables.py`.
 - **`SbcFoundation-<env>`:**
@@ -332,6 +334,18 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
   - 2 API tests (the token header, the warmer route).
 - **CI:** a `cdk` job runs the template tests, `cdk synth` and shellcheck.
 - **Docs:** `infra/cdk/README.md`; RUNBOOK §4–§8 (first deployment, deploy and rollback, secrets and the demo password, costs and alarms, teardown outline); MIGRATION_PLAN (WP9 as built, risk 3a, `PUBLIC_BASE_URL`); DEPLOYMENT_ANALYSIS (forwarded headers); SPIKES (§4a, the `Authorization` finding); PLAN.md §9.3; README; `infra/README.md`; TODO.
+
+### P: port of the generation eval (`b69e3f8`, `e912d3a`, `fb21e97`)
+
+- **Source:** the three commits on `feat/phase-1-generation-eval` (`fbf3d9f`, `69b1426`, `a058479`), written on top of `main` at `e7ec0e7` and never merged anywhere. They were cherry-picked onto `main_AWS` in order, keeping their messages.
+- **What came over:**
+  - **`find_plans` discovery** (broker only): `list_item` and `list_id` find plans whose Excluded or Other Covered Services list names an item, in the SBC's wording; with no match it suggests the closest wordings. `FactsReader` gained the `list_item` filter and `list_item_texts`.
+  - **Agent fixes found by the eval pilot:** "this plan" and similar references aren't sent to name search; a question naming services or Important Questions asks for a plan when none is resolved, whatever its intent; the fast path scans service terms, so plurals map; the agent asks for an amount instead of estimating a cost.
+  - **Trace:** it now carries the classification and the answer's grounding (body and expanded texts) for the ungrounded-number check. The API's audit record, turn log and answer cache read named fields only, so neither reaches them or the SSE payload; both are part of the checkpointed graph state.
+  - **`evals/harness/generation.py`:** golden items through the whole graph, with the hard gates, the 90% gates and the cost and latency report (`evals/README.md`).
+- **Conflicts:** the import block of `sbc_agent/graph.py` (`re` next to `main_AWS`'s `collections.abc` imports) and `TODO.md` (the eval lines kept, with revision 3's FastAPI and Supabase lines).
+- **Checked:** ruff, format, mypy, import-linter, 432 unit tests, the deterministic eval gate, and the 5 integration tests on DynamoDB Local (including clarify, then choose, across two app instances).
+- **Not run:** the generation eval itself, which needs OpenRouter credit (docs/aws/TODO.md §6).
 
 ---
 

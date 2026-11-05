@@ -205,7 +205,7 @@ if any secret it needs is missing.
 | Repository setup and public-repo hygiene | Done |
 | Scaffolding: workspace, config, lint, types, tests, CI | Done (PR #1) |
 | Phase 0: extraction, facts bundle with search index, golden dataset | Eval bar met; human sign-offs left |
-| Phase 1: Broker Assistant MVP (internal alpha) | In progress: tools, answer path, agent graph and the API (SSE chat, auth, guards, plan picker, PDF proxy) done; frontends, deployment and evals left |
+| Phase 1: Broker Assistant MVP (internal alpha) | In progress: tools, answer path, agent graph, the generation eval harness and the API (SSE chat, auth, guards, plan picker, PDF proxy) done; frontends, deployment, the full gating run and the model bake-off left |
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
