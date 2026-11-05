@@ -27,7 +27,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | WP8 | Containers and the local stack | `a2ec16b` | 2026-11-05 | API and build images, compose with DynamoDB Local, smoke test, CI image job, RUNBOOK.md; 5 tests |
 | B | Branch policy: `main_AWS` not merged into `main` | `8adb851` | 2026-11-05 | PR #14 closed unmerged; CI runs on pushes to `main_AWS` |
 | WP9 | CDK stacks, operator scripts | `98a021a` | 2026-11-05 | `SbcFoundation` + `SbcApp`, 12 template tests, 8 scripts, CI `cdk` job; `X-Sbc-Authorization` fix; 4 more tests |
-| P | Port of the Phase 1 generation eval from `feat/phase-1-generation-eval` | `b69e3f8`, `e912d3a`, `fb21e97` | 2026-11-05 | `find_plans` list discovery, plan-reference and fast-path fixes, `evals/harness/generation.py`; 13 more tests |
+| P | Port of the Phase 1 generation eval from `feat/phase-1-generation-eval` | `b69e3f8`, `e912d3a`, `fb21e97`; docs `25bbaca` and the follow-up | 2026-11-05 | `find_plans` list discovery, plan-reference and fast-path fixes, `evals/harness/generation.py`; 13 more tests |
 
 **Health at the time of writing:**
 
@@ -346,6 +346,11 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 - **Conflicts:** the import block of `sbc_agent/graph.py` (`re` next to `main_AWS`'s `collections.abc` imports) and `TODO.md` (the eval lines kept, with revision 3's FastAPI and Supabase lines).
 - **Checked:** ruff, format, mypy, import-linter, 432 unit tests, the deterministic eval gate, and the 5 integration tests on DynamoDB Local (including clarify, then choose, across two app instances).
 - **Not run:** the generation eval itself, which needs OpenRouter credit (docs/aws/TODO.md §6).
+- **Docs:** the ported commits updated `docs/agent-graph.md`, `docs/agent-tools.md`, `evals/README.md` and `TODO.md`. `25bbaca` updated this file, `docs/aws/TODO.md` and the README status. A follow-up audit (this commit) added:
+  - the renderer's `body` and `grounded` fields to `docs/answer-path.md`;
+  - the generation eval command to `data/README.md`;
+  - to MIGRATION_PLAN: the generation eval in §7, and in WP13 how the HTTP adapter can reuse its scoring (and what it can't score without the trace). It also replaced the stale "plan only" status line;
+  - the matching WP13 note in `docs/aws/TODO.md`, and the evals row of DEPLOYMENT_ANALYSIS §4.
 
 ---
 

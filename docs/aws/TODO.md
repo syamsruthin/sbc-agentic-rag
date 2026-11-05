@@ -136,7 +136,9 @@ Open: the first real deploy (§2.4).
 - [ ] Measure the cold first answer (target < 10 s) and the warm fast path (target ≤ 4 s p50); record them in the runbook.
 - [ ] Deliberately hit every cap: per user, per session, per IP, demo, global daily, kill switch, quarantine, and the OpenRouter key limit (with a $0.10 test key).
 - [ ] Check that the demo user's tokens **can't** change its password (`aws cognito-idp change-password` with a demo access token must fail).
-- [ ] An `evals/harness` HTTP adapter, and a run of about 30 golden 0.2.0 items through the deployed API.
+- [ ] An `evals/harness` HTTP adapter, and a run of about 30 golden 0.2.0 items through the deployed API. It can
+      reuse `generation.py`'s scoring (SSE events → `Reply`); without the trace, it scores behavior, exact
+      match, plan filter and wrong-plan answers only (MIGRATION_PLAN WP13).
 - [ ] The interviewer click-through on a cold system: landing → Shopper question → Broker sign-in → comparison → PDF citation (including a preview-only plan).
 - [ ] **`docs/aws/RUNBOOK.md`:** deploy, rollback, rotate secrets and the demo password, rebuild data, check costs, teardown.
 - [ ] README "Live demo" section with the URL and demo-login instructions.

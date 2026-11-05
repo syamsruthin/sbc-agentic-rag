@@ -47,11 +47,13 @@ refuses to run without the manifest, or with any plan missing from it. Bundles f
 `config/base.yaml`. Embeddings are cached in `bundles/embeddings.sqlite` by chunk hash, so a rebuild only
 embeds new chunk text. Without this step the bundle still supports BM25-only search.
 
-The retrieval eval and the PDF check of the golden dataset read the bundle (see `evals/README.md`):
+The retrieval eval, the PDF check of the golden dataset and the generation eval read the bundle (see
+`evals/README.md`). The generation eval also calls OpenRouter; a full gating run costs about $5:
 
 ```bash
 uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup bm25_only
 uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0
+uv run python -m evals.harness.generation --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --sample 24
 ```
 
 The downloader uses 6 parallel workers by default (`--workers`). Keep it modest and don't re-run it more

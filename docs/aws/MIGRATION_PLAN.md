@@ -1,7 +1,7 @@
 # AWS migration plan: code changes, step by step
 
 **Branch:** `main_AWS`, created from `main` at `e7ec0e7`. It is the long-lived main branch of the AWS implementation and is **not merged into `main`** (decided 2026-11-05; the PR to `main`, #14, was closed unmerged). Work packages are committed straight to `main_AWS`; CI runs on every push to it.
-**Status:** plan only. This branch adds documents; no code is changed yet.
+**Status:** WP0–WP9 are done on `main_AWS` (each work package below has its own status note); the first real deploy and WP10–WP14 are left. Progress is tracked in [TASKS_DONE.md](TASKS_DONE.md) and [TODO.md](TODO.md).
 **Companion document:** [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md) covers the architecture, the costs and the reasons behind each choice. §17 there ("portfolio mode") is the target operating model.
 
 This plan turns that analysis into ordered work packages. For each one it says which files change, what goes in them, how it is tested and when it is done.
@@ -715,7 +715,7 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 - OpenRouter key credit limits set ($10 public, $15 broker), recorded in the runbook.
 - **Measurements:** cold start, warm fast-path latency and agent-path latency.
 - **Deliberately hit** every cap: per-user, global, kill switch, OpenRouter key limit (with a $0.10 test key).
-- **Run** a golden-set subset against the deployed URL, e.g. 30 items from `evals/golden/0.2.0` through the API (a new thin adapter in `evals/harness/` that calls the HTTP API instead of the in-process graph).
+- **Run** a golden-set subset against the deployed URL, e.g. 30 items from `evals/golden/0.2.0` through the API (a new thin adapter in `evals/harness/` that calls the HTTP API instead of the in-process graph). `evals/harness/generation.py` already takes the agent through a factory and scores its `Reply`, so the adapter can turn the SSE `answer`/`clarify` events into a `Reply` and reuse that scoring. The API doesn't send the turn's trace, so over HTTP only behavior, numeric exact match, plan filter and wrong-plan answers can be scored; ungrounded numbers, tool selection and cost stay with the in-process run.
 - **Docs:**
   - `docs/aws/RUNBOOK.md`: deploy, rollback, rotate secrets, rebuild data, reset the demo password, check costs.
   - README: a "Live demo" section with the URL and demo-login instructions.
@@ -841,6 +841,7 @@ The roles are the same as DEPLOYMENT_ANALYSIS.md §6.5: `sbc-api-exec`, `sbc-git
 | Infra | CDK template assertions (cost guardrails, IAM, streaming) | `aws_cdk.assertions` | CI |
 | Integration | API + DynamoDB Local through `compose.yaml`; checkpoint resume across processes | pytest `-m integration` | Locally, before each WP merge |
 | Eval (existing) | Deterministic CI gate on the fixture bundle | `evals.harness.ci_gate` | CI |
+| Eval (existing) | Golden 0.2.0 through the in-process agent graph (hard gates, behavior, tool selection, cost) | `evals.harness.generation` | Manually; needs OpenRouter credit |
 | Eval (new) | Golden subset through the deployed HTTP API | `evals/harness` HTTP adapter | Manually after deploys (WP13) |
 | E2E smoke | Landing → both bots → PDF link | Playwright (headless Chromium) | After deploy (optional CI job) |
 

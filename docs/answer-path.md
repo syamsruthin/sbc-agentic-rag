@@ -21,6 +21,11 @@ How a compose draft becomes the answer users see (PLAN.md section 3.7), in `pack
    - the carried-note label, *"In the SBC this note appears in a box continuing from the previous page."*;
    - citations of rows whose event heading isn't printed in the SBC name only the row;
    - the disclaimer and the not-affiliated line.
+
+   For the generation eval, the renderer also returns the expanded answer text before notes, citations and the
+   disclaimer (`body`), and every text a placeholder expanded to (`grounded`). The graph moves both into the
+   turn's trace, where the eval checks that every number in the body comes from a placeholder. Neither is sent
+   to the client.
 4. **Template fallback** (`fallback.py`). It lists every fact and excerpt of the turn as a placeholder-only
    draft, and it goes through the same verifier and renderer.
 
