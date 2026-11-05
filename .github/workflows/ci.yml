@@ -3,7 +3,8 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    # main_AWS is the long-lived branch of the AWS implementation; it is not merged into main.
+    branches: [main, main_AWS]
 
 permissions:
   contents: read

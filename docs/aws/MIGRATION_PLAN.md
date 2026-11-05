@@ -1,6 +1,6 @@
 # AWS migration plan: code changes, step by step
 
-**Branch:** `main_AWS`, created from `main` at `e7ec0e7`.
+**Branch:** `main_AWS`, created from `main` at `e7ec0e7`. It is the long-lived main branch of the AWS implementation and is **not merged into `main`** (decided 2026-11-05; the PR to `main`, #14, was closed unmerged). Work packages are committed straight to `main_AWS`; CI runs on every push to it.
 **Status:** plan only. This branch adds documents; no code is changed yet.
 **Companion document:** [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md) covers the architecture, the costs and the reasons behind each choice. §17 there ("portfolio mode") is the target operating model.
 

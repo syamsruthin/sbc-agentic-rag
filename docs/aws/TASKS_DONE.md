@@ -60,6 +60,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | 2026-11-03 | D3: Presidio NER before launch | **Deferred** until after launch; regex redaction stays |
 | 2026-11-04 | Branching per work package | Commit straight to `main_AWS` (no per-WP branches or PRs) |
 | 2026-11-05 | Tracking files and old docs | Files in **`docs/aws/`**; **update the older docs now** (PLAN.md revision 3) |
+| 2026-11-05 | Merging into `main` | **Don't.** `main_AWS` stays the long-lived main branch of the AWS implementation; PR #14 (`main_AWS` → `main`) was closed unmerged. CI now also runs on pushes to `main_AWS` |
 
 ---
 

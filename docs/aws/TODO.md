@@ -3,6 +3,8 @@
 Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-05**, after WP8. Finished
 work is in [TASKS_DONE.md](TASKS_DONE.md); each work package's full spec is in [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 
+All work goes to `main_AWS`, the long-lived AWS branch; it isn't merged into `main`.
+
 Items marked 👤 need you (an account, credentials or data that isn't in this environment). Everything else can be
 done in code here.
 

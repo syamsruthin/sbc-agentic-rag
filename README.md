@@ -208,7 +208,7 @@ if any secret it needs is missing.
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
-| AWS deployment track (branch `main_AWS`) | WP0–WP8 done (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers); WP9–WP14 left |
+| AWS deployment track (branch `main_AWS`, the long-lived AWS branch; not merged into `main`) | WP0–WP8 done (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers); WP9–WP14 left |
 
 [TODO.md](TODO.md) has the detailed checklist; PLAN.md section 11 has each phase's acceptance criteria and
 eval bar. The AWS track's progress is in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_DONE.md) and
