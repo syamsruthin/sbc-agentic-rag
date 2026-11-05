@@ -58,11 +58,12 @@ def stream_turn(
     *,
     thread_id: str,
     request_id: str,
-    on_reply: Callable[[Reply], None] | None = None,
+    on_reply: Callable[[Reply], Reply] | None = None,
     keepalive_seconds: float = KEEPALIVE_SECONDS,
     timeout_seconds: float = TURN_TIMEOUT_SECONDS,
 ) -> Iterator[str]:
-    """Run ``run()`` in a worker thread and yield the SSE stream for it."""
+    """Run ``run()`` in a worker thread and yield the SSE stream for it. ``on_reply`` sees the finished reply
+    first and returns the one to send (the API's guards may replace it, e.g. for a quarantined plan)."""
     items: queue.Queue[object] = queue.Queue()
 
     def worker() -> None:
@@ -102,9 +103,18 @@ def stream_turn(
                 stage, text = NEXT_STAGE[item.node]
                 yield event("status", {"stage": stage, "text": text})
             elif isinstance(item, Reply):
-                if on_reply is not None:
-                    on_reply(item)
-                name, body = reply_payload(item)
+                final = on_reply(item) if on_reply is not None else item
+                name, body = reply_payload(final)
                 yield event(name, body)
     finally:
         yield event("done", {})
+
+
+def single(
+    name: str, data: dict[str, Any], *, thread_id: str | None = None, request_id: str = ""
+) -> Iterator[str]:
+    """A stream that answers at once (a limit, a kill switch or a cached answer), with no turn run."""
+    if thread_id is not None:
+        yield event("thread", {"thread_id": thread_id, "request_id": request_id})
+    yield event(name, data)
+    yield event("done", {})

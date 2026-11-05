@@ -94,13 +94,12 @@ def test_a_clarification_resumes_on_another_instance(harness: Harness) -> None:
     assert len(harness.chats[next(iter(harness.chats))].requests) == 1
 
 
-def test_a_given_thread_id_is_kept(harness: Harness) -> None:
-    events = post_sse(
-        harness.client(broker=_lookup()),
-        "/api/broker/chat",
-        {"thread_id": "my-thread-0001", "message": "Gold?"},
-    )
-    assert events[0][1]["thread_id"] == "my-thread-0001"
+def test_threads_are_created_by_the_server_and_must_be_the_callers(harness: Harness) -> None:
+    client = harness.client(broker=_lookup())
+    r = client.post("/api/broker/chat", json={"thread_id": "my-thread-0001", "message": "Gold?"})
+    assert r.status_code == 404  # an unknown (or someone else's) thread ID is never accepted
+    first = post_sse(client, "/api/broker/chat", {"message": "Deductible on Gold?"})
+    assert first[0][1]["thread_id"] != "my-thread-0001"
 
 
 def test_preview_only_plans_cite_the_pdf_proxy(harness: Harness) -> None:

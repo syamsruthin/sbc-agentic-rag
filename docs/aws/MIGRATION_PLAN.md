@@ -445,6 +445,26 @@ def stream(self, thread_id, message=None, *, resume=None, ui_selected=(), user_s
 
 ### WP6: Guards (rate limits, global cap, caches, kill switches, audit, feedback)
 
+> **Status: done** on `main_AWS`.
+>
+> **As built** (`sbc_api/guards.py`, `routes/chat.py`, `routes/feedback.py`, `routes/admin.py`):
+> - **Before a turn, with no model call:**
+>   1. Rate limits: the profile's limits, the demo account's own, and per IP for the public bot.
+>   2. Thread ownership: a 404 unless the caller owns the thread. New threads are always created by the server, so a client can no longer pick a thread ID.
+>   3. Kill switch.
+>   4. Exact-answer cache.
+>   5. Global daily cap.
+>
+>   Limits and the cap reply with an SSE `limit` event (scope `user`, `session`, `ip` or `global`).
+> - **Exact-answer cache:**
+>   - It covers a thread's first message only, since later messages depend on history. Its key combines the bot, bundle, prompt hashes, config hash (which covers the models), selected plans, state and normalized question.
+>   - A hit costs no model call and doesn't count toward the cap. It still creates a thread, and the new `Agent.remember()` writes the cached turn into that thread's history, so follow-ups keep their context.
+> - **After a turn:** plans under quarantine are replaced by a fixed message. Only answers are cached (clarifications never), and one audit record is written (no user text; audit failures are logged as `audit_failed`).
+> - **Demo account:** the broker bot has a second agent for it, with its own checkpointer and TTL (`portfolio.demo_history_ttl_hours`).
+> - **Query-embedding cache:** wraps `TextSearcher.embed_query` whenever DynamoDB is configured.
+> - **Routes:** `POST /api/{bot}/feedback` (own threads only, reason codes only) and `GET /api/broker/threads` (empty for the shared demo account; the browser keeps its own thread IDs). The admin routes `POST /api/admin/kill-switch` and `/api/admin/quarantine` require the `admin` group, are never open to the demo account, and are audited.
+> - **Tests:** 17 in `tests/unit/api/test_guards.py`. The DynamoDB Local integration test still passes with ownership going through `DynamoSessionStore`.
+
 **Files:** `routes/chat.py` (guard pipeline), `routes/feedback.py`, `routes/threads.py`, `routes/admin.py`, `sbc_aws/{ratelimit,cache,killswitch,audit,sessions}.py` (from WP2), `tests/unit/api/test_guards.py`.
 
 **Order of checks for every chat request** (before any model call):

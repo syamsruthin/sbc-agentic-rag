@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request, Response
 
 from sbc_api import logging as api_logging
 from sbc_api.deps import ApiState, build_state
-from sbc_api.routes import chat, health, plans, session
+from sbc_api.routes import admin, chat, feedback, health, plans, session
 
 log = logging.getLogger("sbc_api")
 REQUEST_ID_HEADERS = ("x-amzn-request-id", "x-request-id")
@@ -36,6 +36,8 @@ def create_app(state: ApiState | None = None) -> FastAPI:
     app.include_router(chat.router)
     app.include_router(plans.router)
     app.include_router(session.router)
+    app.include_router(feedback.router)
+    app.include_router(admin.router)
 
     @app.middleware("http")
     async def request_id(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:

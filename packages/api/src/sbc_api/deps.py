@@ -41,7 +41,7 @@ from sbc_api.memory import (
 )
 from sbc_api.ports import AnswerCache, AuditSink, DailyCap, KillSwitches, PdfCache, RateLimiter, SessionStore
 from sbc_aws.audit import DynamoAuditSink
-from sbc_aws.cache import DynamoAnswerCache
+from sbc_aws.cache import DynamoAnswerCache, QueryEmbeddingCache
 from sbc_aws.checkpoint import checkpoint_ttl_seconds, make_checkpointer
 from sbc_aws.ddb import Tables, dynamodb_client, session_for
 from sbc_aws.killswitch import DynamoKillSwitches
@@ -61,7 +61,8 @@ log = logging.getLogger(__name__)
 PDF_PROXY_BASE = "/api/sbc/"
 
 ChatFactory = Callable[[BotName, Settings], ChatModel]
-SaverFactory = Callable[[BotName, Settings], BaseCheckpointSaver[Any]]
+SaverFactory = Callable[[BotName, Settings, bool], BaseCheckpointSaver[Any]]
+"""``(bot, settings, demo)``: the checkpointer for a bot, or for its shared demo account (shorter TTL)."""
 
 
 @dataclass
@@ -83,6 +84,12 @@ class BotRuntime:
     agent: Agent | None
     unavailable: str | None = None
     """Why the bot can't answer (only possible locally, e.g. no OpenRouter key)."""
+    demo_agent: Agent | None = None
+    """The broker bot's agent for the shared demo account: same everything, but its checkpoints expire after
+    ``portfolio.demo_history_ttl_hours`` (the TTL is per checkpointer, so it needs its own)."""
+
+    def agent_for(self, demo: bool) -> Agent | None:
+        return self.demo_agent if demo and self.demo_agent is not None else self.agent
 
 
 @dataclass
@@ -192,9 +199,20 @@ def build_state(
             searcher = TextSearcher.with_gateway(index, s.config.retrieval, s.config.models, gateway)
             if search_mode == "bm25":
                 searcher = TextSearcher(index, s.config.retrieval, rerank=searcher.rerank)
-        saver = saver_factory(bot, s) if saver_factory is not None else _saver(env, s)
+            elif searcher.embed_query is not None and _tables_configured(env):
+                cache = QueryEmbeddingCache(
+                    dynamodb_client(session_for(env)),
+                    str(env.ddb_table_app),
+                    s.config.models.embeddings.model,
+                )
+                searcher.embed_query = cache.wrap(searcher.embed_query)
         deps = Deps(reader=reader, chat=chat, config=s.config, taxonomy=taxonomy, search=searcher)
-        bots[bot] = BotRuntime(s, Agent(deps, saver))
+
+        def saver(demo: bool, bot: BotName = bot, s: Settings = s) -> BaseCheckpointSaver[Any]:
+            return saver_factory(bot, s, demo) if saver_factory is not None else _saver(env, s, demo)
+
+        demo_agent = Agent(deps, saver(True)) if bot is BotName.BROKER else None
+        bots[bot] = BotRuntime(s, Agent(deps, saver(False)), demo_agent=demo_agent)
     session_tokens = _session_tokens(env)
     if authenticator is None:
         authenticator = _authenticator(env, settings, session_tokens)
@@ -232,10 +250,10 @@ def _authenticator(
     return BearerAuthenticator(cognito=cognito, sessions=sessions, demo_user_ids=demo)
 
 
-def _saver(env: EnvSettings, settings: Settings) -> BaseCheckpointSaver[Any]:
+def _saver(env: EnvSettings, settings: Settings, demo: bool) -> BaseCheckpointSaver[Any]:
     if not _tables_configured(env):
         return InMemorySaver()
     return make_checkpointer(
         str(env.ddb_table_checkpoints), session=session_for(env), s3_bucket=env.s3_data_bucket,
-        ttl_seconds=checkpoint_ttl_seconds(settings.config),
+        ttl_seconds=checkpoint_ttl_seconds(settings.config, demo=demo),
     )  # fmt: skip

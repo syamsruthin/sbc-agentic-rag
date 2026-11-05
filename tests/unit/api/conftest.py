@@ -31,7 +31,7 @@ class Harness:
 
     def __init__(self, bundle: Path) -> None:
         self.env = EnvSettings.model_validate({"app_env": "local", "facts_bundle_path": str(bundle)})
-        self.savers = {bot: InMemorySaver() for bot in BotName}
+        self.savers = {(bot, demo): InMemorySaver() for bot in BotName for demo in (False, True)}
         self.stores = memory_stores()
         self.chats: dict[BotName, ScriptedChat] = {}
 
@@ -43,8 +43,11 @@ class Harness:
 
         return build_state(
             self.env, config_dir=REPO / "config", chat_factory=chat_for,
-            saver_factory=lambda bot, s: self.savers[bot], stores=self.stores,
+            saver_factory=self.saver, stores=self.stores,
         )  # fmt: skip
+
+    def saver(self, bot: BotName, settings: Settings, demo: bool) -> InMemorySaver:
+        return self.savers[(bot, demo)]
 
     def client(self, **chats: ScriptedChat) -> TestClient:
         return TestClient(create_app(self.state(**chats)))

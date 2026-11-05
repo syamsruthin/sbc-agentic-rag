@@ -257,6 +257,16 @@ class Agent:
         resume = {"plan_key": plan_key, "text": text}
         return self._reply(self.graph.invoke(Command(resume=resume), self._config(thread_id)))
 
+    def remember(self, thread_id: str, *, message: str, reply: Reply) -> None:
+        """Record a turn answered outside the graph (the API's exact-answer cache) in a new thread, as if the
+        graph had answered it, so a follow-up ("and out of network?") still has its history and plan."""
+        history = [
+            {"role": "user", "content": redact(message[:MAX_MESSAGE_CHARS]).text},
+            {"role": "assistant", "content": reply.markdown},
+        ]
+        values = {"history": history, "last_plan_keys": list(reply.plan_keys), "clarifications_in_a_row": 0}
+        self.graph.update_state(self._config(thread_id), values, as_node="answer")
+
     def stream(
         self,
         thread_id: str,
