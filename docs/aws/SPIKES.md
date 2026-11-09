@@ -10,7 +10,8 @@ The three spikes from [MIGRATION_PLAN.md §13](MIGRATION_PLAN.md#13-sequencing-a
 | 3 | How big is the image with the bundle, and how long is the cold start? | **Measured locally**: ≈ 549 MB uncompressed, 2.1–2.3 s from container start to ready. The Lambda cold start is **not yet measured** (same reason as 2) |
 
 **Outcome:** nothing found so far changes the plan. Three details are corrected below (§4). The remaining AWS
-checks take one command (`spikes/aws/deploy_spike.sh up`) once you have an account.
+checks take one command (`spikes/aws/deploy_spike.sh up`) once you have an account. WP1–WP9 have since been
+built on these results (TASKS_DONE.md).
 
 ---
 
@@ -134,4 +135,6 @@ sends tokens in `X-Sbc-Authorization` (forwarded by CloudFront, read first by th
   - `Init Duration` from the `REPORT` lines;
   - first-request latency.
 - [ ] Then `spikes/aws/deploy_spike.sh destroy`.
-- [ ] If the AWS checks pass, start WP1 (configuration).
+
+WP1–WP9 went ahead on the local results, so this run no longer gates anything. It is still a cheap check of
+streaming through CloudFront before the first real deploy (TODO.md §2.2), which exercises the same path.

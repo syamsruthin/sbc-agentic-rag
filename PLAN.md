@@ -35,6 +35,7 @@ Both answer questions about Elevance Health SBCs and compare plans. Every number
   - Langfuse becomes optional; CloudWatch covers operations. Cloudflare Turnstile and OpenRouter stay (external). Amazon Bedrock is a later option (BAA, §1.4).
   - Sections 0, 1.3, 2.2, 3.1, 3.5, 4, 7, 8, 9, 10, 12 and Appendix B are updated. Models, the bundle, retrieval, the verifier and the evals are unchanged.
 - **SBC links for preview-only documents (approved 2026-11-02).** 1,383 SBCs (1,071 Small Group, 310 Individual) are served only through the Anthem portal's preview form, so they have no public PDF URL to cite. The API gets an endpoint, `GET /sbc/{plan_key}.pdf`, that fetches the PDF from the portal on request (the same preview call `sbc-portal download` uses), checks its sha256 against the bundle's manifest, caches it briefly and streams it. Citations of those plans link there with `#page=N`. The insurer stays the source and no PDFs are hosted. Section 3.7 is updated.
+- **Plan resolution order (approved 2026-11-02).** UI selections, including the answer to a clarifying question, are applied before IDs in the message, so a selection settles an ID or name that matches several plans. Before this, answering "which ZZ01?" with a plan asked the same question again. Section 3.4.1 is updated.
 
 ---
 
@@ -198,7 +199,7 @@ None of these block the plan; each has a default.
 
 ```mermaid
 flowchart LR
-  subgraph OFF["Offline build (GitHub Actions, weekly + on demand)"]
+  subgraph OFF["Offline build (ECS Fargate Spot task, on demand)"]
     PORTAL["sbc_portal.py<br/>catalog + download"] --> PDF[("SBC PDFs")]
     PDF --> CONV["sbc_to_markdown.py<br/>pdfplumber, template-aware"]
     CONV --> VER["verify_markdown.py<br/>poppler cross-check"]
@@ -345,7 +346,7 @@ Limitations, Exceptions, & Other Important Information: Copayment waived if admi
 - **Incremental build.** Diff the manifest by `pdf_sha256`, then reconvert, reverify and re-extract only changed SBCs. Embeddings are cached by `(chunk_hash, embedding_model)`, so only new chunk text is sent to OpenRouter. The cache is archived with each bundle, so any bundle can be rebuilt without re-embedding. A full rebuild runs on any `grammar_version` or converter change.
 - **The search index is versioned with the bundle, because it is inside it.** After embedding, the build validates the index (vector count, the plan-filter test) before any deploy. Code, facts and search index ship in one image, so they always match and roll back together.
 - **Diff report** for sign-off: plans added, removed or changed, with field-level diffs such as "BTCU8 oop_limit changed: … → …". Releases need human approval when more than 2% of plans change or any plan is removed.
-- **Mid-year updates.** A weekly GitHub Actions cron runs `catalog` → `download` → `manifest` → build. If nothing changed, it skips the release.
+- **Mid-year updates.** The build runs `catalog` → `download` → `manifest` → build, and skips the release if nothing changed. Under revision 3 it is an on-demand ECS Fargate Spot task (`scripts/aws/run-build.sh`); a weekly schedule is a production option and stays off for the portfolio deployment.
 
 ### 3.3 Dual data paths and how they reconcile
 
@@ -371,8 +372,8 @@ Limitations, Exceptions, & Other Important Information: Copayment waived if admi
 
 **3.4.1 Plan resolution.** This is the most important retrieval step, because a wrong plan is the worst failure. It runs in code; the LLM only proposes.
 
-1. **Explicit IDs win.** Regexes for contract code (`[0-9A-Z]{4,5}`, checked against the catalog), HIOS (`\d{5}[A-Z]{2}\d{7}(-\d{2})?`) and `sbc_id` (`\d{12}`).
-2. **UI-selected plans** (picker chips) are authoritative for the turn.
+1. **UI-selected plans** (picker chips, or the user's answer to a clarifying question) are authoritative for the turn. An ID or name in the message that matches several plans is settled when one of them is selected, so answering "which ZZ01?" doesn't ask again.
+2. **Explicit IDs.** Regexes for contract code (`[0-9A-Z]{4,5}`, checked against the catalog), HIOS (`\d{5}[A-Z]{2}\d{7}(-\d{2})?`) and `sbc_id` (`\d{12}`), each looked up exactly. An ID that matches one plan resolves it; plans named by ID and plans selected in the UI are all used.
 3. **Session references** ("the silver one", "the second plan", "that HMO") are resolved against the session shortlist. Haiku emits a reference spec such as `{metal: Silver}` or `{ordinal: 2}`, and code matches attributes. Exactly one match resolves; zero or several triggers a clarification.
 4. **Name search** within bot scope and any known filters (state, market) uses FTS5 trigram over plan names and aliases. One candidate resolves. Several candidates produce `ask_clarifying_question` with up to 5 options showing the attributes that tell them apart (contract code, network, exchange, deductible, metal, coverage period), plus "open plan picker".
 5. **Never guess.** No similarity threshold is ever allowed to replace a clarification.
@@ -826,7 +827,7 @@ Alerts go out by email plus a Slack webhook.
    - **Fix:** add a regression item to the golden set and patch.
    - **Verify:** full gating run, then un-quarantine.
    - Write a postmortem within 5 business days.
-2. **Bad deploy.** Move the `live` alias back to the previous Lambda version (`aws lambda update-alias --function-name sbc-api --name live --function-version <prev>`, under 1 minute). Code, facts and search index roll back together.
+2. **Bad deploy.** Move the `live` alias back to the previous Lambda version (`aws lambda update-alias --function-name sbc-<env>-api --name live --function-version <prev>`, under 1 minute), then deploy the previous image tag through the CDK, because CloudFormation owns the alias (docs/aws/RUNBOOK.md §5). Code, facts and search index roll back together.
 3. **OpenRouter outage.** Fallback models engage automatically. If all fail, flip the bot to deterministic mode and post a status banner.
 4. **Cost spike.** Check traces and logs for abuse. Tighten the limits (config), lower the global daily cap, require Turnstile on every public message, lower the per-key credit limit; as a last resort, turn LLM answers off with the kill switch.
 5. **DynamoDB errors.** The API fails closed (turns error rather than run unmetered). Check the AWS Health Dashboard and throttling metrics; nothing needs restoring for a transient error.
@@ -977,7 +978,7 @@ These are calendar estimates for about 1.5 engineers.
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | **Table-parsing error** puts a wrong value in a cell | Low (dual-engine verification today) | Critical | Verifier is a blocking gate; REVIEW allowlist; verbatim round-trip; PUF oracle; quarantine kill switch; wrong-number button → P1 |
-| **Wrong-plan retrieval or resolution** | Medium (1,263 ambiguous names) | Critical | IDs and UI selection first; clarify, never guess; plan filter in SQL with an assertion; plan name + contract + year in every answer header; gate of 0 confident wrong resolutions |
+| **Wrong-plan retrieval or resolution** | Medium (1,263 ambiguous names) | Critical | UI selection and IDs first; clarify, never guess; plan filter in SQL with an assertion; plan name + contract + year in every answer header; gate of 0 confident wrong resolutions |
 | **Numeric hallucination** | Medium for a typical RAG system; low here | Critical | Fact placeholders (the LLM can't type numbers); number firewall; calculator-only arithmetic; template fallback; 100% EM gate |
 | Cost-string parse error used in a calculation | Low | High | Re-render check; `unparsed` → calculator refuses; snapshot review of all 185 patterns |
 | Omitted limitation (for example "copay waived if admitted", visit caps) | Medium | High | Limitations travel with facts; the verifier requires them; dedicated golden items |

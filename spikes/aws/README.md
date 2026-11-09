@@ -3,8 +3,9 @@
 Throwaway experiments for the three risks named in [MIGRATION_PLAN.md §13](../../docs/aws/MIGRATION_PLAN.md).
 Results are in [docs/aws/SPIKES.md](../../docs/aws/SPIKES.md).
 
-Nothing here is imported by the application or collected by the test suite. When the real work packages
-land (WP2, WP4, WP8, WP9), this folder can be deleted.
+Nothing here is imported by the application or collected by the test suite. The real work packages
+(WP2, WP4, WP8, WP9) have landed, so the folder can be deleted once the AWS run of spikes 2 and 3 is done or
+the first real deploy has shown the same thing.
 
 | File | Spike |
 |---|---|

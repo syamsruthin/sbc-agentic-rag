@@ -2,7 +2,7 @@
 
 Everything finished so far on the AWS deployment track (PLAN.md revision 3), on branch `main_AWS`.
 
-- Status as of **2026-11-05**, after WP9 and the port of the generation eval.
+- Status as of **2026-11-10**: after WP9 and the port of the generation eval (2026-11-05), and a doc audit (2026-11-10). No code has changed since 2026-11-05.
 - What's left is in [TODO.md](TODO.md).
 - The plan these tasks follow is [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 - The analysis behind it is [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md).
@@ -27,6 +27,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | WP8 | Containers and the local stack | `a2ec16b` | 2026-11-05 | API and build images, compose with DynamoDB Local, smoke test, CI image job, RUNBOOK.md; 5 tests |
 | B | Branch policy: `main_AWS` not merged into `main` | `8adb851` | 2026-11-05 | PR #14 closed unmerged; CI runs on pushes to `main_AWS` |
 | WP9 | CDK stacks, operator scripts | `98a021a` | 2026-11-05 | `SbcFoundation` + `SbcApp`, 12 template tests, 8 scripts, CI `cdk` job; `X-Sbc-Authorization` fix; 4 more tests |
+| D2 | Doc audit against the code | this commit | 2026-11-10 | PLAN.md plan-resolution order (the change in PR #13), README status, MIGRATION_PLAN WP10/WP11/WP13 and §6.5, §8–§11 brought in line with WP9 as built, TODO and SPIKES notes |
 | P | Port of the Phase 1 generation eval from `feat/phase-1-generation-eval` | `b69e3f8`, `e912d3a`, `fb21e97`; docs `25bbaca` and the follow-up | 2026-11-05 | `find_plans` list discovery, plan-reference and fast-path fixes, `evals/harness/generation.py`; 13 more tests |
 
 **Health at the time of writing:**

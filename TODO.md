@@ -113,7 +113,8 @@ work packages are tracked in detail in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_D
       check and four adversarial golden questions: about $0.003 per fast-path turn, $0.02-0.04 per agent turn
 - [x] Generation eval harness (`evals/harness/generation.py`): golden items through the graph, hard gates
       (exact match, ungrounded numbers, plan filter, wrong plan, errors), behavior and tool selection
-- [ ] Full Phase 1 gating run (353 items): blocked by the OpenRouter key's $5 total limit
+- [ ] Full Phase 1 gating run (353 items): blocked by the OpenRouter key's $5 total limit, which is used up
+      (checked 2026-11-10); no live model call works until it is raised (docs/aws/TODO.md §2.1)
 - [ ] Recorded model responses for replaying the generation eval in CI without keys
 - [ ] LLM judge for faithfulness and citation accuracy, after the calibration set (PLAN.md 5.4)
 - [x] FastAPI with SSE (`sbc_api`, AWS WP4): `POST /api/{bot}/chat` and `/chat/choose` stream status events and

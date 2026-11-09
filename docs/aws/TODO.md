@@ -1,7 +1,7 @@
 # AWS track: to do
 
-Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-05**, after WP9 and the
-port of the generation eval. Finished
+Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-10**: after WP9 and the
+port of the generation eval (2026-11-05), and a doc audit against the code (2026-11-10). Finished
 work is in [TASKS_DONE.md](TASKS_DONE.md); each work package's full spec is in [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 
 All work goes to `main_AWS`, the long-lived AWS branch; it isn't merged into `main`.
@@ -21,7 +21,9 @@ done in code here.
 6. **WP13:** portfolio readiness and docs.
 7. **WP14 (later):** Bedrock.
 
-👤 items 2.1–2.3 can happen any time before the first deploy, and are best done before WP9.
+👤 items 2.1–2.3 come before the first deploy (2.4). Start with the OpenRouter keys: as of 2026-11-10 the
+broker key has used all of its $5 limit, so every live model call fails until the limit is raised or new keys
+exist.
 
 ---
 
@@ -33,9 +35,10 @@ done in code here.
 - [ ] Create an IAM Identity Center admin user with MFA. Don't create long-lived access keys.
 - [ ] AWS Budgets at $5 and $10 a month with email alerts, plus Cost Anomaly Detection. These are free. WP9 also creates them in code; this is the manual safety net.
 - [ ] Check Service Quotas → Lambda → "Concurrent executions" in `us-east-1`. New accounts can start low. Request 1,000 if it's under 100.
-- [ ] `cdk bootstrap aws://<account>/us-east-1`, needed for the spike run and WP9.
-- [ ] **OpenRouter key credit limits:** public key $10 a month, broker key $15 a month, before any public URL exists. This is the hard LLM cost cap.
-- [ ] A Cloudflare Turnstile widget. Note its site key and secret; its allowed hostnames get the CloudFront domain after WP9.
+- [ ] Install AWS CLI v2 and have Docker running with buildx (arm64) on the machine that deploys.
+- [ ] `cdk bootstrap aws://<account>/us-east-1`, needed for the spike run and the first deploy (`scripts/aws/bootstrap.sh` does it).
+- [ ] **OpenRouter keys and credit limits:** a broker key at $15 a month and a separate public key at $10 a month (`OPENROUTER_API_KEY_PUBLIC`; the local `.env` has only the broker key), before any public URL exists. This is the hard LLM cost cap. The current broker key is spent ($5.09 of $5, checked 2026-11-10), so raise its limit or replace it first.
+- [ ] A Cloudflare Turnstile widget. Note its site key and secret; its allowed hostnames get the CloudFront domain after the first deploy.
 - [ ] Decide whether Langfuse Cloud Hobby is wanted (optional). If so, create a project and keep its keys.
 
 ### 2.2 Spikes 2 and 3 on AWS (costs cents)
@@ -43,6 +46,19 @@ done in code here.
 - [ ] `spikes/aws/deploy_spike.sh up`: deploys the throwaway stack and checks SSE through CloudFront, Function URL, origin access control and the Lambda Web Adapter (pass: status events about 1 s apart and `sha256_header_ok: true`).
 - [ ] Wait at least 10 minutes, then `spikes/aws/deploy_spike.sh check`. Record the cold start (`Init Duration` in the REPORT lines) and the first-request latency in `docs/aws/SPIKES.md`.
 - [ ] `spikes/aws/deploy_spike.sh destroy`.
+
+### 2.3 Data and live checks
+
+- [ ] **Rebuild the real bundle as `2027.2`** where the corpus lives. Almost all embeddings come from the cache. The local `2027.1` bundle has 9,690 plans and the manifest lists 9,692, so chunks new with the 2 added SBCs are embedded (cents; needs OpenRouter credit):
+  ```bash
+  uv run sbc-build-bundle --version 2027.2 --release      # needs data/catalog/sbc_manifest_2027.csv
+  uv run sbc-embed-bundle bundles/facts-2027.2.sqlite
+  ```
+  Check the printed counts: about 1,383 preview-only plans, and 0 missing.
+- [ ] Run the retrieval eval on `2027.2`: `python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup full`. Expect the 2027.1 numbers (recall@5 ≈ 0.920).
+- [ ] A live answer through the API with your OpenRouter key: `APP_ENV=local FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite uv run uvicorn --factory sbc_api.app:create_app --port 8080`, then the README's `curl` example. Also `sbc-ask "What's the deductible on BTCU8?"`.
+- [ ] A live PDF proxy check: `curl -o x.pdf 'localhost:8080/api/sbc/<a preview-only plan_key>.pdf'` returns a PDF (the API checks its sha256 itself).
+- [ ] Upload the bundle and embedding cache to S3 once the foundation stack has created the data bucket (`scripts/aws/upload-bundle.sh`; §2.4).
 
 ### 2.4 The first deploy (RUNBOOK §4)
 
@@ -54,19 +70,6 @@ done in code here.
 - [ ] `scripts/aws/deploy.sh app <api-tag> <build-tag>`; `seed-users.sh`; redeploy with `DEMO_USER_IDS`; `rotate-demo-password.sh`; add the CloudFront host to Turnstile.
 - [ ] Check `https://<site>/api/healthz?deep=1` (`"stores": "dynamodb"`, both bots `ready`), a public session, a broker sign-in token on `/api/broker/plans/search` sent as `X-Sbc-Authorization: Bearer …`, and a streamed chat turn through CloudFront.
 - [ ] Note any fixes the scripts needed (none has run against AWS yet) and update RUNBOOK §4.
-
-### 2.3 Data and live checks
-
-- [ ] **Rebuild the real bundle as `2027.2`** where the corpus lives. The embeddings come from the cache, so nothing is re-embedded:
-  ```bash
-  uv run sbc-build-bundle --version 2027.2 --release      # needs data/catalog/sbc_manifest_2027.csv
-  uv run sbc-embed-bundle bundles/facts-2027.2.sqlite
-  ```
-  Check the printed counts: about 1,383 preview-only plans, and 0 missing.
-- [ ] Run the retrieval eval on `2027.2`: `python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup full`. Expect the 2027.1 numbers (recall@5 ≈ 0.920).
-- [ ] A live answer through the API with your OpenRouter key: `APP_ENV=local FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite uv run uvicorn --factory sbc_api.app:create_app --port 8080`, then the README's `curl` example. Also `sbc-ask "What's the deductible on BTCU8?"`.
-- [ ] A live PDF proxy check: `curl -o x.pdf 'localhost:8080/api/sbc/<a preview-only plan_key>.pdf'` returns a PDF (the API checks its sha256 itself).
-- [ ] Upload the bundle and embedding cache to S3 once WP9 has created the data bucket (`scripts/aws/upload-bundle.sh`, WP9).
 
 ---
 
@@ -140,7 +143,7 @@ Open: the first real deploy (§2.4).
       reuse `generation.py`'s scoring (SSE events → `Reply`); without the trace, it scores behavior, exact
       match, plan filter and wrong-plan answers only (MIGRATION_PLAN WP13).
 - [ ] The interviewer click-through on a cold system: landing → Shopper question → Broker sign-in → comparison → PDF citation (including a preview-only plan).
-- [ ] **`docs/aws/RUNBOOK.md`:** deploy, rollback, rotate secrets and the demo password, rebuild data, check costs, teardown.
+- [ ] **`docs/aws/RUNBOOK.md`:** sections 1–7 exist. Left: fixes from the first deploy (§4), the Lambda measurements (§2) and the full teardown (§8).
 - [ ] README "Live demo" section with the URL and demo-login instructions.
 - [ ] Final pass on PLAN.md, TODO.md and `docs/` (revision 3 is already applied).
 - **Done when:** the click-through works with the first answer in under 10 s, and the runbook is complete.
@@ -191,8 +194,8 @@ The AWS track hosts the app; these are features and evaluations the application 
 - [ ] **Phase 1:**
   - [x] Generation eval harness on golden 0.2.0 (`evals/harness/generation.py`, ported from
         `feat/phase-1-generation-eval`; TASKS_DONE.md, P).
-  - [ ] 👤 The full gating run (353 items, about $5): blocked by the OpenRouter key's $5 total limit. Raise the
-        limit or use a new key, then `python -m evals.harness.generation --bundle … --golden evals/golden/0.2.0`.
+  - [ ] 👤 The full gating run (353 items, about $5): blocked by the OpenRouter key's $5 total limit, which is
+        used up (§2.1). Raise the limit or use a new key, then `python -m evals.harness.generation --bundle … --golden evals/golden/0.2.0`.
   - [ ] Recorded model responses, so CI can replay the generation eval without keys.
   - [ ] The LLM judge for faithfulness and citation accuracy, after the calibration set (PLAN.md 5.4).
   - [ ] Model bake-off report (Haiku 5.5 vs Sonnet 5.5 vs Opus 5.5, per bot and per path; the cheapest model that passes every hard gate).

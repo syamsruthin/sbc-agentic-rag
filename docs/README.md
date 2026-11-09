@@ -12,7 +12,8 @@
   - [DEPLOYMENT_ANALYSIS.md](aws/DEPLOYMENT_ANALYSIS.md): architecture, costs, free-tier fit, portfolio mode.
   - [MIGRATION_PLAN.md](aws/MIGRATION_PLAN.md): work packages WP0–WP14 with specs and acceptance checks.
   - [SPIKES.md](aws/SPIKES.md): results of the three de-risking spikes.
-  - [RUNBOOK.md](aws/RUNBOOK.md): running, building and operating it (local stack, images, offline build).
+  - [RUNBOOK.md](aws/RUNBOOK.md): running, building and operating it (local stack, images, offline build, first
+    deployment, rollback, secrets, costs and alarms).
   - [TASKS_DONE.md](aws/TASKS_DONE.md) and [TODO.md](aws/TODO.md): what is finished and what is left.
 - `reviews/`: human review sheets and sign-offs (cost grammar, converter fix, corpus snapshot).
 - `adr/`: architecture decision records, one per major decision (added as decisions are revisited).

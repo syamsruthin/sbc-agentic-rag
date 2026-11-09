@@ -6,9 +6,10 @@ Agentic RAG chatbots that answer questions about U.S. health plans and compare t
 Summary of Benefits and Coverage (SBC). Every number in an answer is the SBC's own wording, cited to the
 plan, section and page.
 
-> **Status: early implementation.** The SBC ingestion pipeline works today: 9,690 plan-year-2027 SBCs are
-> converted to Markdown and independently verified. The chatbots are being built in phases; see
-> [Status and roadmap](#status-and-roadmap). The full design is in [PLAN.md](PLAN.md).
+> **Status: backend built, not yet deployed.** The SBC pipeline (9,692 plan-year-2027 SBCs converted to
+> Markdown and independently verified), the facts bundle, the agent and the API work today and run locally.
+> The web apps and the first AWS deployment are left; see [Status and roadmap](#status-and-roadmap). The full
+> design is in [PLAN.md](PLAN.md).
 
 ## Two assistants, one core
 
@@ -27,7 +28,7 @@ tools, tone, limits and retention, and the code enforces it.
    the server.
 2. **Classify:** a small model works out the intent, plans, services and network tier, and rewrites vague
    questions into a precise request.
-3. **Resolve plans in code:** IDs, then UI selection, then earlier turns, then name search. If more than one
+3. **Resolve plans in code:** UI selection, then IDs, then earlier turns, then name search. If more than one
    plan matches, it asks; it never guesses.
 4. **Route:** simple lookups read exact values from a facts database (fast path). Comparisons, cost
    estimates and coverage checks go through a tool-using agent loop.
@@ -35,14 +36,13 @@ tools, tone, limits and retention, and the code enforces it.
 6. **Verify:** code rejects any number the model typed and checks citations and required SBC notes.
 7. **Render:** the exact SBC wording goes in, with citations, a plan header and a disclaimer.
 
-Arithmetic goes through a deterministic calculator, and "not mentioned in the SBC" is never presented as
-"not covered".
+Arithmetic will go through a deterministic calculator (`estimate_cost`, planned for Phase 2), and "not mentioned in the SBC" is never presented as "not covered".
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph OFF["Offline build (GitHub Actions, weekly + on demand)"]
+  subgraph OFF["Offline build (ECS Fargate Spot task, on demand)"]
     PORTAL["sbc-portal<br/>catalog + download"] --> PDF[("SBC PDFs")]
     PDF --> CONV["sbc-to-markdown<br/>pdfplumber, template-aware"]
     CONV --> VER["sbc-verify<br/>poppler cross-check"]
@@ -66,7 +66,7 @@ flowchart LR
   subgraph RUN["API on AWS Lambda (FastAPI, response streaming)"]
     EDGE["Edge layer<br/>auth, Turnstile, rate limit,<br/>PII redaction, bot profile"]
     AGENT["LangGraph agent"]
-    TOOLS["Tools<br/>find_plans, get_plan_facts,<br/>search_sbc_text, compare_plans,<br/>estimate_cost, ask_clarifying_question"]
+    TOOLS["Tools<br/>find_plans, get_plan_facts,<br/>search_sbc_text, compare_plans,<br/>ask_clarifying_question,<br/>estimate_cost (Phase 2)"]
     VERIFY["Verifier<br/>number + citation firewall"]
     IDX[("Facts bundle vN<br/>facts + search index,<br/>baked into image, read-only")]
   end
@@ -110,11 +110,11 @@ packages/      Python workspace packages (imported as sbc_<name>)
   sbc_index/     facts bundle builder, with its BM25 and embedding search index
   core/          domain types, config loader, facts and search readers, OpenRouter gateway
   retrieval/     plan resolver, query expansion, text-search pipeline
-  tools/         agent tools, cost calculator
+  tools/         agent tools (the cost calculator comes in Phase 2)
   agent/         LangGraph graph, prompts, verifier, renderer
   aws/           AWS adapters (sbc_aws): SSM secrets, DynamoDB checkpointer and stores, S3 PDF cache
   api/           FastAPI app: SSE chat, auth, guards, plan picker, PDF proxy, admin
-apps/          broker/, shopper/, chat-ui/ (React)
+apps/          landing/, broker/, shopper/, chat-ui/ (React; not built yet, AWS WP10)
 evals/         golden datasets, judge calibration, harness
 tests/         unit/, integration/, contract/, load/
 infra/         Docker images and compose (docker/), AWS CDK app (cdk/: SbcFoundation + SbcApp stacks)
@@ -204,7 +204,7 @@ if any secret it needs is missing.
 |---|---|
 | Repository setup and public-repo hygiene | Done |
 | Scaffolding: workspace, config, lint, types, tests, CI | Done (PR #1) |
-| Phase 0: extraction, facts bundle with search index, golden dataset | Eval bar met; human sign-offs left |
+| Phase 0: extraction, facts bundle with search index, golden dataset | Done: eval bar met and human sign-offs recorded (2026-11-02); taxonomy v2 synonyms left |
 | Phase 1: Broker Assistant MVP (internal alpha) | In progress: tools, answer path, agent graph, the generation eval harness and the API (SSE chat, auth, guards, plan picker, PDF proxy) done; frontends, deployment, the full gating run and the model bake-off left |
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |

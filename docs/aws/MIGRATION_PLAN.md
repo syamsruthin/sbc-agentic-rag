@@ -150,7 +150,7 @@ infra/
     pyproject.toml, uv.lock, cdk.json, app.py
     sbc_infra/
       config.py               # account, region, names, demo windows, limits
-      stack.py                # SbcPortfolioStack
+      stack.py                # SbcFoundation + SbcApp (as built, WP9)
       constructs/{data,auth,api,web,build,ops,cicd}.py
     tests/test_stack.py       # aws_cdk.assertions template tests
 scripts/aws/                  # WP9/WP13: helper scripts (bash, aws CLI)
@@ -398,7 +398,7 @@ def stream(self, thread_id, message=None, *, resume=None, ui_selected=(), user_s
 - **Clarify → choose:** resumes on a new app instance that shares only the checkpointer (the Lambda case).
 - **Deep health:** opens the bundle and reports `bundle_version`.
 
-**Done when** `uvicorn sbc_api.app:app` answers the `sbc-ask` example questions over SSE locally, with in-memory ports and a real OpenRouter key.
+**Done when** `uvicorn --factory sbc_api.app:create_app` answers the `sbc-ask` example questions over SSE locally, with in-memory ports and a real OpenRouter key.
 
 ### WP5: Authentication and authorization
 
@@ -576,7 +576,7 @@ ENV PATH=/app/.venv/bin:$PATH PORT=8080 \
     AWS_LWA_INVOKE_MODE=response_stream AWS_LWA_READINESS_CHECK_PATH=/api/healthz \
     FACTS_BUNDLE_PATH=/opt/bundle/facts.sqlite
 USER app
-CMD ["uvicorn", "sbc_api.app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["uvicorn", "--factory", "sbc_api.app:create_app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1", "--no-access-log"]
 ```
 
 - One uvicorn worker. Lambda sends one request at a time to each instance; the sync graph runs in FastAPI's thread pool.
@@ -654,9 +654,10 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 
 **Files:** `apps/**`, plus a `frontend` job in CI.
 
-- **Stack:** React + Vite + TypeScript + Tailwind, per PLAN.md §4. There are four apps (`landing`, `broker`, `shopper`) plus the shared `chat-ui` package. Base paths are `/`, `/broker/` and `/shopper/`.
+- **Stack:** React + Vite + TypeScript + Tailwind, per PLAN.md §4. There are three apps (`landing`, `broker`, `shopper`) plus the shared `chat-ui` package. Base paths are `/`, `/broker/` and `/shopper/`.
 - **API client (`chat-ui`):**
-  - **SSE over `fetch`:** `EventSource` can't POST. Read `response.body` with a `TextDecoder` and parse `event:` and `data:` lines; handle `status`, `clarify`, `answer`, `error` and `done`, with reconnect disabled.
+  - **SSE over `fetch`:** `EventSource` can't POST. Read `response.body` with a `TextDecoder` and parse `event:` and `data:` lines; handle `thread`, `status`, `clarify`, `answer`, `limit`, `error` and `done` (§6.2), with reconnect disabled. A refused turn is a `limit` event with HTTP 200, not a 429 (WP6).
+  - **Bearer tokens go in `X-Sbc-Authorization: Bearer …`, never in `Authorization`:** CloudFront's signing replaces `Authorization` (WP9, risk 3a).
   - **The body-hash header on every POST or PUT:** `x-amz-content-sha256: hex(sha256(body))`, computed with `crypto.subtle.digest`. CloudFront signs requests to the Lambda URL with OAC, which needs it.
   - **Warm on load:** `fetch('/api/healthz')` when each app starts (§17.3 of the analysis).
 - **Broker app:**
@@ -677,26 +678,29 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 
 ### WP11: CI/CD
 
+> **Status: partly done.** The `image` job (WP8) and the `cdk` job (WP9) are in `ci.yml`. Left: the `frontend` job, `deploy-aws.yml` and `build-data.yml`. The deploy steps below were rewritten after WP9, because CloudFormation owns the `live` alias.
+
 **`ci.yml` additions:**
 
-- `uv run pytest tests/unit` now includes `tests/unit/aws` and `tests/unit/api` (moto and respx; no AWS credentials).
-- A `cdk` job: `uv --project infra/cdk run pytest` and `cdk synth`.
-- A `frontend` job: `npm ci`, `npm run lint`, `npm run build` for each app.
-- `lint-imports` covers `sbc_aws`.
+- `uv run pytest tests/unit` includes `tests/unit/aws` and `tests/unit/api` (moto and respx; no AWS credentials). Done.
+- A `cdk` job: the template tests, `cdk synth` and shellcheck. Done (WP9).
+- An `image` job: the API image on the fixture bundle, then `smoke.sh`. Done (WP8).
+- A `frontend` job: `npm ci`, `npm run lint`, `npm run build` for each app. Left (with WP10).
+- `lint-imports` covers `sbc_aws`. Done.
 
 **`deploy-aws.yml`** (on push to `main_AWS` and manually; `permissions: id-token: write, contents: read`):
 
-1. `aws-actions/configure-aws-credentials` with `role-to-assume` set to `sbc-github-deploy` (pinned by SHA, like the existing actions).
-2. Download `bundles/<version>/facts-<version>.sqlite` from S3 (the layout the build image writes; the version is pinned in `infra/cdk/sbc_infra/config.py`).
+1. `aws-actions/configure-aws-credentials` with `role-to-assume` set to `sbc-<env>-github-deploy` (pinned by SHA, like the existing actions).
+2. Download `bundles/<version>/facts-<version>.sqlite` from S3 (the layout the build image writes; the workflow pins the bundle version).
 3. `docker buildx build --platform linux/arm64`, and push to ECR with the tag `<git-sha>-<bundle-version>` (PLAN.md §9.2).
-4. `aws lambda update-function-code`, `wait function-updated` and `publish-version`.
-5. Smoke-test the new version directly with `aws lambda invoke` on `/api/healthz?deep=1`, plus one fast-path question against the fixture plan.
-6. `update-alias live --function-version N`. Optional canary: `--routing-config AdditionalVersionWeights={"<N>":0.1}` for 10 minutes, then 100%.
+4. **Deploy through the CDK:** `cdk deploy SbcApp-<env> -c apiImageTag=<tag>`. CloudFormation publishes the new version and moves `live`; raw `update-function-code` or `update-alias` calls would be undone by the next deploy. **The deploy role needs more than it has today:** `sts:AssumeRole` on the CDK bootstrap roles (`cdk-*-deploy-role` and `cdk-*-file-publishing-role`), to be added to `infra/cdk/sbc_infra/constructs/cicd.py`.
+5. Smoke-test through CloudFront: `/api/healthz?deep=1`, plus one fast-path question.
+6. Optional canary: a gradual alias shift needs `aws_codedeploy` in the stack; decide whether it's worth it for a portfolio deploy.
 7. Build the SPAs with the CDK outputs; `aws s3 sync --delete`; `cloudfront create-invalidation --paths '/*'`.
 
 **`build-data.yml`** (`workflow_dispatch` with inputs `version` and `full|incremental`): runs `scripts/aws/run-build.sh` and waits for the task to stop. The result is uploaded by the task itself.
 
-**Done when** a push to `main_AWS` deploys in under 10 minutes, and moving the alias back rolls back in under 1 minute.
+**Done when** a push to `main_AWS` deploys in under 10 minutes, and an emergency alias move rolls back in under 1 minute (followed by a deploy of the wanted tag; RUNBOOK §5).
 
 ### WP12: Observability
 
@@ -709,18 +713,19 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 
 ### WP13: Portfolio readiness and documentation
 
-- `scripts/aws/seed-users.sh`: creates the `admin` user (TOTP enrollment) and the `demo-broker` user (no MFA, `broker` group); writes the demo user's `sub` to the `SBC_PORTFOLIO__DEMO_USER_IDS` Lambda environment variable through CDK context.
-- `scripts/aws/rotate-demo-password.sh`: generates a new demo password, sets it with `admin-set-user-password --permanent`, writes `/landing/demo.json` to the web bucket, and invalidates that path in CloudFront (decision D2).
+- `scripts/aws/seed-users.sh` and `scripts/aws/rotate-demo-password.sh` were written in WP9. Left here: running them against the deployed stack (RUNBOOK §4, steps 7–9).
+  - `seed-users.sh` creates the `admin` user (TOTP enrollment) and the `demo-broker` user (no MFA, `broker` group) and prints the demo user's `sub`; a redeploy with `DEMO_USER_IDS` sets `SBC_PORTFOLIO__DEMO_USER_IDS` through CDK context.
+  - `rotate-demo-password.sh` generates a new demo password, sets it with `admin-set-user-password --permanent`, writes `/landing/demo.json` to the web bucket, and invalidates that path in CloudFront (decision D2).
 - A check that the demo user's tokens **can't** change its password (`aws cognito-idp change-password` with a demo access token must fail).
-- OpenRouter key credit limits set ($10 public, $15 broker), recorded in the runbook.
+- OpenRouter key credit limits ($10 public, $15 broker): set before the first deploy, because the API is public from then on (TODO.md §2.1); here they are tested and recorded in the runbook.
 - **Measurements:** cold start, warm fast-path latency and agent-path latency.
 - **Deliberately hit** every cap: per-user, global, kill switch, OpenRouter key limit (with a $0.10 test key).
 - **Run** a golden-set subset against the deployed URL, e.g. 30 items from `evals/golden/0.2.0` through the API (a new thin adapter in `evals/harness/` that calls the HTTP API instead of the in-process graph). `evals/harness/generation.py` already takes the agent through a factory and scores its `Reply`, so the adapter can turn the SSE `answer`/`clarify` events into a `Reply` and reuse that scoring. The API doesn't send the turn's trace, so over HTTP only behavior, numeric exact match, plan filter and wrong-plan answers can be scored; ungrounded numbers, tool selection and cost stay with the in-process run.
 - **Docs:**
-  - `docs/aws/RUNBOOK.md`: deploy, rollback, rotate secrets, rebuild data, reset the demo password, check costs.
+  - `docs/aws/RUNBOOK.md`: sections 1–7 exist (WP8, WP9). Left: any fixes the first deploy needs in §4, the Lambda measurements in §2, and the full teardown in §8.
   - README: a "Live demo" section with the URL and demo-login instructions.
-  - `PLAN.md` and `TODO.md`: the AWS track and the approved deviations (§11).
-  - `docs/agent-graph.md`: `DynamoDBSaver` instead of `PostgresSaver`.
+  - `PLAN.md` and `TODO.md`: the AWS track and the approved deviations (§11) were applied as PLAN.md revision 3 on 2026-11-05; only a final pass is left.
+  - `docs/agent-graph.md`: `DynamoDBSaver` instead of `PostgresSaver`. Done (2026-11-05).
 
 **Done when** the interviewer click-through (landing → Shopper question → Broker sign-in → comparison → PDF citation) works on a cold system with the first answer in under 10 s, and the runbook is complete.
 
@@ -824,7 +829,7 @@ event: done      data: {}
 
 ### 6.5 IAM matrix
 
-The roles are the same as DEPLOYMENT_ANALYSIS.md §6.5: `sbc-api-exec`, `sbc-github-deploy`, `sbc-build-task`, `sbc-ecs-execution` and `sbc-scheduler`. The CDK tests in WP9 assert the two most important limits:
+The roles follow DEPLOYMENT_ANALYSIS.md §6.5: the API's execution role, the GitHub deploy role, the build task role, the ECS execution role and the scheduler role. As built (WP9), only the deploy role has a fixed name, `sbc-<env>-github-deploy`; CDK names the others. The CDK tests in WP9 assert the two most important limits:
 
 - the audit table allows `PutItem` only;
 - there are no `*` resources, except `logs:CreateLogGroup` where CDK needs it.
@@ -851,7 +856,7 @@ Each WP PR must keep `ruff`, `ruff format --check`, `mypy` (strict for `sbc_aws.
 
 ## 8. Local development without AWS
 
-- **No AWS at all:** `APP_ENV=local`, with in-memory ports (`sbc_api/memory.py`), an `InMemorySaver` checkpointer, a stubbed broker auth (a fixed local principal, only when `APP_ENV=local`) and Turnstile test keys. Run with `uv run uvicorn sbc_api.app:app --reload` and `npm run dev` in each app (a Vite proxy sends `/api` to `:8000`).
+- **No AWS at all:** `APP_ENV=local`, with in-memory ports (`sbc_api/memory.py`), an `InMemorySaver` checkpointer, a stubbed broker auth (a fixed local principal, only when `APP_ENV=local`) and Turnstile test keys. Run with `APP_ENV=local uv run uvicorn --factory sbc_api.app:create_app --port 8080` (add `--reload` while developing) and, once WP10 exists, `npm run dev` in each app (a Vite proxy sends `/api` to `:8080`).
 - **AWS-like:** `docker compose -f infra/docker/compose.yaml up` (DynamoDB Local plus the API), with the DynamoDB adapters and the real checkpointer. This catches key-schema and TTL mistakes before deploying.
 - **The `sbc-ask` CLI stays unchanged** for offline agent work.
 
@@ -859,32 +864,32 @@ Each WP PR must keep `ruff`, `ruff format --check`, `mypy` (strict for `sbc_aws.
 
 ## 9. First deployment runbook
 
-Run once, after WP1–WP9 are merged into `main_AWS`. Commands are listed for orientation; `docs/aws/RUNBOOK.md` (WP13) will hold the exact, tested versions.
+Run once. **The exact commands are in [RUNBOOK.md](RUNBOOK.md) §4**, which replaced the sketch that stood here (it assumed one stack with a placeholder image; WP9 built two stacks instead). In outline:
 
 1. **Account:**
    - Upgrade to the Paid plan (credits carry over).
    - Create an IAM Identity Center admin with MFA.
    - Set Budgets at $5 and $10.
    - Check the Lambda concurrency quota in Service Quotas.
-2. **Bootstrap:** run `cdk bootstrap aws://<account>/us-east-1` with the admin profile.
-3. **Secrets:** run `scripts/aws/put-secrets.sh dev`. It prompts for the OpenRouter keys (with credit limits already set at OpenRouter), the Turnstile secret, a generated `SESSION_JWT_SECRET` and the optional Langfuse keys.
-4. **Deploy the infrastructure:** `cdk deploy SbcPortfolioStack`. It creates the tables, buckets, Cognito, ECR, Lambda (placeholder image), CloudFront, ops and the OIDC role.
-5. **Data:** run `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite`, or trigger `build-data.yml` for a full rebuild on Fargate Spot.
-6. **App:** push to `main_AWS`; `deploy-aws.yml` builds and pushes the image, publishes and smoke-tests a version, moves `live`, and syncs the SPAs.
-7. **Users:** run `scripts/aws/seed-users.sh`. It creates the admin (enroll TOTP at first sign-in) and the `demo-broker` user, then sets the demo user ID through CDK context and redeploys.
+2. **Bootstrap:** `scripts/aws/bootstrap.sh` (quota check, `cdk bootstrap`).
+3. **Foundation:** `scripts/aws/deploy.sh foundation` creates `SbcFoundation-<env>`: the data bucket, tables, Cognito, ECR, budget and anomaly alerts.
+4. **Secrets:** `scripts/aws/put-secrets.sh` (the environment comes from `SBC_ENV`, default `dev`). It prompts for the OpenRouter keys (with credit limits already set at OpenRouter) and the Turnstile secret, and generates `SESSION_JWT_SECRET`.
+5. **Data:** `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite`.
+6. **Images and app:** `scripts/aws/push-images.sh 2027.2`, then `scripts/aws/deploy.sh app <api-tag> <build-tag>` creates `SbcApp-<env>`: Lambda, CloudFront, the build task, alarms and the OIDC deploy role. From WP11 on, a push to `main_AWS` does this through `deploy-aws.yml`.
+7. **Users:** `scripts/aws/seed-users.sh` creates the admin (enroll TOTP at first sign-in) and the `demo-broker` user; redeploy with `DEMO_USER_IDS`, then run `rotate-demo-password.sh`.
 8. **Turnstile:** add the CloudFront hostname to the Turnstile widget's allowed domains.
-9. **Verify:** the interviewer click-through, cap tests, a cold-start measurement and the golden subset (WP13). Record the results in the runbook.
+9. **Verify:** deep health first; then the interviewer click-through, cap tests, a cold-start measurement and the golden subset (WP13). Record the results in the runbook.
 
 ---
 
 ## 10. Rollback and teardown
 
-- **App rollback:** `aws lambda update-alias --function-name sbc-api --name live --function-version <previous>`. The image carries code, config and bundle, so all three roll back together (PLAN.md §9.4).
+- **App rollback:** deploy the previous image tag (`scripts/aws/deploy.sh app <previous-tag> <build-tag>`; ECR keeps the last 3). In an emergency, `aws lambda update-alias --function-name sbc-<env>-api --name live --function-version <previous>` works at once, but CloudFormation owns the alias, so follow it with a deploy of the wanted tag (RUNBOOK §5). The image carries code, config and bundle, so all three roll back together (PLAN.md §9.4).
 - **Frontend rollback:** redeploy the previous commit's SPA build (the `deploy-aws.yml` workflow-dispatch input `ref`).
 - **Infrastructure rollback:** CloudFormation rolls back failed updates automatically; data resources use `RETAIN`.
 - **Pause everything without deleting:** set the kill switch (LLM off) for both bots, or set the Lambda reserved concurrency to 0. Either way the AWS cost stays at storage cents.
 - **Teardown after the portfolio period:**
-  1. `cdk destroy`;
+  1. `cdk destroy SbcApp-<env>`, then `SbcFoundation-<env>`;
   2. then manually empty and delete the retained S3 buckets and DynamoDB tables;
   3. delete the ECR images and the SSM parameters;
   4. revoke the OpenRouter keys.
@@ -893,7 +898,7 @@ Run once, after WP1–WP9 are merged into `main_AWS`. Commands are listed for or
 
 ## 11. Deviations from PLAN.md to approve
 
-These change approved PLAN.md decisions. They are recorded here, and PLAN.md is updated in WP13 after you approve them.
+These change approved PLAN.md decisions. **Status: approved and applied** as PLAN.md revision 3 on 2026-11-05 (TASKS_DONE.md, D).
 
 | PLAN.md (approved) | AWS track | Reason |
 |---|---|---|
@@ -925,7 +930,7 @@ The PLAN.md decisions on models, the bundle, retrieval, the verifier and the eva
 | 4 | Cold start with a large image | Presidio and spaCy are deferred (D3), so the launch image has no NER model. Measure in WP8; warm on load + optional warmer (WP9). Re-measure when Presidio is added later **Status: measured locally** at 2.1–2.3 s from container start to ready (spike 3); the Lambda number needs the AWS run. |
 | 5 | The PDF proxy depends on the portal's preview form and on fields missing from the bundle | WP3 adds the fields; WP7 has a hash check and a graceful fallback link. Find out whether the portal rate-limits AWS IPs **Status: done in code** (WP3 adds the fields, WP7 the proxy, with a field-for-field test against the ingest form). Still open: rebuilding the real bundle `2027.2` and a live portal check. |
 | 6 | Shared demo-broker history across interviewers | Short TTL (24 h) + listing by browser-held thread IDs for the demo user **Status: done** (WP6: the demo account has its own checkpointer with a 24 h TTL, and `GET /api/broker/threads` returns none for it). |
-| 7 | Public URL abuse | OpenRouter key credit limits (hard), global cap, per-session and per-IP limits, Turnstile, kill switch (WP6, WP13) **Status: done in code** (WP6 limits, cap, kill switch; WP5 Turnstile). The OpenRouter key limits are set in WP13. |
+| 7 | Public URL abuse | OpenRouter key credit limits (hard), global cap, per-session and per-IP limits, Turnstile, kill switch (WP6, WP13) **Status: done in code** (WP6 limits, cap, kill switch; WP5 Turnstile). The OpenRouter key limits are set before the first deploy (TODO.md §2.1) and tested in WP13. |
 | 8 | New-account limits (Lambda concurrency, Free-plan restrictions) | Upgrade to the Paid plan; check quotas in runbook step 1 |
 | 9 | Changing `EnvSettings` diverges `main_AWS` from `main` | Decided (D1): replace, with no `platform` switch. Keep each WP small and merge `main` into `main_AWS` regularly; resolve conflicts in `config.py` in favor of the AWS fields |
 | 10 | Two Vite apps + landing under one distribution: asset path collisions | Distinct `base` per app (`/broker/`, `/shopper/`, `/`) and a per-app hashed asset folder |
@@ -943,7 +948,7 @@ The PLAN.md decisions on models, the bundle, retrieval, the verifier and the eva
 - **The demo account can't change itself.** The app client omits the `aws.cognito.signin.user.admin` scope, so the demo password and attributes can't be changed with the demo user's tokens (WP9).
 - **Limits:** the demo user is `broker` group only, rate-limited through `portfolio.demo_rate_limits`, and counted in the global daily cap (WP6).
 - **Short history:** demo history expires after 24 h, and the thread list shows only threads started in the current browser (WP6, risk #6).
-- **Hard spending cap:** the broker OpenRouter key has its monthly credit limit ($15) set before the landing page goes live (WP13).
+- **Hard spending cap:** the broker OpenRouter key has its monthly credit limit ($15) set before the first deploy, since the API is public from then on (TODO.md §2.1).
 - **Rotation without a code change:** `scripts/aws/rotate-demo-password.sh` sets a new password (`admin-set-user-password --permanent`) and updates the value the landing page shows (WP13).
 - **The credentials aren't baked into the build.** The page reads them at runtime from `/landing/demo.json` in the web bucket, so rotating needs only an `s3 cp` and a CloudFront invalidation of that one path.
 - **Monitoring:** the CloudWatch metric filter `demo_user_limit_reached` feeds an alarm (WP12), which shows if the account is being abused.
