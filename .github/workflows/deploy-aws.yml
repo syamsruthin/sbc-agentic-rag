@@ -1,0 +1,117 @@
+name: Deploy to AWS
+
+# docs/aws/MIGRATION_PLAN.md WP11. Builds the arm64 API image with the pinned facts bundle, deploys SbcApp
+# through the CDK (CloudFormation moves the `live` alias), then smoke-tests the site through CloudFront.
+#
+# - Automatically: ci.yml calls this after every check passes on a push to main_AWS that changes more than docs.
+# - By hand (Actions > Deploy to AWS > Run workflow, on main_AWS): redeploy, try another bundle version, or roll
+#   back by giving an image tag that is already in ECR (no build). The role trusts main_AWS only.
+#
+# Needs the repository variable AWS_DEPLOY_ROLE_ARN (the SbcApp output DeployRoleArn) and a first manual deploy
+# (docs/aws/RUNBOOK.md section 4), which saves the stack's context in SSM for this workflow to reuse.
+# Changes that widen IAM fail here on purpose (`--require-approval broadening` with no terminal): deploy those
+# by hand with scripts/aws/deploy.sh.
+# The frontends (WP10) will add an SPA build, `s3 sync --delete` and a CloudFront invalidation here.
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        type: string
+        default: ""
+      bundle_version:
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Deploy this API image tag from ECR instead of building (a rollback), e.g. 0123456789ab-2027.2"
+        type: string
+        default: ""
+      bundle_version:
+        description: "Bundle version to build with (default: the pinned one below)"
+        type: string
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  # The facts bundle the image is built with, from s3://<data bucket>/bundles/<version>/. Change it after a new
+  # bundle is built and checked (scripts/aws/run-build.sh or build-data.yml).
+  PINNED_BUNDLE_VERSION: "2027.2"
+  SBC_ENV: dev
+  AWS_REGION: us-east-1
+  UV_VERSION: "0.7.19"
+
+jobs:
+  image:
+    name: Build and push the API image (arm64)
+    if: inputs.image_tag == ''
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.push.outputs.api_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the deploy role is configured
+        env:
+          ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          [ -n "$ROLE" ] || { echo "::error::set the repository variable AWS_DEPLOY_ROLE_ARN (SbcApp output DeployRoleArn)"; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: AWS CLI
+        run: |
+          if ! command -v aws >/dev/null; then
+            curl -sSfL https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip -o "$RUNNER_TEMP/awscli.zip"
+            unzip -q "$RUNNER_TEMP/awscli.zip" -d "$RUNNER_TEMP"
+            sudo "$RUNNER_TEMP/aws/install"
+          fi
+          aws --version
+      - name: Build and push
+        id: push
+        env:
+          BUNDLE_VERSION: ${{ inputs.bundle_version || env.PINNED_BUNDLE_VERSION }}
+        run: scripts/aws/push-images.sh "$BUNDLE_VERSION" api
+
+  deploy:
+    name: Deploy SbcApp and smoke-test it
+    needs: image
+    # Runs after a build, or alone for a rollback (the build job is skipped when an image tag is given).
+    if: always() && (needs.image.result == 'success' || (needs.image.result == 'skipped' && inputs.image_tag != ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # One deploy at a time, and never cancel one halfway (CloudFormation would carry on without us).
+    concurrency:
+      group: deploy-aws-dev
+      cancel-in-progress: false
+    env:
+      TAG: ${{ inputs.image_tag || needs.image.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy
+        env:
+          CDK_APPROVAL: broadening
+        run: |
+          [[ "$TAG" =~ ^[0-9a-f]{12}-[0-9]{4}\.[0-9]+$ ]] || { echo "::error::bad image tag '$TAG'"; exit 1; }
+          scripts/aws/deploy.sh app "$TAG"
+      - name: Smoke test through CloudFront
+        run: scripts/aws/smoke-deployed.sh "${TAG#*-}"
+      - name: Summary
+        run: |
+          {
+            echo "### Deployed \`${TAG}\` to \`SbcApp-${SBC_ENV}\`"
+            echo "Roll back by running this workflow with the previous tag (ECR keeps the last 3)."
+          } >> "$GITHUB_STEP_SUMMARY"

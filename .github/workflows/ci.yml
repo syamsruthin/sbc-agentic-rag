@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Pull requests cancel older runs; pushes queue, so a deploy (below) is never cut off halfway.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Keep in step with the uv version that writes uv.lock.
@@ -126,3 +127,41 @@ jobs:
       - name: Shell scripts pass shellcheck
         run: uvx --from shellcheck-py shellcheck -x -P SCRIPTDIR -s bash scripts/aws/*.sh infra/docker/*.sh
 
+  changes:
+    name: Decide whether to deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main_AWS'
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.diff.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+          ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          # Until the first manual deploy sets AWS_DEPLOY_ROLE_ARN (docs/aws/RUNBOOK.md section 4), skip quietly.
+          if [ -z "$ROLE" ]; then
+            echo "::notice::not deploying: the repository variable AWS_DEPLOY_ROLE_ARN isn't set yet"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Docs-only pushes don't deploy. Anything else does, and so does a push whose base is unknown.
+          if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            other=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -Ev '^(docs/|spikes/|[^/]+\.md$)' || true)
+          else
+            other=unknown
+          fi
+          echo "changed outside docs: ${other:-nothing}"
+          echo "deploy=$([ -n "$other" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy to AWS
+    # docs/aws/MIGRATION_PLAN.md WP11: only after every check passes, only from main_AWS.
+    needs: [changes, lint, typecheck, test, secrets, eval-gate, image, cdk]
+    if: needs.changes.outputs.deploy == 'true'
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/deploy-aws.yml

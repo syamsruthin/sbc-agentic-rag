@@ -1,7 +1,7 @@
 # AWS track: to do
 
-Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-10**: after WP9 and the
-port of the generation eval (2026-11-05), and a doc audit against the code (2026-11-10). Finished
+Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-10**: after WP9, the
+port of the generation eval (2026-11-05), a doc audit against the code and WP11 (2026-11-10). Finished
 work is in [TASKS_DONE.md](TASKS_DONE.md); each work package's full spec is in [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 
 All work goes to `main_AWS`, the long-lived AWS branch; it isn't merged into `main`.
@@ -15,8 +15,8 @@ done in code here.
 
 1. ~~WP8: containers and the local stack~~ (done).
 2. ~~WP9: the CDK stacks~~ (done in code). 👤 **The first real deploy** (§2.4, RUNBOOK §4) can happen now: the API answers under `/api/*` before any frontend exists.
-3. **WP11:** CI/CD, which deploys automatically.
-4. **WP10:** frontends. It can start in parallel with WP11.
+3. ~~WP11: CI/CD~~ (done in code; the frontend job and SPA sync come with WP10). It deploys automatically once the first manual deploy sets `AWS_DEPLOY_ROLE_ARN` (§2.4).
+4. **WP10:** frontends.
 5. **WP12:** observability.
 6. **WP13:** portfolio readiness and docs.
 7. **WP14 (later):** Bedrock.
@@ -63,12 +63,14 @@ exist.
 ### 2.4 The first deploy (RUNBOOK §4)
 
 - [ ] `scripts/aws/bootstrap.sh` (quota check, existing OIDC provider, `cdk bootstrap`).
-- [ ] `ALARM_EMAIL=… scripts/aws/deploy.sh foundation`, then confirm the SNS/budget emails.
+- [ ] `ALARM_EMAIL=… scripts/aws/deploy.sh foundation`, then confirm the SNS/budget emails. `deploy.sh` saves each value it is given in SSM (`/sbc-deploy/<env>/`), so later deploys, including CI's, keep them.
 - [ ] `scripts/aws/put-secrets.sh` (OpenRouter keys with credit limits, Turnstile secret; session secret generated).
 - [ ] `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite`.
 - [ ] `scripts/aws/push-images.sh 2027.2` (arm64 build and push; prints the tags).
 - [ ] `scripts/aws/deploy.sh app <api-tag> <build-tag>`; `seed-users.sh`; redeploy with `DEMO_USER_IDS`; `rotate-demo-password.sh`; add the CloudFront host to Turnstile.
 - [ ] Check `https://<site>/api/healthz?deep=1` (`"stores": "dynamodb"`, both bots `ready`), a public session, a broker sign-in token on `/api/broker/plans/search` sent as `X-Sbc-Authorization: Bearer …`, and a streamed chat turn through CloudFront.
+- [ ] Set the repository variable `AWS_DEPLOY_ROLE_ARN` (GitHub → Settings → Secrets and variables → Actions → Variables) to the `SbcApp` output `DeployRoleArn`. From then on, pushes to `main_AWS` deploy (WP11).
+- [ ] Check the first CI deploy: run `deploy-aws.yml` by hand on `main_AWS`, then a rollback with the previous `image_tag`.
 - [ ] Note any fixes the scripts needed (none has run against AWS yet) and update RUNBOOK §4.
 
 ---
@@ -82,7 +84,7 @@ and an arm64 build (WP11).
 
 ### WP9: infrastructure as code: done
 
-Done on `main_AWS` (TASKS_DONE.md, WP9): the two stacks, 12 template tests, the scripts and a CI `cdk` job.
+Done on `main_AWS` (TASKS_DONE.md, WP9): the two stacks, 12 template tests (13 since WP11), the scripts and a CI `cdk` job.
 Open: the first real deploy (§2.4).
 
 ### WP10: frontends
@@ -107,21 +109,16 @@ Open: the first real deploy (§2.4).
 - [ ] **CI job:** `npm ci`, lint, typecheck, build.
 - **Done when:** both bots work end to end at the CloudFront URL, on desktop and phone widths.
 
-### WP11: CI/CD
+### WP11: CI/CD: done in code
 
-- [x] **`ci.yml`:** the `image` job (API image on the fixture bundle + `smoke.sh`) landed with WP8.
-- [x] **`ci.yml`:** the `cdk` job (template tests, synth, shellcheck) landed with WP9.
-- [ ] **`ci.yml` additions:** a `frontend` job. A DynamoDB Local integration job is optional (`services:` container plus `DDB_LOCAL_ENDPOINT`).
-- [ ] **`deploy-aws.yml`** (on push to `main_AWS`, plus `workflow_dispatch`; `permissions: id-token: write, contents: read`; actions pinned by SHA):
-  1. [ ] Assume `sbc-github-deploy` through OIDC.
-  2. [ ] Download the pinned bundle from S3.
-  3. [ ] `docker buildx --platform linux/arm64`; push with tag `<git-sha>-<bundle-version>`.
-  4. [ ] **Deploy through the CDK:** `cdk deploy SbcApp-<env> -c apiImageTag=<tag>` (the deploy role needs the CDK bootstrap roles' permissions, i.e. `sts:AssumeRole` on `cdk-*-deploy-role` and `cdk-*-file-publishing-role`). CloudFormation owns the `live` alias (WP9), so raw `update-alias` calls would be undone by the next deploy.
-  5. [ ] Smoke through CloudFront: `healthz?deep=1` and one fast-path question.
-  6. [ ] Optional canary: a CodeDeploy-style gradual alias shift needs `aws_codedeploy`; decide whether it's worth it for a portfolio deploy.
-  7. [ ] Build the SPAs with the CDK outputs, `s3 sync --delete`, invalidate CloudFront.
-- [ ] **`build-data.yml`** (`workflow_dispatch`, inputs `version` and `full|incremental`): runs `scripts/aws/run-build.sh` and waits for the task.
-- **Done when:** a push deploys in under 10 minutes, and an alias rollback takes under 1 minute.
+Done on `main_AWS` (TASKS_DONE.md, WP11): `deploy-aws.yml` (called by CI after every check, or by hand for a
+redeploy or a rollback), `build-data.yml`, the saved deploy context, the deploy role's CDK permissions and the
+smoke test through CloudFront. Its first run comes after the first manual deploy (§2.4). Left:
+
+- [ ] A `frontend` CI job (`npm ci`, lint, typecheck, build) and, in `deploy-aws.yml`, the SPA build, `s3 sync --delete` and the CloudFront invalidation: with WP10.
+- [ ] A question in the post-deploy smoke test: needs a token, so it comes with WP13's HTTP adapter.
+- [ ] Optional: a DynamoDB Local integration job (`services:` container plus `DDB_LOCAL_ENDPOINT`), and a canary alias shift (`aws_codedeploy`), probably not worth it for a portfolio deploy.
+- **Done when:** a push deploys in under 10 minutes, and a rollback through the workflow works (§4).
 
 ### WP12: observability
 
@@ -170,7 +167,8 @@ Open: the first real deploy (§2.4).
 | WP5 | Sign-in against a real Cognito pool, and Turnstile with a real widget (after WP9) | 👤 + WP13 |
 | WP7 | A live portal fetch of one preview-only SBC, with its hash matching | 👤 |
 | WP8 | An end-to-end `build-pipeline bundle` (then `full`) run against the real data bucket, as an ECS task | 👤 after WP9 |
-| WP8 | The arm64 API image builds (`buildx --platform linux/arm64`) and passes `smoke.sh` | WP11 (CI) |
+| WP8 | The arm64 API image builds (`buildx --platform linux/arm64`) and passes a smoke test | WP11's first CI deploy (`smoke-deployed.sh`) |
+| WP11 | `deploy-aws.yml` and `build-data.yml` against AWS: a push deploys in under 10 minutes, a rollback by `image_tag` works, a `bundle` build finishes within the 1-hour credentials | 👤 after §2.4 |
 | WP9 | `cdk deploy` of both stacks in a real account, and the eight `scripts/aws/*.sh` against AWS | 👤 (§2.4) |
 | WP9 | The `X-Sbc-Authorization` path end to end through CloudFront with a real Cognito token | 👤 + WP13 |
 | WP9 | The warmer's events reach `POST /events` through the Lambda Web Adapter (if `warmer=true`) | 👤 |

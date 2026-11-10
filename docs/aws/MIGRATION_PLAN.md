@@ -1,7 +1,7 @@
 # AWS migration plan: code changes, step by step
 
 **Branch:** `main_AWS`, created from `main` at `e7ec0e7`. It is the long-lived main branch of the AWS implementation and is **not merged into `main`** (decided 2026-11-05; the PR to `main`, #14, was closed unmerged). Work packages are committed straight to `main_AWS`; CI runs on every push to it.
-**Status:** WP0–WP9 are done on `main_AWS` (each work package below has its own status note); the first real deploy and WP10–WP14 are left. Progress is tracked in [TASKS_DONE.md](TASKS_DONE.md) and [TODO.md](TODO.md).
+**Status:** WP0–WP9 are done on `main_AWS`, and WP11 in code (each work package below has its own status note); the first real deploy, WP10, WP12–WP14, and WP11's frontend parts are left. Progress is tracked in [TASKS_DONE.md](TASKS_DONE.md) and [TODO.md](TODO.md).
 **Companion document:** [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md) covers the architecture, the costs and the reasons behind each choice. §17 there ("portfolio mode") is the target operating model.
 
 This plan turns that analysis into ordered work packages. For each one it says which files change, what goes in them, how it is tested and when it is done.
@@ -75,7 +75,7 @@ Verified on `main` at `e7ec0e7`.
 | `packages/sbc_index/src/sbc_index/bundle.py` | `plan` table without the portal preview fields or PDF sha256 | **Change:** add a `plan_source` table so the PDF proxy can rebuild the portal's preview request and check the hash | WP3 |
 | `packages/sbc_ingest/src/sbc_ingest/portal.py` | `_preview_post()` builds the `previewDocument` form (frozen original module) | **Not changed.** The API gets its own small preview client (runtime code must not import `sbc_ingest`) | WP7 |
 | `apps/`, `infra/` | `.gitkeep` only | **Build** the frontends, Dockerfiles and the CDK app | WP8–WP10 |
-| `.github/workflows/ci.yml` | Lint, mypy, tests, gitleaks, eval gate | **Extend** with `sbc_aws` tests, `cdk synth`, and a frontend build | WP11 |
+| `.github/workflows/ci.yml` | Lint, mypy, tests, gitleaks, eval gate | **Extend** with `sbc_aws` tests, `cdk synth`, the image smoke test, the deploy job, and a frontend build | WP8, WP9, WP11 |
 | `pyproject.toml` | Workspace, import-linter contracts | **Change:** add `sbc_aws` to the workspace and the contracts | WP2 |
 | `PLAN.md`, `TODO.md`, `README.md`, `docs/agent-graph.md` | GCP, Supabase and Upstash design | **Update after approval** (§11) | WP13 |
 
@@ -162,7 +162,7 @@ scripts/aws/                  # WP9/WP13: helper scripts (bash, aws CLI)
   run-build.sh                # aws ecs run-task for the offline pipeline
 .github/workflows/
   ci.yml                      # WP11: + sbc_aws tests (moto), cdk synth + tests, frontend build
-  deploy-aws.yml              # WP11: OIDC → build image, push, deploy Lambda version + alias, sync SPAs
+  deploy-aws.yml              # WP11: OIDC → build image, push, cdk deploy SbcApp, smoke test (SPA sync with WP10)
   build-data.yml              # WP11: workflow_dispatch → run the Fargate offline build
 docs/aws/
   DEPLOYMENT_ANALYSIS.md, MIGRATION_PLAN.md (this file), RUNBOOK.md (WP13)
@@ -607,10 +607,10 @@ CMD ["uvicorn", "--factory", "sbc_api.app:create_app", "--host", "0.0.0.0", "--p
 >   - 8 alarms (Lambda errors, throttles, p95 > 20 s, and 5 metric filters on the API's JSON logs: `global_cap_reached`, `pdf_hash_mismatch`, `audit_failed`, demo-account limits, `PlanFilterViolationError`) to an SNS topic.
 >   - Budget and Cost Anomaly Detection, created when `alarmEmail` is set.
 >   - Optional warmer (`warmer=true`): an EventBridge Scheduler rule pinging the alias every 5 minutes, weekday business hours (US Eastern). Its events reach the API as `POST /events` through the Lambda Web Adapter; the new route answers 204.
-> - **CloudFormation owns the `live` alias.** A deploy is `cdk deploy SbcApp -c apiImageTag=<tag>`. Moving the alias by hand is undone by the next deploy, so WP11 should deploy through the CDK.
+> - **CloudFormation owns the `live` alias.** A deploy is `cdk deploy SbcApp -c apiImageTag=<tag>`. Moving the alias by hand is undone by the next deploy, so WP11 deploys through the CDK.
 > - **Tables:** `infra/cdk/sbc_infra/tables.py` must equal `sbc_aws.schema.TABLE_SPECS`; a root test (`tests/unit/test_infra_tables.py`) compares them.
 > - **Scripts** in `scripts/aws/`: `bootstrap.sh`, `deploy.sh`, `put-secrets.sh`, `upload-bundle.sh`, `push-images.sh` (arm64 build + ECR push, for the first deploy), `seed-users.sh`, `rotate-demo-password.sh`, `run-build.sh` (polls when given `--wait`, since a full build outlasts `aws ecs wait`). All pass shellcheck; none has been run against AWS yet.
-> - **Tests:** 12 template tests in `infra/cdk/tests/test_stack.py`:
+> - **Tests:** 12 template tests in `infra/cdk/tests/test_stack.py` (13 since WP11 added the deploy role's):
 >   - nothing that bills idle (no NAT, VPC, load balancer, Secrets Manager, KMS key, RDS, ElastiCache, WAF or custom resources);
 >   - tables equal the schema;
 >   - Lambda arm64 2 GB with an `AWS_IAM` + `RESPONSE_STREAM` URL on `live`, plus both CloudFront permissions;
@@ -630,7 +630,7 @@ CMD ["uvicorn", "--factory", "sbc_api.app:create_app", "--host", "0.0.0.0", "--p
 | `WebConstruct` | S3 `web` bucket; CloudFront distribution; OAC for S3 and for the Lambda URL; CloudFront Function for SPA rewrites; response headers policy | Behaviors: `/api/*` → Function URL (CachingDisabled, AllViewerExceptHostHeader, all methods); `/broker/*`, `/shopper/*`, `/` → S3; PriceClass_100; default domain |
 | `BuildConstruct` | ECS cluster; Fargate task definition (arm64, 4 vCPU, 8 GB, 50 GB ephemeral); task role | Run on demand in the default VPC's public subnets with a public IP (no NAT); capacity provider FARGATE_SPOT |
 | `OpsConstruct` | SNS topic + email subscription; alarms (Lambda Errors, Throttles, p95 Duration, metric filters `plan_filter_violation`, `global_cap_reached`, `pdf_hash_mismatch`); AWS Budget ($5 and $10); Cost Anomaly monitor; optional business-hours warmer (EventBridge Scheduler → Lambda invoke of `/api/healthz?deep=1`) | Stay within 10 alarms; the warmer is a config flag |
-| `CicdConstruct` | GitHub OIDC provider (if absent); `sbc-github-deploy` role | Trust policy limited to `repo:syamsruthin/sbc-agentic-rag` on `refs/heads/main_AWS` (and later `main`) plus a GitHub environment; least-privilege actions from DEPLOYMENT_ANALYSIS.md §6.5 |
+| `CicdConstruct` | GitHub OIDC provider (if absent); `sbc-<env>-github-deploy` role (as built in WP11: CDK bootstrap roles, not direct Lambda changes) | Trust policy limited to `repo:syamsruthin/sbc-agentic-rag` on `refs/heads/main_AWS` (and later `main`) plus a GitHub environment; least-privilege actions from DEPLOYMENT_ANALYSIS.md §6.5 |
 
 **SSM parameters are not created by CDK with values** (no secrets in templates). `scripts/aws/put-secrets.sh` writes them as SecureStrings from your shell. CDK only grants read access to `/sbc/dev/*`.
 
@@ -678,29 +678,22 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 
 ### WP11: CI/CD
 
-> **Status: partly done.** The `image` job (WP8) and the `cdk` job (WP9) are in `ci.yml`. Left: the `frontend` job, `deploy-aws.yml` and `build-data.yml`. The deploy steps below were rewritten after WP9, because CloudFormation owns the `live` alias.
+> **Status: done in code** on `main_AWS` (not run against AWS yet; it needs the first manual deploy). Left: the `frontend` job and the SPA sync, which come with WP10, and the optional canary.
+>
+> **As built:**
+> - **`ci.yml` calls `deploy-aws.yml`** as its last job (`deploy`), so a deploy happens only after every check passes, only on a push to `main_AWS`, and only when the push changes more than docs (`docs/`, `spikes/`, root `*.md`). A `changes` job decides; until the repository variable `AWS_DEPLOY_ROLE_ARN` exists it skips the deploy with a notice, so CI stays green before the first manual deploy. Pull requests still cancel older runs; pushes now queue, so a deploy is never cut off halfway.
+> - **`deploy-aws.yml`** (`workflow_call` from CI, or `workflow_dispatch` on `main_AWS`):
+>   1. `image` job on a native arm64 runner (`ubuntu-24.04-arm`): OIDC into `sbc-<env>-github-deploy`, then `scripts/aws/push-images.sh <bundle> api`, which downloads the pinned bundle from S3, builds and pushes `<git-sha12>-<bundle>`. The bundle version is pinned in the workflow (`PINNED_BUNDLE_VERSION`) or given as an input.
+>   2. `deploy` job (one at a time, never cancelled): `scripts/aws/deploy.sh app <tag>`, which runs `cdk deploy SbcApp-<env> --exclusively` (the foundation is never redeployed as a side effect). CloudFormation publishes the version and moves `live`.
+>   3. `scripts/aws/smoke-deployed.sh`: through CloudFront, deep health (DynamoDB stores, both bots ready, the `plan_source` table, the expected bundle version) and a POST to `/api/public/session` with a fake Turnstile token, which must come back as the API's 403. That shows a POST with the body hash passes origin access control. **Asking a question needs a token, so that check stays with WP13** (the HTTP eval adapter).
+>   4. **Rollback:** run the workflow with `image_tag` set to an earlier tag in ECR; the build is skipped.
+> - **The saved deploy context.** A CI deploy only knows the image tag, and a `cdk deploy` without the alarm email or the demo user IDs would remove them (the SNS subscription, the demo account's limits). `scripts/aws/deploy.sh` now saves every value set by hand (`ALARM_EMAIL`, `DEMO_USER_IDS`, `WARMER`, `GITHUB_OIDC_PROVIDER_ARN`, `BUILD_IMAGE_TAG`) under `/sbc-deploy/<env>/` in SSM after a successful deploy, and every later deploy, by hand or from CI, reuses them. The path is outside `/sbc/<env>/`, which the API loads as secrets.
+> - **IAM-widening changes fail in CI on purpose.** The workflow deploys with `--require-approval broadening`; with no terminal the CDK refuses such a change instead of asking. Deploy those by hand with `scripts/aws/deploy.sh`.
+> - **The deploy role** (`infra/cdk/sbc_infra/constructs/cicd.py`) gained `sts:AssumeRole` on the CDK bootstrap roles `cdk-hnb659fds-deploy-role-…` and `cdk-hnb659fds-file-publishing-role-…`, `cloudformation:DescribeStacks` on its two stacks and `ssm:GetParametersByPath` on `/sbc-deploy/<env>`. It lost the direct Lambda permissions (`UpdateFunctionCode`, `PublishVersion`, `UpdateAlias`, …), since CloudFormation owns the alias. It can't save deploy context or read secrets. A template test checks all of this (13 template tests).
+> - **`build-data.yml`** (`workflow_dispatch`, inputs `version` and `bundle|full`): `scripts/aws/run-build.sh`. It waits for a `bundle` build and fails with the task. A `full` build takes 2–3 hours, longer than the role's 1-hour credentials, so the workflow only starts it.
+> - **Not done:** the optional canary (a gradual alias shift needs `aws_codedeploy`; not worth it for a portfolio deploy unless traffic grows). The `frontend` job and the SPA build, `s3 sync --delete` and invalidation are added with WP10.
 
-**`ci.yml` additions:**
-
-- `uv run pytest tests/unit` includes `tests/unit/aws` and `tests/unit/api` (moto and respx; no AWS credentials). Done.
-- A `cdk` job: the template tests, `cdk synth` and shellcheck. Done (WP9).
-- An `image` job: the API image on the fixture bundle, then `smoke.sh`. Done (WP8).
-- A `frontend` job: `npm ci`, `npm run lint`, `npm run build` for each app. Left (with WP10).
-- `lint-imports` covers `sbc_aws`. Done.
-
-**`deploy-aws.yml`** (on push to `main_AWS` and manually; `permissions: id-token: write, contents: read`):
-
-1. `aws-actions/configure-aws-credentials` with `role-to-assume` set to `sbc-<env>-github-deploy` (pinned by SHA, like the existing actions).
-2. Download `bundles/<version>/facts-<version>.sqlite` from S3 (the layout the build image writes; the workflow pins the bundle version).
-3. `docker buildx build --platform linux/arm64`, and push to ECR with the tag `<git-sha>-<bundle-version>` (PLAN.md §9.2).
-4. **Deploy through the CDK:** `cdk deploy SbcApp-<env> -c apiImageTag=<tag>`. CloudFormation publishes the new version and moves `live`; raw `update-function-code` or `update-alias` calls would be undone by the next deploy. **The deploy role needs more than it has today:** `sts:AssumeRole` on the CDK bootstrap roles (`cdk-*-deploy-role` and `cdk-*-file-publishing-role`), to be added to `infra/cdk/sbc_infra/constructs/cicd.py`.
-5. Smoke-test through CloudFront: `/api/healthz?deep=1`, plus one fast-path question.
-6. Optional canary: a gradual alias shift needs `aws_codedeploy` in the stack; decide whether it's worth it for a portfolio deploy.
-7. Build the SPAs with the CDK outputs; `aws s3 sync --delete`; `cloudfront create-invalidation --paths '/*'`.
-
-**`build-data.yml`** (`workflow_dispatch` with inputs `version` and `full|incremental`): runs `scripts/aws/run-build.sh` and waits for the task to stop. The result is uploaded by the task itself.
-
-**Done when** a push to `main_AWS` deploys in under 10 minutes, and an emergency alias move rolls back in under 1 minute (followed by a deploy of the wanted tag; RUNBOOK §5).
+**Done when** a push to `main_AWS` deploys in under 10 minutes, and a rollback works: through the workflow with an earlier tag, or in an emergency by moving the alias by hand (under 1 minute), followed by a deploy of the wanted tag (RUNBOOK §5).
 
 ### WP12: Observability
 
@@ -875,7 +868,7 @@ Run once. **The exact commands are in [RUNBOOK.md](RUNBOOK.md) §4**, which repl
 3. **Foundation:** `scripts/aws/deploy.sh foundation` creates `SbcFoundation-<env>`: the data bucket, tables, Cognito, ECR, budget and anomaly alerts.
 4. **Secrets:** `scripts/aws/put-secrets.sh` (the environment comes from `SBC_ENV`, default `dev`). It prompts for the OpenRouter keys (with credit limits already set at OpenRouter) and the Turnstile secret, and generates `SESSION_JWT_SECRET`.
 5. **Data:** `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite`.
-6. **Images and app:** `scripts/aws/push-images.sh 2027.2`, then `scripts/aws/deploy.sh app <api-tag> <build-tag>` creates `SbcApp-<env>`: Lambda, CloudFront, the build task, alarms and the OIDC deploy role. From WP11 on, a push to `main_AWS` does this through `deploy-aws.yml`.
+6. **Images and app:** `scripts/aws/push-images.sh 2027.2`, then `scripts/aws/deploy.sh app <api-tag> <build-tag>` creates `SbcApp-<env>`: Lambda, CloudFront, the build task, alarms and the OIDC deploy role. Set the repository variable `AWS_DEPLOY_ROLE_ARN` to its `DeployRoleArn` output; from then on a push to `main_AWS` deploys through `deploy-aws.yml` (WP11).
 7. **Users:** `scripts/aws/seed-users.sh` creates the admin (enroll TOTP at first sign-in) and the `demo-broker` user; redeploy with `DEMO_USER_IDS`, then run `rotate-demo-password.sh`.
 8. **Turnstile:** add the CloudFront hostname to the Turnstile widget's allowed domains.
 9. **Verify:** deep health first; then the interviewer click-through, cap tests, a cold-start measurement and the golden subset (WP13). Record the results in the runbook.
@@ -884,8 +877,8 @@ Run once. **The exact commands are in [RUNBOOK.md](RUNBOOK.md) §4**, which repl
 
 ## 10. Rollback and teardown
 
-- **App rollback:** deploy the previous image tag (`scripts/aws/deploy.sh app <previous-tag> <build-tag>`; ECR keeps the last 3). In an emergency, `aws lambda update-alias --function-name sbc-<env>-api --name live --function-version <previous>` works at once, but CloudFormation owns the alias, so follow it with a deploy of the wanted tag (RUNBOOK §5). The image carries code, config and bundle, so all three roll back together (PLAN.md §9.4).
-- **Frontend rollback:** redeploy the previous commit's SPA build (the `deploy-aws.yml` workflow-dispatch input `ref`).
+- **App rollback:** deploy the previous image tag: run `deploy-aws.yml` with `image_tag`, or `scripts/aws/deploy.sh app <previous-tag>` (ECR keeps the last 3). In an emergency, `aws lambda update-alias --function-name sbc-<env>-api --name live --function-version <previous>` works at once, but CloudFormation owns the alias, so follow it with a deploy of the wanted tag (RUNBOOK §5). The image carries code, config and bundle, so all three roll back together (PLAN.md §9.4).
+- **Frontend rollback:** redeploy the previous commit's SPA build (added to `deploy-aws.yml` with WP10).
 - **Infrastructure rollback:** CloudFormation rolls back failed updates automatically; data resources use `RETAIN`.
 - **Pause everything without deleting:** set the kill switch (LLM off) for both bots, or set the Lambda reserved concurrency to 0. Either way the AWS cost stays at storage cents.
 - **Teardown after the portfolio period:**

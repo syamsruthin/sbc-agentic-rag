@@ -1,4 +1,9 @@
-"""GitHub Actions deploys through OIDC (no long-lived keys): a role only the configured branch can assume."""
+"""GitHub Actions deploys through OIDC (no long-lived keys): a role only the configured branch can assume.
+
+The deploy workflow (``.github/workflows/deploy-aws.yml``, WP11) builds and pushes the API image, then deploys
+``SbcApp`` through the CDK, which assumes the CDK bootstrap roles. CloudFormation owns the Lambda's ``live``
+alias, so this role can't change the function directly: a raw alias move would be undone by the next deploy.
+"""
 
 from __future__ import annotations
 
@@ -7,13 +12,21 @@ from aws_cdk import aws_cloudfront as cf
 from aws_cdk import aws_ecr as ecr
 from aws_cdk import aws_ecs as ecs
 from aws_cdk import aws_iam as iam
-from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
 from sbc_infra.config import Settings
 
 GITHUB_OIDC = "token.actions.githubusercontent.com"
+CDK_QUALIFIER = "hnb659fds"
+"""The default ``cdk bootstrap`` qualifier; the bootstrap roles' names contain it."""
+CDK_ROLES = ("deploy", "file-publishing")
+"""Bootstrap roles a ``cdk deploy`` of ``SbcApp`` needs: CloudFormation, and the template upload. The stack
+has no Docker or file assets of its own (images come from ECR by tag) and no context lookups."""
+DEPLOY_CONTEXT_PREFIX = "sbc-deploy"
+"""SSM path ``/sbc-deploy/<env>/``: the CDK context saved by ``scripts/aws/deploy.sh`` (alarm email, demo user
+IDs, warmer, OIDC provider, build image tag), so a CI deploy keeps it. It sits outside ``/sbc/<env>/``, which
+the API loads into its environment."""
 
 
 class Cicd(Construct):
@@ -24,7 +37,6 @@ class Cicd(Construct):
         *,
         settings: Settings,
         repos: tuple[ecr.IRepository, ...],
-        function: lambda_.Function,
         web_bucket: s3.IBucket,
         data_bucket: s3.IBucket,
         distribution: cf.Distribution,
@@ -56,18 +68,32 @@ class Cicd(Construct):
         )
         for repo in repos:
             repo.grant_pull_push(self.role)
+        # cdk deploy: CloudFormation runs as the bootstrap roles, which trust the account.
         self.role.add_to_policy(
             iam.PolicyStatement(
-                actions=[
-                    "lambda:UpdateFunctionCode",
-                    "lambda:PublishVersion",
-                    "lambda:UpdateAlias",
-                    "lambda:GetAlias",
-                    "lambda:GetFunction",
-                    "lambda:GetFunctionConfiguration",
-                    "lambda:InvokeFunction",
+                actions=["sts:AssumeRole"],
+                resources=[
+                    f"arn:aws:iam::{stack.account}:role/cdk-{CDK_QUALIFIER}-{kind}-role-{stack.account}-{stack.region}"
+                    for kind in CDK_ROLES
                 ],
-                resources=[function.function_arn, f"{function.function_arn}:*"],
+            )
+        )
+        # The scripts read stack outputs (repositories, bucket, site URL) and the saved deploy context.
+        self.role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["cloudformation:DescribeStacks"],
+                resources=[
+                    f"arn:aws:cloudformation:{stack.region}:{stack.account}:stack/{name}-{settings.env_name}/*"
+                    for name in ("SbcFoundation", "SbcApp")
+                ],
+            )
+        )
+        self.role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["ssm:GetParametersByPath"],
+                resources=[
+                    f"arn:aws:ssm:{stack.region}:{stack.account}:parameter/{DEPLOY_CONTEXT_PREFIX}/{settings.env_name}"
+                ],
             )
         )
         web_bucket.grant_read_write(self.role)

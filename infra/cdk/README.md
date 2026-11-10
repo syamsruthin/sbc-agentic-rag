@@ -31,10 +31,15 @@ offline build); the step-by-step first deployment is in [docs/aws/RUNBOOK.md](..
 | `githubOidcProviderArn` | empty | An existing GitHub OIDC provider in the account (only one is allowed); empty creates it |
 | `githubRepository`, `githubBranch` | this repo, `main_AWS` | Who may assume the deploy role |
 
+`scripts/aws/deploy.sh` saves the values you give it for `alarmEmail`, `demoUserIds`, `warmer`,
+`githubOidcProviderArn` and `buildImageTag` under `/sbc-deploy/<env>/` in SSM, and reuses them on later deploys,
+including CI's (`.github/workflows/deploy-aws.yml`), so a deploy that leaves one out doesn't remove it.
+
 **Rules the API depends on** (and the tests check):
 
 - **Bearer tokens travel in `X-Sbc-Authorization`.** Origin access control signs every request to the Function URL with SigV4 in `Authorization`, replacing the browser's value.
 - **CloudFront forwards `CloudFront-Viewer-Address`** for the per-IP limits and Turnstile.
 - **There is no VPC, NAT, load balancer, Secrets Manager secret, KMS key or custom resource.**
 - **The audit table is `PutItem`-only for the API.**
-- **CloudFormation owns the `live` alias.** Deploy a new API image by deploying `SbcApp` with its tag (WP11 does this), not by moving the alias by hand, or the next deploy moves it back.
+- **CloudFormation owns the `live` alias.** Deploy a new API image by deploying `SbcApp` with its tag (WP11's workflow does this), not by moving the alias by hand, or the next deploy moves it back.
+- **The GitHub deploy role deploys through the CDK.** It may assume the CDK bootstrap roles (`deploy` and `file-publishing`, qualifier `hnb659fds`), read its two stacks' outputs and the saved deploy context, push images and start the build task. It can't change the Lambda directly, save deploy context or read secrets.

@@ -2,7 +2,7 @@
 
 How to build, run, deploy and operate the app on AWS (PLAN.md revision 3).
 
-- **Sections 1–7** are in place as of WP9; WP11 (CI/CD) and WP13 (portfolio readiness) complete 5 and 8.
+- **Sections 1–7** are in place as of WP9, and §5 has the WP11 workflows; WP13 (portfolio readiness) completes 8.
 - The plan is [MIGRATION_PLAN.md](MIGRATION_PLAN.md); open items are in [TODO.md](TODO.md).
 
 ---
@@ -131,30 +131,44 @@ script reads `SBC_ENV` (default `dev`) and uses `us-east-1`.
 | # | Step | Command |
 |---|---|---|
 | 1 | Account checks (Paid plan, quotas) and CDK bootstrap | `scripts/aws/bootstrap.sh` (prints `githubOidcProviderArn` if a GitHub provider already exists) |
-| 2 | Foundation: bucket, tables, Cognito, ECR, budgets | `ALARM_EMAIL=you@example.com scripts/aws/deploy.sh foundation` |
+| 2 | Foundation: bucket, tables, Cognito, ECR, budgets | `ALARM_EMAIL=you@example.com scripts/aws/deploy.sh foundation` (saves the email for later deploys) |
 | 3 | Secrets into SSM (OpenRouter keys with credit limits set first, Turnstile secret; session secret generated) | `scripts/aws/put-secrets.sh` |
 | 4 | Bundle and embedding cache into the data bucket | `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite` |
 | 5 | Build and push the arm64 images (prints the tags) | `scripts/aws/push-images.sh 2027.2` |
-| 6 | App: Lambda, CloudFront, build task, alarms, deploy role | `ALARM_EMAIL=… scripts/aws/deploy.sh app <api-tag> <build-tag>` (prints the site URL) |
+| 6 | App: Lambda, CloudFront, build task, alarms, deploy role | `scripts/aws/deploy.sh app <api-tag> <build-tag>` (prints the site URL; add `GITHUB_OIDC_PROVIDER_ARN=…` if step 1 printed one) |
 | 7 | Users: admin (TOTP at first sign-in) and demo-broker | `scripts/aws/seed-users.sh <admin> <admin-email>` (prints the demo `sub`) |
-| 8 | Redeploy with the demo account's ID | `DEMO_USER_IDS='["<sub>"]' ALARM_EMAIL=… scripts/aws/deploy.sh app <api-tag> <build-tag>` |
+| 8 | Redeploy with the demo account's ID | `DEMO_USER_IDS='["<sub>"]' scripts/aws/deploy.sh app <api-tag>` |
 | 9 | Publish the demo password to the landing page | `scripts/aws/rotate-demo-password.sh` |
 | 10 | Turnstile: add the CloudFront host name to the widget's allowed domains | Cloudflare dashboard |
-| 11 | Confirm the SNS subscription email, then check | `curl -s https://<site>/api/healthz?deep=1` → `"stores": "dynamodb"`, both bots `ready` |
+| 11 | Confirm the SNS subscription email, then check | `scripts/aws/smoke-deployed.sh 2027.2` (deep health, a POST through origin access control) |
+| 12 | Turn on CI deploys | GitHub → Settings → Secrets and variables → Actions → Variables: `AWS_DEPLOY_ROLE_ARN` = the `SbcApp` output `DeployRoleArn` |
+
+**Saved deploy context.** `deploy.sh` saves each value you give it (`ALARM_EMAIL`, `DEMO_USER_IDS`, `WARMER`,
+`GITHUB_OIDC_PROVIDER_ARN`, `BUILD_IMAGE_TAG` or the third argument) under `/sbc-deploy/<env>/` in SSM after a
+successful deploy, and every later deploy reuses them, so a deploy that leaves one out (CI's, for example) doesn't
+remove the alarm email or the demo account's limits. `aws ssm get-parameters-by-path --path /sbc-deploy/dev`
+shows them; to clear one, `aws ssm delete-parameter --name /sbc-deploy/dev/<key>`.
 
 Until the frontends exist (WP10) the site root returns 403/404 from S3; the API answers under `/api/*`.
 
 ## 5. Deploy and roll back
 
-- **Deploy a new API image:** push it (`scripts/aws/push-images.sh <bundle-version> api`), then
-  `scripts/aws/deploy.sh app <new-tag> <build-tag>`. CloudFormation publishes a new version and moves `live`.
-  From WP11 the `deploy-aws.yml` workflow does both on every push to `main_AWS`.
-- **Roll back:** deploy the previous tag the same way (ECR keeps the last 3 API images). In an emergency,
+- **Deploy a new API image:** push to `main_AWS`. After every CI check passes, the `deploy` job runs
+  `deploy-aws.yml`: it builds the arm64 image with the pinned bundle (`PINNED_BUNDLE_VERSION`) on a native arm64
+  runner, pushes `<git-sha12>-<bundle>`, runs `scripts/aws/deploy.sh app <tag>` (CloudFormation publishes a new
+  version and moves `live`) and `scripts/aws/smoke-deployed.sh`. Docs-only pushes don't deploy.
+  - **By hand,** without CI: `scripts/aws/push-images.sh <bundle-version> api`, then `scripts/aws/deploy.sh app <new-tag>`.
+  - **Changes that widen IAM** (a new permission, a new role) fail in CI on purpose: CI deploys with
+    `--require-approval broadening` and no terminal. Deploy them by hand with `deploy.sh`, which asks.
+- **Roll back:** Actions → Deploy to AWS → Run workflow on `main_AWS` with `image_tag` set to an earlier tag
+  (ECR keeps the last 3 API images; the build is skipped), or `scripts/aws/deploy.sh app <previous-tag>`. In an emergency,
   `aws lambda update-alias --function-name sbc-dev-api --name live --function-version <previous>` works at
   once, but the next `cdk deploy` moves the alias to whatever tag it is given, so follow it with a deploy of
   the tag you want.
-- **New data:** `scripts/aws/run-build.sh 2027.3 bundle --wait` (or `full`), then `push-images.sh 2027.3 api`
-  and deploy.
+- **New data:** Actions → Build SBC data (`version` 2027.3, `bundle` or `full`), or `scripts/aws/run-build.sh 2027.3 bundle --wait`.
+  Read the bundle's `retrieval-2027.3.txt`, then set `PINNED_BUNDLE_VERSION` in `deploy-aws.yml` and push (or
+  run the deploy workflow with `bundle_version`). The workflow waits for a `bundle` build but only starts a `full`
+  one (2–3 hours, longer than the deploy role's 1-hour credentials).
 
 ## 6. Secrets and the demo password
 

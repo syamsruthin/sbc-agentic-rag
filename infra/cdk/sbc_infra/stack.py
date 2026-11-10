@@ -59,7 +59,6 @@ class AppStack(cdk.Stack):
             "Cicd",
             settings=settings,
             repos=(f.registry.api, f.registry.build),
-            function=api.function,
             web_bucket=web.bucket,
             data_bucket=f.data.bucket,
             distribution=web.distribution,

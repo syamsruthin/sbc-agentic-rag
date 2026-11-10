@@ -2,7 +2,7 @@
 
 Everything finished so far on the AWS deployment track (PLAN.md revision 3), on branch `main_AWS`.
 
-- Status as of **2026-11-10**: after WP9 and the port of the generation eval (2026-11-05), and a doc audit (2026-11-10). No code has changed since 2026-11-05.
+- Status as of **2026-11-10**: after WP9 and the port of the generation eval (2026-11-05), a doc audit and WP11 (2026-11-10).
 - What's left is in [TODO.md](TODO.md).
 - The plan these tasks follow is [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 - The analysis behind it is [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md).
@@ -27,7 +27,8 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | WP8 | Containers and the local stack | `a2ec16b` | 2026-11-05 | API and build images, compose with DynamoDB Local, smoke test, CI image job, RUNBOOK.md; 5 tests |
 | B | Branch policy: `main_AWS` not merged into `main` | `8adb851` | 2026-11-05 | PR #14 closed unmerged; CI runs on pushes to `main_AWS` |
 | WP9 | CDK stacks, operator scripts | `98a021a` | 2026-11-05 | `SbcFoundation` + `SbcApp`, 12 template tests, 8 scripts, CI `cdk` job; `X-Sbc-Authorization` fix; 4 more tests |
-| D2 | Doc audit against the code | this commit | 2026-11-10 | PLAN.md plan-resolution order (the change in PR #13), README status, MIGRATION_PLAN WP10/WP11/WP13 and §6.5, §8–§11 brought in line with WP9 as built, TODO and SPIKES notes |
+| D2 | Doc audit against the code | `3ea8294` | 2026-11-10 | PLAN.md plan-resolution order (the change in PR #13), README status, MIGRATION_PLAN WP10/WP11/WP13 and §6.5, §8–§11 brought in line with WP9 as built, TODO and SPIKES notes |
+| WP11 | CI/CD: deploy and data-build workflows | this commit | 2026-11-10 | `deploy-aws.yml` (called by CI after every check), `build-data.yml`, saved deploy context, deploy role through the CDK, smoke test through CloudFront; 1 more template test |
 | P | Port of the Phase 1 generation eval from `feat/phase-1-generation-eval` | `b69e3f8`, `e912d3a`, `fb21e97`; docs `25bbaca` and the follow-up | 2026-11-05 | `find_plans` list discovery, plan-reference and fast-path fixes, `evals/harness/generation.py`; 13 more tests |
 
 **Health at the time of writing:**
@@ -35,7 +36,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 - ruff check and ruff format pass on 189 files.
 - mypy passes on 138 source files; `sbc_core`, `sbc_extract`, `sbc_tools` and `sbc_aws` are strict.
 - import-linter keeps all 7 contracts.
-- Unit tests: **432 passed**; CDK template tests: **12 passed**; shellcheck clean on every script.
+- Unit tests: **432 passed**; CDK template tests: **13 passed**; shellcheck clean on every script; actionlint clean on every workflow.
 - The API image builds and passes `smoke.sh`, the compose stack runs on DynamoDB Local, and both CDK stacks synthesize.
 - Deterministic eval gate: plan filter 1.0, resolution 1.0, 0 confident wrong-plan, service mapping 1.0, recall@5 1.0 on the fixture.
 - Integration tests: 5 passed on DynamoDB Local 2.6.1 with the corpus present (without corpus data, the 2 ingest
@@ -352,6 +353,51 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
   - the generation eval command to `data/README.md`;
   - to MIGRATION_PLAN: the generation eval in §7, and in WP13 how the HTTP adapter can reuse its scoring (and what it can't score without the trace). It also replaced the stale "plan only" status line;
   - the matching WP13 note in `docs/aws/TODO.md`, and the evals row of DEPLOYMENT_ANALYSIS §4.
+
+### WP11: CI/CD (2026-11-10)
+
+- **`.github/workflows/deploy-aws.yml`** (`workflow_call` and `workflow_dispatch`):
+  - `image` job on `ubuntu-24.04-arm` (native arm64, so no QEMU): OIDC into the deploy role, installs the AWS
+    CLI if the runner lacks it, then `scripts/aws/push-images.sh <bundle> api`. The bundle version is pinned in
+    the workflow (`PINNED_BUNDLE_VERSION: "2027.2"`) or given as an input. `push-images.sh` now writes the tag to
+    `$GITHUB_OUTPUT`.
+  - `deploy` job (concurrency group `deploy-aws-dev`, never cancelled): checks the tag's shape,
+    `scripts/aws/deploy.sh app <tag>` with `CDK_APPROVAL=broadening`, then `scripts/aws/smoke-deployed.sh`.
+  - A rollback is a dispatch with `image_tag`: the build job is skipped.
+- **`ci.yml`:**
+  - A `changes` job decides whether a push to `main_AWS` deploys. Docs-only pushes (`docs/`, `spikes/`, root
+    `*.md`) don't. Until `AWS_DEPLOY_ROLE_ARN` is set, the deploy is skipped with a notice.
+  - A `deploy` job calls `deploy-aws.yml` after every other job passes.
+  - Concurrency now cancels older runs only for pull requests; pushes queue, so a deploy is never cut off.
+- **`.github/workflows/build-data.yml`** (`workflow_dispatch`, `version` and `bundle|full`): checks the version
+  format, then `scripts/aws/run-build.sh`, waiting for `bundle` builds only (the role's credentials last 1 hour).
+- **`scripts/aws/deploy.sh`:**
+  - Saves each value set by hand (`ALARM_EMAIL`, `DEMO_USER_IDS`, `WARMER`, `GITHUB_OIDC_PROVIDER_ARN`,
+    `BUILD_IMAGE_TAG` or the third argument) under `/sbc-deploy/<env>/` in SSM after a successful deploy, and
+    reuses saved values when a variable isn't set. Without it, CI's deploy (which knows only the image tag)
+    would remove the alarm email's subscription and the demo account's limits.
+  - `app` deploys with `--exclusively`, so the foundation is never redeployed as a side effect.
+  - `CDK_APPROVAL` (default `broadening`).
+  - Checked under macOS's bash 3.2 with stand-in `aws` and `npx` commands: a first deploy saves its values, a
+    CI-style deploy with no variables gets them all back, and a variable overrides a saved value.
+- **`scripts/aws/smoke-deployed.sh`:** through CloudFront, deep health (DynamoDB stores, both bots ready, plans,
+  the `plan_source` table, the expected bundle version) and a POST to `/api/public/session` with a fake
+  Turnstile token that must come back as the API's own 403, which shows the body hash passes origin access
+  control. Checked against a local API on the fixture bundle with Cloudflare's always-fail test secret (it
+  fails only on the in-process stores, as it should).
+- **Deploy role** (`infra/cdk/sbc_infra/constructs/cicd.py`):
+  - Added: `sts:AssumeRole` on `cdk-hnb659fds-deploy-role-…` and `cdk-hnb659fds-file-publishing-role-…`,
+    `cloudformation:DescribeStacks` on its two stacks, `ssm:GetParametersByPath` on `/sbc-deploy/<env>`.
+  - Removed: the direct Lambda permissions (`UpdateFunctionCode`, `PublishVersion`, `UpdateAlias`, …), because
+    CloudFormation owns the alias. It can't save deploy context or read `/sbc/<env>/` secrets.
+- **Tests:** a 13th template test (`test_the_deploy_role_deploys_through_the_cdk_only`); the secrets test now
+  looks at the API's role only and checks the deploy role can't read secrets.
+- **Checked:** ruff, format, mypy, import-linter, 432 unit tests, 13 template tests, `cdk synth`, shellcheck on
+  every script and actionlint 1.7.12 on every workflow.
+- **Not run:** anything against AWS or GitHub's runners. It needs the first manual deploy and the
+  `AWS_DEPLOY_ROLE_ARN` variable (docs/aws/TODO.md §2.4).
+- **Docs:** MIGRATION_PLAN (WP11 as built, status, layout, rollback, first-deploy outline), RUNBOOK §4 and §5,
+  docs/aws/TODO.md, `infra/cdk/README.md`, `infra/README.md`, README.
 
 ---
 

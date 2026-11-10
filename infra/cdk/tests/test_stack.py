@@ -102,9 +102,16 @@ def test_the_audit_table_is_append_only_for_the_api(stacks: dict[str, Template])
 
 
 def test_secrets_come_only_from_this_environments_ssm_prefix(stacks: dict[str, Template]) -> None:
-    ssm = [s for s in _statements(stacks["app"]) if "ssm:GetParametersByPath" in json.dumps(s["Action"])]
+    deploy = _deploy_role_statements(stacks["app"])
+    ssm = [
+        s
+        for s in _statements(stacks["app"])
+        if "ssm:GetParametersByPath" in json.dumps(s["Action"]) and s not in deploy
+    ]
     assert len(ssm) == 1
     assert "parameter/sbc/dev" in json.dumps(ssm[0]["Resource"])
+    # The deploy role reads only the saved deploy context, never the secrets.
+    assert "parameter/sbc/dev" not in json.dumps(deploy)
     kms = [s for s in _statements(stacks["app"]) if s["Action"] == "kms:Decrypt"]
     assert kms
     assert kms[0]["Condition"] == {"StringEquals": {"kms:ViaService": "ssm.us-east-1.amazonaws.com"}}
@@ -226,6 +233,36 @@ def test_deploys_are_keyless_and_limited_to_one_branch(stacks: dict[str, Templat
     assert condition["StringEquals"]["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
     app.resource_count_is("AWS::IAM::User", 0)
     app.resource_count_is("AWS::IAM::AccessKey", 0)
+
+
+def _deploy_role_statements(app: Template) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for policy in resources(app, "AWS::IAM::Policy").values():
+        if "DeployRole" in json.dumps(policy["Properties"]["Roles"]):
+            out += policy["Properties"]["PolicyDocument"]["Statement"]
+    return out
+
+
+def test_the_deploy_role_deploys_through_the_cdk_only(stacks: dict[str, Template]) -> None:
+    """WP11: CloudFormation owns the `live` alias, so CI deploys with `cdk deploy` (the bootstrap roles) and
+    can't change the function itself; it reads only its own stacks' outputs and the saved deploy context."""
+    statements = _deploy_role_statements(stacks["app"])
+    listed = [[s["Action"]] if isinstance(s["Action"], str) else s["Action"] for s in statements]
+    actions = {a for group in listed for a in group}
+    assert not {a for a in actions if a.startswith("lambda:")}, actions
+    assume = next(s for s in statements if s["Action"] == "sts:AssumeRole")
+    assert sorted(assume["Resource"]) == [
+        "arn:aws:iam::123456789012:role/cdk-hnb659fds-deploy-role-123456789012-us-east-1",
+        "arn:aws:iam::123456789012:role/cdk-hnb659fds-file-publishing-role-123456789012-us-east-1",
+    ]
+    describe = next(s for s in statements if s["Action"] == "cloudformation:DescribeStacks")
+    assert sorted(describe["Resource"]) == [
+        "arn:aws:cloudformation:us-east-1:123456789012:stack/SbcApp-dev/*",
+        "arn:aws:cloudformation:us-east-1:123456789012:stack/SbcFoundation-dev/*",
+    ]
+    context = next(s for s in statements if s["Action"] == "ssm:GetParametersByPath")
+    assert context["Resource"] == "arn:aws:ssm:us-east-1:123456789012:parameter/sbc-deploy/dev"
+    assert "ssm:PutParameter" not in actions  # only a person's deploy (scripts/aws/deploy.sh) saves context
 
 
 def test_alarms_stay_within_the_free_ten_and_costs_are_watched(stacks: dict[str, Template]) -> None:

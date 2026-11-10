@@ -886,13 +886,16 @@ Alerts go out by email plus a Slack webhook.
 PR:   ruff, mypy → unit + integration (cassettes) → deterministic eval
       → LLM smoke eval (path-filtered) → build image → deploy tagged preview (no traffic)
       → e2e smoke (later, against a deployed version)
-main_AWS: bundle from S3 (built by the Fargate task when the data changes)
-      → build arm64 image, push to ECR → update the function, publish a version
-      → smoke the new version directly (healthz?deep=1 and one fast-path question)
-      → move the live alias (optional 10% weighted canary first) → sync the SPAs, invalidate CloudFront
+main_AWS: every check above passes (docs-only pushes stop here)
+      → bundle from S3 (built by the Fargate task when the data changes; version pinned in the workflow)
+      → build the arm64 image, push to ECR → cdk deploy SbcApp (CloudFormation publishes a version
+        and moves the live alias) → smoke through CloudFront (deep health, a POST through OAC)
+      → sync the SPAs, invalidate CloudFront (with the frontends)
 ```
 
-**Rollback:** the `live` alias moves back to the previous version in under a minute. Code, facts and search index roll back together (§3.2.5). DynamoDB has no schema migrations; item shapes stay backward compatible for one release.
+As built (docs/aws/MIGRATION_PLAN.md WP11): `ci.yml` calls `deploy-aws.yml` after its checks. The deploy goes through the CDK because CloudFormation owns the `live` alias. A question in the smoke test needs a session token and waits for the deployed-API eval adapter (WP13), and the weighted canary is not built (optional).
+
+**Rollback:** deploy the previous image tag (the deploy workflow's `image_tag` input), or in an emergency move the `live` alias back by hand in under a minute and then deploy that tag, so the next deploy doesn't move it again. Code, facts and search index roll back together (§3.2.5). DynamoDB has no schema migrations; item shapes stay backward compatible for one release.
 
 ### 9.5 Scaling, vLLM, caching and rate limiting
 

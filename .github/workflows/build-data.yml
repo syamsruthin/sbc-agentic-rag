@@ -1,0 +1,69 @@
+name: Build SBC data
+
+# docs/aws/MIGRATION_PLAN.md WP11: starts the offline SBC build as an ECS Fargate Spot task
+# (scripts/aws/run-build.sh; docs/aws/RUNBOOK.md section 3). The task itself writes the bundle, its retrieval
+# eval and the embedding cache to s3://<data bucket>/bundles/.
+#
+# - bundle: rebuilds the bundle from the Markdown already in S3 (code changes in extraction, grammar or index).
+#   The workflow waits for it and fails if the task does.
+# - full: refreshes the corpus from the portals (2-3 hours). The workflow only starts it, because the deploy
+#   role's credentials last 1 hour; follow it with `aws logs tail /ecs/sbc-dev-build --follow`.
+#
+# Afterwards, read bundles/<version>/retrieval-<version>.txt, then set PINNED_BUNDLE_VERSION in
+# deploy-aws.yml to the new version (or run that workflow with bundle_version) to ship it.
+# The task runs the build image already deployed with SbcApp (its buildImageTag); push a new one with
+# scripts/aws/push-images.sh <version> build and deploy it by hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Bundle version to build, e.g. 2027.3"
+        required: true
+        type: string
+      mode:
+        description: "bundle (from the Markdown in S3) or full (refetch the corpus)"
+        type: choice
+        options: [bundle, full]
+        default: bundle
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: build-data-dev
+  cancel-in-progress: false
+
+env:
+  SBC_ENV: dev
+  AWS_REGION: us-east-1
+
+jobs:
+  build:
+    name: Run the offline build on Fargate Spot
+    runs-on: ubuntu-latest
+    timeout-minutes: 58
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the inputs and the deploy role
+        env:
+          ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          [ -n "$ROLE" ] || { echo "::error::set the repository variable AWS_DEPLOY_ROLE_ARN (SbcApp output DeployRoleArn)"; exit 1; }
+          [[ "$VERSION" =~ ^[0-9]{4}\.[0-9]+$ ]] || { echo "::error::version must look like 2027.3, not '$VERSION'"; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Start the build
+        env:
+          VERSION: ${{ inputs.version }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          if [ "$MODE" = bundle ]; then
+            scripts/aws/run-build.sh "$VERSION" bundle --wait
+          else
+            scripts/aws/run-build.sh "$VERSION" full
+          fi

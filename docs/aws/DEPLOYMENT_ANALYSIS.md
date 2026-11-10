@@ -468,7 +468,7 @@ The Supabase keys and `SUPABASE_JWT_SECRET` go away: Cognito JWTs are verified w
 | Role | Trusted by | Permissions |
 |---|---|---|
 | `sbc-api-exec` | Lambda | `logs:CreateLogStream/PutLogEvents`. `dynamodb:GetItem/PutItem/UpdateItem/Query/DeleteItem/BatchWriteItem` on the app and checkpoint tables. **`dynamodb:PutItem` only** on the audit table. `s3:GetObject/PutObject` on `pdf-cache/*` and `checkpoints/*`. `ssm:GetParametersByPath` on `/sbc/dev/*` and `kms:Decrypt` through the `aws/ssm` key. *(Bedrock path: `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream`, `bedrock:Rerank` on the chosen model ARNs.)* |
-| `sbc-github-deploy` | GitHub OIDC (`repo:syamsruthin/sbc-agentic-rag:ref:refs/heads/main` + environment) | `ecr:*` push to one repo; `lambda:UpdateFunctionCode/PublishVersion/UpdateAlias/GetFunction`; `s3:Sync` on the web bucket; `s3:GetObject` on `bundles/*`; `cloudfront:CreateInvalidation` |
+| `sbc-github-deploy` | GitHub OIDC (`repo:syamsruthin/sbc-agentic-rag:ref:refs/heads/main` + environment) | `ecr:*` push to one repo; ~~`lambda:UpdateFunctionCode/PublishVersion/UpdateAlias/GetFunction`~~ (as built, WP11: `sts:AssumeRole` on the CDK bootstrap roles instead, since CloudFormation owns the alias); `s3:Sync` on the web bucket; `s3:GetObject` on `bundles/*`; `cloudfront:CreateInvalidation` |
 | `sbc-build-task` | ECS tasks | `s3:ListBucket/GetObject/PutObject` on the data bucket; `ssm:GetParameter` for the embedding key |
 | `sbc-ecs-execution` | ECS | Pull from ECR, write logs (AWS-managed policy) |
 | `sbc-scheduler` | EventBridge Scheduler | `lambda:InvokeFunction` on the warm-up target |

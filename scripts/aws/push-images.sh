@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the arm64 images and push them to ECR (the first deploy, or by hand; CI does this from WP11 on).
+# Build the arm64 images and push them to ECR (the first deploy, or by hand; CI pushes the API image).
 #   scripts/aws/push-images.sh <bundle-version> [api|build|both]
 # The API image tag is <git-sha>-<bundle-version>; the build image tag is <git-sha>. Prints both.
 source "$(dirname "$0")/_common.sh"
@@ -18,6 +18,7 @@ if [ "$which" != build ]; then
   docker buildx build --platform linux/arm64 --provenance=false --push -f infra/docker/api.Dockerfile \
     --build-context bundle="$work" -t "${api_repo}:${sha}-${version}" .
   echo "API image tag: ${sha}-${version}"
+  [ -n "${GITHUB_OUTPUT:-}" ] && echo "api_tag=${sha}-${version}" >> "$GITHUB_OUTPUT"
 fi
 if [ "$which" != api ]; then
   docker buildx build --platform linux/arm64 --provenance=false --push -f infra/docker/build.Dockerfile \
