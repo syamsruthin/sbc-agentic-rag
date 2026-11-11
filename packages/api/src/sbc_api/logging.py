@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import time
 from typing import Any
@@ -25,9 +26,15 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(out, default=str, ensure_ascii=False)
 
 
-def configure(level: str = "INFO") -> None:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
+def configure(level: str = "INFO", log_file: str | None = None) -> None:
+    """JSON lines on stdout (CloudWatch on AWS) and, when ``log_file`` (default: ``LOG_FILE``) is set, the
+    same lines appended to that file (the main_local branch's stack uses ``.local/logs/api.jsonl``)."""
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    path = log_file if log_file is not None else os.environ.get("LOG_FILE")
+    if path:
+        handlers.append(logging.FileHandler(path, encoding="utf-8"))
+    for handler in handlers:
+        handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
-    root.handlers[:] = [handler]
+    root.handlers[:] = handlers
     root.setLevel(level)

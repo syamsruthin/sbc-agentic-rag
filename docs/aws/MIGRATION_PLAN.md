@@ -605,7 +605,7 @@ CMD ["uvicorn", "--factory", "sbc_api.app:create_app", "--host", "0.0.0.0", "--p
 > - **No `PUBLIC_BASE_URL` on the Lambda:** it would make a circular dependency (the distribution needs the Function URL, and the URL's function would need the distribution's domain). Nothing reads it yet.
 > - **ECS without a VPC:** an L1 `CfnCluster` (Fargate + Fargate Spot) and a task definition (arm64, 4 vCPU, 8 GB, 50 GB, OpenRouter key as an ECS secret from SSM, default command `bundle`). `scripts/aws/run-build.sh` passes the default-VPC public subnets at run time, so no VPC or NAT is ever created.
 > - **Ops:**
->   - 8 alarms (Lambda errors, throttles, p95 > 20 s, and 5 metric filters on the API's JSON logs: `global_cap_reached`, `pdf_hash_mismatch`, `audit_failed`, demo-account limits, `PlanFilterViolationError`) to an SNS topic.
+>   - 8 alarms (Lambda errors, throttles, p95 > 20 s, and 5 metric filters on the API's JSON logs: `global_cap_reached`, `pdf_hash_mismatch`, `audit_failed`, demo-account limits, `PlanFilterViolationError`) to an SNS topic. 9 since 2026-11-11: `ApiErrors`, a filter on the API's `ERROR` lines (see WP12).
 >   - Budget and Cost Anomaly Detection, created when `alarmEmail` is set.
 >   - Optional warmer (`warmer=true`): an EventBridge Scheduler rule pinging the alias every 5 minutes, weekday business hours (US Eastern). Its events reach the API as `POST /events` through the Lambda Web Adapter; the new route answers 204.
 > - **CloudFormation owns the `live` alias.** A deploy is `cdk deploy SbcApp -c apiImageTag=<tag>`. Moving the alias by hand is undone by the next deploy, so WP11 deploys through the CDK.
@@ -714,6 +714,8 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 >
 > **As built:**
 > - **Lambda log format `JSON`**, application and system log level `INFO` (`infra/cdk/sbc_infra/constructs/api.py`), the same level as `LOG_LEVEL`. The API's lines were already JSON with a `level` field. **To check on the first deploy:** that CloudWatch keeps the API's lines as JSON objects (so the metric filters still match `$.event`) rather than wrapping them, and that Lambda's `REPORT` lines now come as `platform.report` JSON (`initDurationMs`).
+> - **Unhandled errors (2026-11-11, found while running the app locally on `main_local`):** an exception that escaped a route used to reach uvicorn, which answered a bare 500 with no `x-request-id` and logged a plain-text traceback without the request ID. And through the Lambda Web Adapter an HTTP 500 is a successful invocation, so the `lambda-errors` alarm never fires for it. Now the request-ID middleware (`sbc_api/app.py`) catches it: one JSON `ERROR` line (`event: unhandled_error`, `request_id`, route, traceback), a 500 JSON body with the `request_id` and the header. The `ApiErrors` alarm watches `{ $.level = "ERROR" }`, which also covers failed and timed-out turns (DEPLOYMENT_ANALYSIS §7.7 planned this filter). An optional `LOG_FILE` writes the same JSON lines to a file (unused on AWS).
+> - **`LANGFUSE_BASE_URL` (2026-11-11):** the name Langfuse shows with a project's keys; the API read only `LANGFUSE_HOST`, so a US-region project's traces went to the EU default. `EnvSettings.langfuse_url` prefers `LANGFUSE_BASE_URL`, the tracer passes it as the SDK's `base_url`, and `put-secrets.sh` asks for it. Checked with a US-region project on `main_local`: one trace per turn arrived, cost and request ID included.
 > - **`x-request-id`** was already on every response; the apps show it under each answer and error with a "Report a problem" link (a new GitHub issue with the ID only, or `VITE_REPORT_URL`).
 > - **`demo_user_limit_reached`:** the demo account's refusals log this event (others log `rate_limited`), and the `DemoAccountLimited` metric filter matches it. A template test checks the filters against the events the API logs (14 template tests).
 > - **The details footer:** answer events carry `details` (graph path, model calls, cost, tools) from the turn's trace, shared with the `turn` log line; the apps show it under "Details". Cached answers leave it out (no model call was made).
@@ -839,6 +841,7 @@ event: done      data: {}
 | `OPENROUTER_API_KEY_BROKER` / `_PUBLIC` | `.env` | SSM | `put-secrets.sh` |
 | `SESSION_JWT_SECRET`, `TURNSTILE_SECRET_KEY` | `.env` (Turnstile test keys) | SSM | `put-secrets.sh` |
 | `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` | optional | optional (SSM) | `put-secrets.sh` |
+| `LANGFUSE_BASE_URL` | optional (EU default) | optional (SSM; `https://us.cloud.langfuse.com` for a US project) | `put-secrets.sh` |
 | `SBC_PORTFOLIO__DEMO_USER_IDS` | — | the demo user's `sub` | CDK context |
 | `AWS_LWA_INVOKE_MODE`, `AWS_LWA_READINESS_CHECK_PATH`, `PORT` | — | Dockerfile | Dockerfile |
 
@@ -862,7 +865,7 @@ The roles follow DEPLOYMENT_ANALYSIS.md §6.5: the API's execution role, the Git
 | Integration | API + DynamoDB Local through `compose.yaml`; checkpoint resume across processes | pytest `-m integration` | Locally, before each WP merge |
 | Eval (existing) | Deterministic CI gate on the fixture bundle | `evals.harness.ci_gate` | CI |
 | Eval (existing) | Golden 0.2.0 through the in-process agent graph (hard gates, behavior, tool selection, cost) | `evals.harness.generation` | Manually; needs OpenRouter credit |
-| Eval (new) | Golden subset through the deployed HTTP API | `evals/harness` HTTP adapter | Manually after deploys (WP13) |
+| Eval (new) | Golden subset through the deployed HTTP API | `evals/harness/http_api.py` | Manually after deploys (WP13) |
 | E2E smoke | Landing → both bots → PDF link | Playwright (headless Chromium) | After deploy (optional CI job) |
 
 Each WP PR must keep `ruff`, `ruff format --check`, `mypy` (strict for `sbc_aws.*`), `lint-imports`, `pytest tests/unit`, gitleaks and the eval gate green. That is the same bar as today.

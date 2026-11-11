@@ -3,9 +3,13 @@ refusal outside local runs, validation and the plan picker's scope rules."""
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from sbc_agent.graph import Progress, Reply
@@ -190,3 +194,49 @@ def test_slow_turns_get_keepalives_and_then_time_out() -> None:
 
 def test_warmer_pings_are_accepted(harness: Harness) -> None:
     assert harness.client().post("/events", json={"warm": True}).status_code == 204
+
+
+def test_an_unhandled_error_keeps_its_request_id(
+    harness: Harness, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WP12: a 500 can be found by its request ID, from the response (header, body) to one JSON log line."""
+    client = TestClient(create_app(harness.state()), raise_server_exceptions=False)
+
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("store unreachable")
+
+    monkeypatch.setattr(harness.stores.limiter, "hit", broken)
+    with caplog.at_level(logging.INFO, logger="sbc_api"):
+        r = client.post(
+            "/api/broker/chat", json={"message": "Gold deductible?"}, headers={"x-request-id": "rid-500"}
+        )
+    assert r.status_code == 500
+    assert r.headers["x-request-id"] == "rid-500"
+    assert r.json() == {"detail": "Something went wrong. Please try again.", "request_id": "rid-500"}
+    errors = [rec for rec in caplog.records if getattr(rec, "event", None) == "unhandled_error"]
+    assert len(errors) == 1
+    assert errors[0].levelname == "ERROR"
+    assert getattr(errors[0], "request_id", None) == "rid-500"
+    assert errors[0].exc_info is not None
+    assert "store unreachable" not in r.text
+
+
+def test_logs_can_also_go_to_a_file(tmp_path: Path) -> None:
+    from sbc_api import logging as api_logging
+
+    path = tmp_path / "api.jsonl"
+    root = logging.getLogger()
+    saved = root.handlers[:], root.level
+    try:
+        api_logging.configure("INFO", log_file=str(path))
+        logging.getLogger("sbc_api").info("hello", extra={"event": "test", "request_id": "r1"})
+        for handler in root.handlers:
+            handler.flush()
+    finally:
+        for handler in root.handlers:
+            if handler not in saved[0]:
+                handler.close()
+        root.handlers[:], _ = saved
+        root.setLevel(saved[1])
+    line = json.loads(path.read_text().strip().splitlines()[-1])
+    assert (line["event"], line["request_id"], line["level"]) == ("test", "r1", "INFO")

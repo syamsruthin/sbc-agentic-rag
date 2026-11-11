@@ -31,6 +31,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | WP11 | CI/CD: deploy and data-build workflows | `c0e47fb` | 2026-11-10 | `deploy-aws.yml` (called by CI after every check), `build-data.yml`, saved deploy context, deploy role through the CDK, smoke test through CloudFront; 1 more template test |
 | WP10 | Frontends | this commit | 2026-11-11 | `apps/` npm workspace: `chat-ui`, landing, Broker Assistant (Cognito), Plan Shopper (Turnstile); `deploy-web.sh`; CI `frontend` job and publishing in `deploy-aws.yml`; 11 frontend tests |
 | WP12 | Observability | this commit | 2026-11-11 | Lambda JSON log format, `demo_user_limit_reached` and its alarm, request ID in the apps, per-answer details, optional Langfuse (one trace per turn); 1 more template test, 7 tracing tests |
+| F | Fixes found while running the app locally (`main_local`) | this commit | 2026-11-11 | Unhandled errors keep their request ID + `ApiErrors` alarm; `LANGFUSE_BASE_URL`; quarantine on cached answers; the WP13 HTTP eval adapter; 1 more template assertion, 9 tests |
 | P | Port of the Phase 1 generation eval from `feat/phase-1-generation-eval` | `b69e3f8`, `e912d3a`, `fb21e97`; docs `25bbaca` and the follow-up | 2026-11-05 | `find_plans` list discovery, plan-reference and fast-path fixes, `evals/harness/generation.py`; 13 more tests |
 
 **Health at the time of writing:**
@@ -68,6 +69,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | 2026-11-03 | D3: Presidio NER before launch | **Deferred** until after launch; regex redaction stays |
 | 2026-11-04 | Branching per work package | Commit straight to `main_AWS` (no per-WP branches or PRs) |
 | 2026-11-05 | Tracking files and old docs | Files in **`docs/aws/`**; **update the older docs now** (PLAN.md revision 3) |
+| 2026-11-11 | `main_local` (the whole app locally with AWS stand-ins) | **Never merged** into `main_AWS` or `main`; fixes found there that apply on AWS are ported as their own change (F) |
 | 2026-11-05 | Merging into `main` | **Don't.** `main_AWS` stays the long-lived main branch of the AWS implementation; PR #14 (`main_AWS` → `main`) was closed unmerged. CI now also runs on pushes to `main_AWS` |
 
 ---
@@ -465,6 +467,28 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
     attributes, masking, usage and cost, no tool arguments), a turn traced and flushed with a redacted question,
     cached answers, a failing tracer, and deep health.
 - **Not run:** the JSON log format and the alarm on AWS.
+
+### F. Fixes found while running the app locally (2026-11-11)
+
+The branch `main_local` runs the whole application on one machine with stand-ins for the AWS services (DynamoDB
+Local, S3Mock, moto, a Caddy edge). It is never merged; these fixes from it are ported here as their own change,
+with the same code and tests:
+
+- **Unhandled errors keep their request ID.** An exception that escaped a route reached uvicorn: a bare 500 without
+  `x-request-id`, and a plain-text traceback without the ID. The request-ID middleware (`sbc_api/app.py`) now logs
+  one JSON `ERROR` line (`event: unhandled_error`, `request_id`, route, traceback) and answers 500 with the ID in
+  the header and body. Optional `LOG_FILE` copies the JSON lines to a file.
+- **`ApiErrors` alarm** (`ops.py`, 9 of the 10 free): a metric filter on `{ $.level = "ERROR" }`. Through the
+  Lambda Web Adapter an HTTP 500 is a successful invocation, so `lambda-errors` never saw these.
+- **`LANGFUSE_BASE_URL`:** read before `LANGFUSE_HOST` (`EnvSettings.langfuse_url`), passed as the SDK's
+  `base_url`; `put-secrets.sh` asks for it. A US-region project's traces went to the EU default before.
+- **Quarantine on cached answers** (`routes/chat.py`): the cache path skipped the check, so a plan quarantined after
+  its answer was cached kept being answered for up to 24 hours.
+- **WP13 HTTP eval adapter** (`evals/harness/http_api.py`): golden items as SSE turns, scored with
+  `generation.py`'s checks (its runner takes an `Asker` protocol); rate limits waited out; ungrounded numbers and
+  tool selection reported as not scored over HTTP. On `main_local`, 30 items passed every scored hard gate.
+- **Tests:** an unhandled error's ID and log line, the log file, quarantine on a cache hit, both Langfuse variable
+  names, five for the adapter, and the `ApiErrors` filter in the template test.
 
 ---
 

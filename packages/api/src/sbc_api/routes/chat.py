@@ -170,14 +170,17 @@ def chat(
             )
             reply = Reply("answer", cached["markdown"], tuple(cached.get("citations", [])),
                           tuple(cached.get("plan_keys", [])))  # fmt: skip
-            agent.remember(thread_id, message=body.message, reply=reply)
-            guards.audit_turn(api, principal, request_id, reply, cached=True)
-            _trace(api, principal, request_id, thread_id, title, reply, cached=True)
+            # A plan quarantined after the answer was cached must not be answered from the cache either.
+            final = guards.apply_quarantine(api, reply)
+            agent.remember(thread_id, message=body.message, reply=final)
+            guards.audit_turn(api, principal, request_id, final, cached=True)
+            _trace(api, principal, request_id, thread_id, title, final, cached=True)
             log.info(
                 "cache hit",
                 extra={"event": "cache_hit", "request_id": request_id, "bot": principal.bot.value},
             )
-            answer = single("answer", {**cached, "cached": True}, thread_id=thread_id, request_id=request_id)
+            payload = {**cached, "cached": True} if final is reply else reply_payload(final)[1]
+            answer = single("answer", payload, thread_id=thread_id, request_id=request_id)
             return _sse(flushed_after(answer, api.tracer))
 
     capped = guards.global_cap_reached(api)

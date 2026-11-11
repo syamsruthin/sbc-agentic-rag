@@ -17,6 +17,7 @@ Offline evaluation (PLAN.md sections 5 and 6).
 | `pdf_check.py` | Independent check of gold values against the PDF with poppler word coordinates (not pdfplumber, which built the bundle). Each value must be found in its own cell: tier column and service row, the Answers column, or the coverage example line. |
 | `retrieval.py` | Retrieval and plan-resolution eval (PLAN.md 5.1): plan-filter correctness, resolution accuracy and confident wrong-plan resolutions, service mapping, recall@5/@10, MRR@10, and context precision and recall by chunk ID. Three setups: `full`, `no_rerank`, `bm25_only`. |
 | `generation.py` | Generation eval (PLAN.md 5.2-5.3): golden items through the whole agent graph, scored with deterministic checks (below). Needs OpenRouter. |
+| `http_api.py` | The generation eval through a running API over HTTP (WP13): golden items as SSE turns with a bearer token (`SBC_EVAL_BROKER_TOKEN`, `--base-url`), scored with `generation.py`'s checks. Over HTTP the internal trace isn't visible, so ungrounded numbers and tool selection are reported as not scored. |
 | `ci_gate.py` | The deterministic CI gate: validates every committed golden dataset and runs the BM25-only eval on the synthetic fixture bundle; any hard-gate failure fails the `eval-gate` job. |
 
 ### Running

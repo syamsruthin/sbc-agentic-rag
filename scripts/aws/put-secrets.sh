@@ -11,7 +11,7 @@ put() { aws ssm put-parameter --name "${SSM_PREFIX}$1" --type SecureString --val
 exists() { aws ssm get-parameter --name "${SSM_PREFIX}$1" --query Parameter.Name --output text >/dev/null 2>&1; }
 
 for name in OPENROUTER_API_KEY_BROKER OPENROUTER_API_KEY_PUBLIC TURNSTILE_SECRET_KEY \
-            LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY; do
+            LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY LANGFUSE_BASE_URL; do
   read -r -s -p "${name} (empty = keep/skip): " value; echo
   [ -n "$value" ] && put "$name" "$value"
 done

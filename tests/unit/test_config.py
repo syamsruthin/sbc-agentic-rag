@@ -293,3 +293,13 @@ def test_deep_merge_leaves_inputs_unchanged() -> None:
     override = {"a": {"b": 3}, "d": [2]}
     assert deep_merge(base, override) == {"a": {"b": 3, "c": 2}, "d": [2]}
     assert base == {"a": {"b": 1, "c": 2}, "d": [1]}
+
+
+@pytest.mark.parametrize("name", ["LANGFUSE_BASE_URL", "LANGFUSE_HOST"])
+def test_the_langfuse_region_comes_from_either_variable(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    """LANGFUSE_BASE_URL is the name Langfuse shows with a project's keys; LANGFUSE_HOST is the older one."""
+    for other in ("LANGFUSE_BASE_URL", "LANGFUSE_HOST"):
+        monkeypatch.delenv(other, raising=False)
+    assert EnvSettings(_env_file=None).langfuse_url == "https://cloud.langfuse.com"
+    monkeypatch.setenv(name, "https://us.cloud.langfuse.com")
+    assert EnvSettings(_env_file=None).langfuse_url == "https://us.cloud.langfuse.com"

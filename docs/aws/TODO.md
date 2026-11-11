@@ -40,7 +40,7 @@ exist.
 - [ ] `cdk bootstrap aws://<account>/us-east-1`, needed for the spike run and the first deploy (`scripts/aws/bootstrap.sh` does it).
 - [ ] **OpenRouter keys and credit limits:** a broker key at $15 a month and a separate public key at $10 a month (`OPENROUTER_API_KEY_PUBLIC`; the local `.env` has only the broker key), before any public URL exists. This is the hard LLM cost cap. The current broker key is spent ($5.09 of $5, checked 2026-11-10), so raise its limit or replace it first.
 - [ ] A Cloudflare Turnstile widget. Note its site key (for `deploy-web.sh`, §2.4) and secret (for `put-secrets.sh`); its allowed hostnames get the CloudFront domain after the first deploy.
-- [ ] Decide whether Langfuse Cloud Hobby is wanted (optional). If so, create a project and give its keys to `put-secrets.sh` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`); the API then traces each turn (`"tracing": "langfuse"` in deep health).
+- [ ] Decide whether Langfuse Cloud Hobby is wanted (optional). If so, create a project and give its keys and region to `put-secrets.sh` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`); the API then traces each turn (`"tracing": "langfuse"` in deep health).
 
 ### 2.2 Spikes 2 and 3 on AWS (costs cents)
 
@@ -121,6 +121,9 @@ optional Langfuse tracing (one trace per turn).
 - [x] Langfuse, one trace per turn (`sbc_api/tracing.py`), on when both keys are set.
 - [ ] Optional: a span per graph node with real timings (the turn's trace records each call's latency, not its
       start time).
+- [x] Unhandled errors keep their request ID (JSON `ERROR` line, response header and body) and raise the new
+      `ApiErrors` alarm (9 of 10); found while running the app locally on `main_local` (2026-11-11).
+- [x] `LANGFUSE_BASE_URL` honored, so a non-EU Langfuse project gets its traces (2026-11-11).
 - [ ] 👤 **Done when:** a deliberate error shows in CloudWatch, raises the alarm email, and is found by its request
       ID. On the first deploy, also check that the API's lines stay JSON objects under the JSON log format (the
       metric filters read `$.event`).
@@ -134,7 +137,9 @@ optional Langfuse tracing (one trace per turn).
 - [ ] Check that the demo user's tokens **can't** change its password (`aws cognito-idp change-password` with a demo access token must fail).
 - [ ] An `evals/harness` HTTP adapter, and a run of about 30 golden 0.2.0 items through the deployed API. It can
       reuse `generation.py`'s scoring (SSE events → `Reply`); without the trace, it scores behavior, exact
-      match, plan filter and wrong-plan answers only (MIGRATION_PLAN WP13).
+      match, plan filter and wrong-plan answers only (MIGRATION_PLAN WP13). **The adapter is built**
+      (`evals/harness/http_api.py`; `SBC_EVAL_BROKER_TOKEN`, `--base-url`; 2026-11-11). On `main_local`'s local
+      stack, 30 items passed every scored hard gate (30/30 correct). Left: the run against the deployed API.
 - [ ] The interviewer click-through on a cold system: landing → Shopper question → Broker sign-in → comparison → PDF citation (including a preview-only plan).
 - [ ] **`docs/aws/RUNBOOK.md`:** sections 1–7 exist. Left: fixes from the first deploy (§4), the Lambda measurements (§2) and the full teardown (§8).
 - [ ] README "Live demo" section with the URL and demo-login instructions.
@@ -210,7 +215,7 @@ The AWS track hosts the app; these are features and evaluations the application 
 - **Limits reply in the stream.** A refused turn is an SSE `limit` event with HTTP 200, not a 429, and the apps show it as a notice (WP10). The PDF proxy does use 429.
 - **DynamoDB errors fail closed.** If DynamoDB can't be reached, a turn returns a 500, because limits can't be checked. That is deliberate (PLAN.md §3.5.6).
 - **Answers are sent whole.** They are not streamed token by token, because nothing passes before the verifier; users see status events, then the answer.
-- **Quarantine is checked after the turn.** The model is still called for a quarantined plan; only the answer is withheld. Checking before the turn would need the plan resolved first.
+- **Quarantine is checked after the turn.** The model is still called for a quarantined plan; only the answer is withheld. Checking before the turn would need the plan resolved first. Cached answers are checked too: until 2026-11-11 the cache path skipped quarantine, so a plan quarantined after its answer was cached kept being answered for up to 24 hours.
 - **A cached answer still writes the audit record and the thread,** but not a LangGraph trace of its own.
 - **Local runs** use a developer principal for both bots, in-process stores, no Turnstile check and a per-process session secret. They never reach real users, because outside `APP_ENV=local` the API requires the real configuration.
 - **The test helper `tests/unit/api/test_guards.py::app()`** changes frozen config objects with `object.__setattr__` to set limits. That is fine for tests, but it is not a pattern for the app.
