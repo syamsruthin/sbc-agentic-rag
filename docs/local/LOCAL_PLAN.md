@@ -52,8 +52,8 @@ One command brings up the stack; one URL serves the site; every flow below works
 an automated smoke test.
 
 1. **Landing page** at `http://localhost:8088/` with the demo-broker login read from `/landing/demo.json`.
-2. **Broker Assistant** at `/broker/`: a real sign-in (SRP, first-login new password, TOTP setup) against a
-   local Cognito-compatible pool; plan search with filters; streamed answers; comparisons with CSV export;
+2. **Broker Assistant** at `/broker/`: a real sign-in against a local Cognito-compatible pool (as built:
+   `USER_PASSWORD_AUTH`, because the stand-in can't finish SRP or the first-login new-password step; section 7); plan search with filters; streamed answers; comparisons with CSV export;
    clarification buttons; earlier conversations; feedback; "Report a problem" with the request ID.
 3. **Plan Shopper** at `/shopper/`: state choice, a real Turnstile widget (Cloudflare's test keys), a signed
    session token, up to 3 Individual plans, plain-language answers.
@@ -79,7 +79,7 @@ flowchart LR
   B["Browser"] --> EDGE["edge (Caddy) :8088<br/>CloudFront stand-in"]
   EDGE -->|"/ /broker/ /shopper/"| SITE[("apps/site<br/>built frontends")]
   EDGE -->|"/api/*"| API["sbc-api :8080<br/>native uvicorn or the Lambda image"]
-  B -->|"SRP sign-in"| MOTO["moto server :5050<br/>Cognito, SSM"]
+  B -->|"sign-in (USER_PASSWORD_AUTH)"| MOTO["moto server :5050<br/>Cognito, SSM"]
   B -->|"widget"| CF["Cloudflare Turnstile<br/>test keys"]
   API --> DDB[("DynamoDB Local :8000<br/>persistent volume")]
   API -->|"JWKS, secrets"| MOTO
@@ -109,7 +109,7 @@ Everything local lives under `infra/local/`, `scripts/local/` and `docs/local/`.
 |---|---|---|---|
 | API runtime | Lambda (arm64 image) + Lambda Web Adapter, Function URL | uvicorn natively, or the same image in Docker | Same app and image; no Lambda lifecycle, no cold-start freeze |
 | Origin + routing | CloudFront: `/` S3, `/api/*` Function URL via OAC | Caddy on one origin with the same paths | Same paths and headers; no SigV4 signing (section 7) |
-| Broker auth | Cognito user pool, SRP, TOTP, groups, JWKS | moto Cognito: pool, client, groups, SRP flow, JWKS endpoint | Tokens carry the real issuer format and pass the API's verifier unchanged except the JWKS URL. **moto doesn't check the SRP password proof or TOTP codes** |
+| Broker auth | Cognito user pool, SRP, TOTP, groups, JWKS | moto Cognito: pool, client, groups, JWKS endpoint; the apps sign in with `USER_PASSWORD_AUTH` (L4) | Tokens carry the real issuer format and pass the API's verifier unchanged except the JWKS URL. **moto can't finish SRP or the new-password challenge, and accepts any TOTP code** (section 7) |
 | Public bot check | Turnstile, real widget | Turnstile test keys: always-pass and always-block pairs | Real widget and real `siteverify` call; no real bot scoring |
 | Session tokens | HS256 with `SESSION_JWT_SECRET` from SSM | Same, secret seeded into local SSM | Same |
 | Rate limits, daily cap, answer cache, kill switches, quarantine, sessions | DynamoDB `app` table | DynamoDB Local | Same adapters and key schema. **TTL is not enforced** by DynamoDB Local (expired items stay; the code already ignores them by timestamp, to be confirmed in L3) |
@@ -134,7 +134,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 
 | Phase | What | Needs | Effort |
 |---|---|---|---|
-| **L0** | Prerequisites | 👤 Docker running, Node 22, OpenRouter credit | 30 min of yours |
+| **L0** ✅ | Prerequisites | 👤 Docker running, Node 22, OpenRouter credit | 30 min of yours |
 | **L1** ✅ | Local profile, compose skeleton, one-command scripts | L0 | 0.5 |
 | **L2** ✅ | Bundle `2027.2` built locally | L0 credit (cents) | 0.5 (mostly waiting) |
 | **L3** ✅ | AWS stand-ins + bootstrap, API on them | L1 | 1 |
@@ -149,6 +149,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 
 - [x] Start Docker Desktop; give it at least 4 GB of memory. (Running since 2026-11-11.)
 - [ ] Node 22 (`brew install node@22`, or nvm). Node 20.10 is end of life and the AWS track wants 22 too.
+      **Still open:** everything ran on Node 20.10 (the builds and frontend checks pass on it).
 - [x] **OpenRouter:** credit added and both variables set in `.env` (2026-11-11); L3 moves them into local SSM.
       **Open before AWS:** the two variables hold the same key. The deploy needs two keys with their own credit
       limits (each bot's hard cost cap, docs/aws/TODO.md §2.1).

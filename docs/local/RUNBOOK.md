@@ -1,8 +1,8 @@
 # Local runbook: the whole application on your machine
 
 How to run the full stack locally with stand-ins for the AWS services. The plan, the roadmap and what local
-can and can't prove are in [LOCAL_PLAN.md](LOCAL_PLAN.md). This runbook grows with each phase; sections marked
-*(coming in Lx)* aren't built yet.
+can and can't prove are in [LOCAL_PLAN.md](LOCAL_PLAN.md). This branch, `main_local`, is for local runs only and is
+never merged into `main_AWS`.
 
 ## 1. Prerequisites
 

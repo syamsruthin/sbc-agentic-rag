@@ -1,7 +1,8 @@
 # Handoff: continue sbc-agentic-rag on the AWS track (`main_AWS`)
 
 Paste everything below into a new Claude Code session opened on
-`https://github.com/syamsruthin/sbc-agentic-rag`, branch `main_AWS`. Written 2026-11-11, after WP10 and WP12.
+`https://github.com/syamsruthin/sbc-agentic-rag`, branch `main_AWS`. Written 2026-11-11, after WP10 and WP12; updated after the fixes ported
+from `main_local` (docs/aws/TASKS_DONE.md, F, on `main_AWS`).
 
 ---
 
@@ -103,7 +104,9 @@ Secrets come from the environment, never the repo; names are in `.env.example` (
    Lambda concurrency quota, AWS CLI v2, Docker with buildx, `cdk bootstrap`.
 3. A Cloudflare Turnstile widget.
 4. Spikes 2 and 3 on AWS (`spikes/aws/deploy_spike.sh up`, `check`, `destroy`).
-5. Rebuild the bundle as `2027.2`, embed it and rerun the retrieval eval (expect recall@5 ≈ 0.920).
+5. Rebuild the bundle as `2027.2`, embed it and rerun the retrieval eval (expect recall@5 ≈ 0.920). Done on the
+   user's machine while running the app locally (`main_local`, 2026-11-11): 1,381 preview-only plans, 0 missing,
+   recall@5 0.920; the file is `bundles/facts-2027.2.sqlite` there, to upload with `upload-bundle.sh`.
 6. The first deploy (RUNBOOK §4, including `TURNSTILE_SITE_KEY=… scripts/aws/deploy-web.sh` for the apps), then
    set `AWS_DEPLOY_ROLE_ARN` so pushes deploy, and check one CI deploy and one rollback through `deploy-aws.yml`.
 
@@ -114,13 +117,16 @@ When the user does these, help run them and fix whatever the scripts get wrong; 
 1. **Frontend toolchain:** Node 22, then Vite 7+, Vitest 4+ and a current typescript-eslint, which clears the
    dev-only `npm audit` advisories.
 2. **WP13: portfolio readiness:** needs a live deploy. Caps tested one by one, latency measured, the evals
-   HTTP adapter (about 30 golden items through the deployed API), the cold click-through, RUNBOOK and README
-   "Live demo".
+   HTTP adapter (built: `evals/harness/http_api.py`; left: about 30 golden items through the deployed API), the
+   cold click-through, RUNBOOK and README "Live demo".
 3. **WP14 (later, optional):** Bedrock.
 
 Stop and report to the user after each work package, with the checks you ran and what still needs them.
 
 ## Open loose ends
+
+- `main_local` runs the whole app locally with AWS stand-ins. It is **never merged** into `main_AWS`; fixes found
+  there that apply here are ported as their own change (TASKS_DONE F, 2026-11-11).
 
 - CI on `c0e47fb` (the first run of the WP11 workflows on GitHub) passed and skipped the deploy, as expected
   before `AWS_DEPLOY_ROLE_ARN` is set.
