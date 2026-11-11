@@ -390,7 +390,7 @@ def stream(self, thread_id, message=None, *, resume=None, ui_selected=(), user_s
 
 - In this WP, auth is a test dependency override; real auth arrives in WP5.
 
-**Logging:** one JSON line per request, with `request_id` (from the Lambda context header `x-amzn-request-id`, or a generated one), `bot`, `route`, `path` (fast/agent), `llm_calls`, `cost_usd`, `latency_ms`, `verifier` and `cache_hit`. It never includes user text; redacted text goes only to Langfuse, when enabled.
+**Logging:** one JSON line per request, with `request_id` (from the Lambda context header `x-amzn-request-id`, or a generated one), `bot`, `route`, `path` (fast/agent), `llm_calls`, `cost_usd`, `latency_ms`, `verifier` and `cache_hit`. It never includes user text; redacted text goes only to Langfuse, when enabled. An unhandled error writes one more line at `ERROR` (`event: unhandled_error`, `request_id`, route, traceback), and the 500 response carries the `request_id` (added 2026-11-11, WP12).
 
 **Tests:**
 
@@ -460,7 +460,7 @@ def stream(self, thread_id, message=None, *, resume=None, ui_selected=(), user_s
 > - **Exact-answer cache:**
 >   - It covers a thread's first message only, since later messages depend on history. Its key combines the bot, bundle, prompt hashes, config hash (which covers the models), selected plans, state and normalized question.
 >   - A hit costs no model call and doesn't count toward the cap. It still creates a thread, and the new `Agent.remember()` writes the cached turn into that thread's history, so follow-ups keep their context.
-> - **After a turn:** plans under quarantine are replaced by a fixed message. Only answers are cached (clarifications never), and one audit record is written (no user text; audit failures are logged as `audit_failed`).
+> - **After a turn:** plans under quarantine are replaced by a fixed message, and so are cached answers about them (the cache path skipped this check until 2026-11-11). Only answers are cached (clarifications never), and one audit record is written (no user text; audit failures are logged as `audit_failed`).
 > - **Demo account:** the broker bot has a second agent for it, with its own checkpointer and TTL (`portfolio.demo_history_ttl_hours`).
 > - **Query-embedding cache:** wraps `TextSearcher.embed_query` whenever DynamoDB is configured.
 > - **Routes:** `POST /api/{bot}/feedback` (own threads only, reason codes only) and `GET /api/broker/threads` (empty for the shared demo account; the browser keeps its own thread IDs). The admin routes `POST /api/admin/kill-switch` and `/api/admin/quarantine` require the `admin` group, are never open to the demo account, and are audited.
@@ -630,7 +630,7 @@ CMD ["uvicorn", "--factory", "sbc_api.app:create_app", "--host", "0.0.0.0", "--p
 | `ApiConstruct` | ECR repo; Lambda `DockerImageFunction` (arm64, 2,048 MB, 60 s, `/tmp` 1,024 MB); `live` alias; Function URL (`AWS_IAM`, `RESPONSE_STREAM`); log group (14 days) | Environment from WP1; IAM per DEPLOYMENT_ANALYSIS.md §6.5 (audit table `PutItem` only); ECR lifecycle keeps 3 |
 | `WebConstruct` | S3 `web` bucket; CloudFront distribution; OAC for S3 and for the Lambda URL; CloudFront Function for SPA rewrites; response headers policy | Behaviors: `/api/*` → Function URL (CachingDisabled, AllViewerExceptHostHeader, all methods); `/broker/*`, `/shopper/*`, `/` → S3; PriceClass_100; default domain |
 | `BuildConstruct` | ECS cluster; Fargate task definition (arm64, 4 vCPU, 8 GB, 50 GB ephemeral); task role | Run on demand in the default VPC's public subnets with a public IP (no NAT); capacity provider FARGATE_SPOT |
-| `OpsConstruct` | SNS topic + email subscription; alarms (Lambda Errors, Throttles, p95 Duration, metric filters `plan_filter_violation`, `global_cap_reached`, `pdf_hash_mismatch`); AWS Budget ($5 and $10); Cost Anomaly monitor; optional business-hours warmer (EventBridge Scheduler → Lambda invoke of `/api/healthz?deep=1`) | Stay within 10 alarms; the warmer is a config flag |
+| `OpsConstruct` | SNS topic + email subscription; alarms (Lambda Errors, Throttles, p95 Duration, metric filters `plan_filter_violation`, `global_cap_reached`, `pdf_hash_mismatch`; as built also `audit_failed`, demo-account limits and `ApiErrors` on `ERROR` lines); AWS Budget ($5 and $10); Cost Anomaly monitor; optional business-hours warmer (EventBridge Scheduler → Lambda invoke of `/api/healthz?deep=1`) | Stay within 10 alarms; the warmer is a config flag |
 | `CicdConstruct` | GitHub OIDC provider (if absent); `sbc-<env>-github-deploy` role (as built in WP11: CDK bootstrap roles, not direct Lambda changes) | Trust policy limited to `repo:syamsruthin/sbc-agentic-rag` on `refs/heads/main_AWS` (and later `main`) plus a GitHub environment; least-privilege actions from DEPLOYMENT_ANALYSIS.md §6.5 |
 
 **SSM parameters are not created by CDK with values** (no secrets in templates). `scripts/aws/put-secrets.sh` writes them as SecureStrings from your shell. CDK only grants read access to `/sbc/dev/*`.
@@ -737,7 +737,7 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 - OpenRouter key credit limits ($10 public, $15 broker): set before the first deploy, because the API is public from then on (TODO.md §2.1); here they are tested and recorded in the runbook.
 - **Measurements:** cold start, warm fast-path latency and agent-path latency.
 - **Deliberately hit** every cap: per-user, global, kill switch, OpenRouter key limit (with a $0.10 test key).
-- **Run** a golden-set subset against the deployed URL, e.g. 30 items from `evals/golden/0.2.0` through the API (a new thin adapter in `evals/harness/` that calls the HTTP API instead of the in-process graph). `evals/harness/generation.py` already takes the agent through a factory and scores its `Reply`, so the adapter can turn the SSE `answer`/`clarify` events into a `Reply` and reuse that scoring. The API doesn't send the turn's trace, so over HTTP only behavior, numeric exact match, plan filter and wrong-plan answers can be scored; ungrounded numbers, tool selection and cost stay with the in-process run.
+- **Run** a golden-set subset against the deployed URL, e.g. 30 items from `evals/golden/0.2.0` through the API (a new thin adapter in `evals/harness/` that calls the HTTP API instead of the in-process graph; **built 2026-11-11:** `evals/harness/http_api.py`, run with `SBC_EVAL_BROKER_TOKEN=… python -m evals.harness.http_api --base-url https://<site> --golden evals/golden/0.2.0 --sample 30`). `evals/harness/generation.py` already takes the agent through a factory and scores its `Reply`, so the adapter can turn the SSE `answer`/`clarify` events into a `Reply` and reuse that scoring. The API doesn't send the turn's trace, so over HTTP only behavior, numeric exact match, plan filter and wrong-plan answers can be scored; ungrounded numbers, tool selection and cost stay with the in-process run.
 - **Docs:**
   - `docs/aws/RUNBOOK.md`: sections 1–7 exist (WP8, WP9). Left: any fixes the first deploy needs in §4, the Lambda measurements in §2, and the full teardown in §8.
   - README: a "Live demo" section with the URL and demo-login instructions.
@@ -891,7 +891,7 @@ Run once. **The exact commands are in [RUNBOOK.md](RUNBOOK.md) §4**, which repl
    - Check the Lambda concurrency quota in Service Quotas.
 2. **Bootstrap:** `scripts/aws/bootstrap.sh` (quota check, `cdk bootstrap`).
 3. **Foundation:** `scripts/aws/deploy.sh foundation` creates `SbcFoundation-<env>`: the data bucket, tables, Cognito, ECR, budget and anomaly alerts.
-4. **Secrets:** `scripts/aws/put-secrets.sh` (the environment comes from `SBC_ENV`, default `dev`). It prompts for the OpenRouter keys (with credit limits already set at OpenRouter) and the Turnstile secret, and generates `SESSION_JWT_SECRET`.
+4. **Secrets:** `scripts/aws/put-secrets.sh` (the environment comes from `SBC_ENV`, default `dev`). It prompts for the OpenRouter keys (with credit limits already set at OpenRouter), the Turnstile secret and the optional Langfuse keys and region (`LANGFUSE_BASE_URL`), and generates `SESSION_JWT_SECRET`.
 5. **Data:** `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite`.
 6. **Images and app:** `scripts/aws/push-images.sh 2027.2`, then `scripts/aws/deploy.sh app <api-tag> <build-tag>` creates `SbcApp-<env>`: Lambda, CloudFront, the build task, alarms and the OIDC deploy role. Set the repository variable `AWS_DEPLOY_ROLE_ARN` to its `DeployRoleArn` output; from then on a push to `main_AWS` deploys through `deploy-aws.yml` (WP11).
 7. **Users:** `scripts/aws/seed-users.sh` creates the admin (enroll TOTP at first sign-in) and the `demo-broker` user; redeploy with `DEMO_USER_IDS`, then run `rotate-demo-password.sh`.

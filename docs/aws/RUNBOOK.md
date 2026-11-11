@@ -182,7 +182,9 @@ and start a Plan Shopper session (it needs step 11).
 
 ## 6. Secrets and the demo password
 
-- Secrets live only in SSM Parameter Store (`/sbc/<env>/…`, SecureString, AWS-managed key). Rotate one with
+- Secrets live only in SSM Parameter Store (`/sbc/<env>/…`, SecureString, AWS-managed key): the OpenRouter keys,
+  the Turnstile secret, the session secret and, if used, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and
+  `LANGFUSE_BASE_URL` (the project's region). Rotate one with
   `scripts/aws/put-secrets.sh` (an empty answer keeps a value); the Lambda reads them at cold start, so force
   new instances with a redeploy. `--rotate-session-secret` invalidates every public session.
 - `scripts/aws/rotate-demo-password.sh` sets a new random password for `demo-broker` and republishes
