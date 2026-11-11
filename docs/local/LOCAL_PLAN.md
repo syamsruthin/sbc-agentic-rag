@@ -1,7 +1,7 @@
 # Local track: the whole application on a Mac, end to end
 
-Branch **`main_local`**, cut from `main_AWS` at `bc93183` on 2026-11-11. Status: **L0–L9 done 2026-11-11**; one item
-waits for approval (the 30-item HTTP eval, section 11). Model spend for the whole track: about $0.40.
+Branch **`main_local`**, cut from `main_AWS` at `bc93183` on 2026-11-11. Status: **done 2026-11-11**: L0–L9 and every
+item of the definition of done (section 11). Model spend for the whole track: about $0.95 by the key's usage.
 
 The goal: run every feature of both assistants on one Mac (Apple Silicon, Docker Desktop) the way it will run on
 AWS, using local stand-ins for the AWS services, before the first AWS deploy. Anything that can only be proven in
@@ -413,8 +413,7 @@ serves from it. This is the WP8 open check, minus ECS.
 
 **Done when:** section 11 holds.
 
-> **Status: done 2026-11-11, except the 30-item HTTP eval, which waits for your go-ahead (about $0.30–0.60 to
-> record, then free).** Model cost: $0.042 (recording the smoke test and 3 eval items).
+> **Status: done 2026-11-11.** Model cost: about $0.56 (recording the smoke test, then 3 and 30 eval items).
 > - **Smoke test** (`scripts/local/smoke.py`, `make smoke`): 43 checks through the edge: health, the edge's
 >   routes, rewrite, headers and caching, the warmer, sign-in scopes (no token, tampered, `Authorization`
 >   dropped, cross-bot, admin-only), plan search and details, the Turnstile session and the public scope, a
@@ -437,7 +436,14 @@ serves from it. This is the WP8 open check, minus ECS.
 >   items as SSE turns, scored with `generation.py`'s checks (the runner now takes any object with `ask`, an
 >   `Asker` protocol). Rate limits are waited out. Ungrounded numbers and tool selection can't be seen over HTTP
 >   and are reported as not scored, never as passed. 3 items recorded ($0.0112) and replayed: all gates pass,
->   behavior 3/3. **Left (asks first):** the ~30-item run (`make eval-http` in record mode).
+>   behavior 3/3.
+> - **The 30-item HTTP eval** (golden 0.2.0, seeded sample of Phase 1 gating items across 12 categories), recorded
+>   through the edge: correct behavior **30/30**, exact SBC values 1.000, plan filter 1.000, 0 confident wrong-plan
+>   answers, 0 errors, disclaimer, must-include text and clarify options 1.000; every scored hard gate passes. 30%
+>   fast path; 3 model calls p50; 7 s p50 and 16 s p95; $0.548 reported ($0.018 an item). Replayed with OpenRouter
+>   unreachable: 30/30 items identical (behavior, answer text, checks), $0. One of the 30 answers (gs-000045, a
+>   comparison) opens with "Here is the corrected…", the retry wording noted above; none makes an unsupported
+>   comparative judgment.
 > - **Browser walkthrough** in replay at :8088: sign-in, the comparison with **CSV export** (the download was
 >   captured in the page: the table's rows, the SBC wording; the cells keep the `[1]` markers), citations (the
 >   preview-only BTCU8 through `/api/sbc/…pdf#page=3`, 0JF1 straight to the insurer's PDF), and **clarify then
@@ -528,8 +534,8 @@ Decided 2026-11-11 (Syamsruthin Kaliki):
   (8 s once the images are pulled); `make down` and `make up` keep all state; `make wipe` resets it.
 - [x] `make smoke` passes every check in section 2, through the edge, in both API modes (native and image): 43/43.
 - [x] The browser click-through works at desktop and phone widths (L5 and L9).
-- [ ] The HTTP eval on ~30 golden items has no hard-gate failures: the adapter works (3 items, all gates pass); the
-  30-item run waits for approval of its recording cost.
+- [x] The HTTP eval on ~30 golden items has no hard-gate failures: 30/30 correct, every scored hard gate passes
+  (ungrounded numbers aren't visible over HTTP; the in-process generation eval scores them).
 - [x] `docs/local/RUNBOOK.md` explains setup, daily use, every script, the users, resetting, and troubleshooting; the
   README, `apps/README.md`, `docs/aws/RUNBOOK.md` §1, `docs/aws/TODO.md` and `.env.example` point to it.
 - [x] CI is green on `main_local` (every push so far).

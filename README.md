@@ -236,7 +236,7 @@ if any secret it needs is missing.
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
-| Local track (branch `main_local`): the whole app on one machine with AWS stand-ins | L0–L9 done (smoke test of 43 checks, free in replay mode; HTTP eval adapter; bundle 2027.2 with the PDF proxy, stack, scripts, bootstrap, secrets from the local Parameter Store, real sign-in, Turnstile test keys, the apps behind the edge, request-ID lookup, Langfuse traces, record/replay of model calls, the offline build image on a local bucket); the 30-item HTTP eval left, see [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md) |
+| Local track (branch `main_local`): the whole app on one machine with AWS stand-ins | L0–L9 done (smoke test of 43 checks, free in replay mode; HTTP eval adapter; bundle 2027.2 with the PDF proxy, stack, scripts, bootstrap, secrets from the local Parameter Store, real sign-in, Turnstile test keys, the apps behind the edge, request-ID lookup, Langfuse traces, record/replay of model calls, the offline build image on a local bucket, a 30-item HTTP eval with every scored gate passing); complete, see [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md) |
 | AWS deployment track (branch `main_AWS`, the long-lived AWS branch; not merged into `main`) | WP0–WP12 done in code (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers, CDK stacks, frontends, deploy and data-build workflows, observability with optional Langfuse); first deploy, WP13 and WP14 left |
 
 [TODO.md](TODO.md) has the detailed checklist; PLAN.md section 11 has each phase's acceptance criteria and

@@ -142,7 +142,8 @@ optional Langfuse tracing (one trace per turn).
       reuse `generation.py`'s scoring (SSE events → `Reply`); without the trace, it scores behavior, exact
       match, plan filter and wrong-plan answers only (MIGRATION_PLAN WP13). **The adapter is built** on
       `main_local` L9 (`evals/harness/http_api.py`; `SBC_EVAL_BROKER_TOKEN`, `--base-url`) and checked against
-      the local API; left: the run against the deployed API.
+      the local API: 30 golden 0.2.0 items, 30/30 correct, every scored hard gate passes ($0.55). Left: the run
+      against the deployed API.
 - [ ] The interviewer click-through on a cold system: landing → Shopper question → Broker sign-in → comparison → PDF citation (including a preview-only plan).
 - [ ] **`docs/aws/RUNBOOK.md`:** sections 1–7 exist. Left: fixes from the first deploy (§4), the Lambda measurements (§2) and the full teardown (§8).
 - [ ] README "Live demo" section with the URL and demo-login instructions.
