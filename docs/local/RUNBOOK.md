@@ -63,6 +63,9 @@ directly, so locally call it on :8080.
 | `.local/turnstile` | `pass` or `block`: which Turnstile test secret the bootstrap uses | No |
 | `config/env/local.yaml` | Behavior for every `APP_ENV=local` run (the portfolio limits stay off there) | Yes |
 
+`stack.env` supplies defaults: a variable already set in your shell wins, for example
+`FACTS_BUNDLE_PATH=bundles/facts-2027.2-local.sqlite scripts/local/api.sh`.
+
 The AWS SDK reaches the stand-ins through `AWS_ENDPOINT_URL_<SERVICE>` variables, so the API's AWS code is the
 same code that runs on AWS.
 
@@ -122,6 +125,7 @@ library; and moto accepts any TOTP code. The local app client also allows `ADMIN
 | `scripts/local/find-request.sh <id>` | — | Every log line of one request, by its request ID (from `.local/logs/api.jsonl` and the API container) |
 | `scripts/local/bootstrap.sh [--turnstile pass\|block]` | — | Create the tables, the bucket, the user pool and users; mirror the secrets into the local Parameter Store; write `.local/runtime.env` (idempotent; `up.sh` runs it). It refuses to run unless every AWS endpoint points at a stand-in |
 | `scripts/local/token.sh <user>` | — | Print an access token for `admin`, `broker` or `demo-broker` |
+| `scripts/local/build.sh seed \| run <version> \| fetch <version>` | — | The offline build image against the local bucket (section 10) |
 | `scripts/local/web.sh [--dev]` | `make web`, `make web-dev` | Build the apps with the local `VITE_*` values into `apps/site/` (served by the edge) and write `/landing/demo.json` for `demo-broker`; `--dev` runs the three Vite dev servers instead (http://localhost:5173, `/api` straight to :8080) |
 | `scripts/local/status.sh` | `make status` | Which services answer |
 | `scripts/local/logs.sh [service…]` | `make logs` | Follow the containers' logs |
@@ -183,7 +187,26 @@ Deep health shows `"llm": "live" | "record" | "replay"`, and each replayed answe
 - **Local only.** The API refuses `record` and `replay` outside `APP_ENV=local`. The recordings contain SBC text,
   so they stay in `.local/` (git-ignored); delete the folder to start over.
 
-## 10. Troubleshooting
+## 10. The offline build against the local bucket
+
+The build image (`infra/docker/build.Dockerfile`, `build-pipeline`) runs here the way `scripts/aws/run-build.sh`
+runs it as an ECS task, against `s3://sbc-local-data` in S3Mock:
+
+```bash
+scripts/local/build.sh seed                  # once: data/markdown, catalog, reference and the embedding cache (~9 min)
+scripts/local/build.sh run 2027.2-local      # build-pipeline bundle in the image (~25 min, mostly S3Mock syncs)
+scripts/local/build.sh fetch 2027.2-local    # bundles/facts-2027.2-local.sqlite
+FACTS_BUNDLE_PATH=bundles/facts-2027.2-local.sqlite scripts/local/api.sh
+SBC_BUNDLE_FILE=facts-2027.2-local.sqlite scripts/local/up.sh --image      # or baked into the API image
+```
+
+- The eval runs `bm25_only` (free) unless you set `EVAL_SETUP=full` (about $0.25 of rerank).
+- Embeddings come from the cache in the bucket; only chunks with new text cost anything.
+- The OpenRouter key goes from the local Parameter Store into the container by name, never on a command line.
+- The `full` mode (catalog refresh, PDF downloads) isn't offered locally: it needs the 6 GB of PDFs and hours of
+  portal downloads. Build natively instead (`sbc-portal`, `sbc-to-markdown`, `sbc-verify`; data/README.md).
+
+## 11. Troubleshooting
 
 - **`Docker isn't running`:** start Docker Desktop and wait for it to say it's running.
 - **A port is taken:** `lsof -i :8088` (or the port in question), or set the matching `SBC_PORT_*`.

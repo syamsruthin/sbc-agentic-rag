@@ -88,3 +88,22 @@ def test_urls_must_be_s3() -> None:
     with pytest.raises(SystemExit, match="s3://"):
         sync._split("https://example.com/x")
     assert sync._split("s3://bucket/a/b/") == ("bucket", "a/b")
+
+
+def test_the_client_follows_a_local_s3_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The local stack (scripts/local/build.sh) points the build image at S3Mock by AWS_ENDPOINT_URL_S3."""
+    monkeypatch.setenv("AWS_ENDPOINT_URL_S3", "http://s3:9090")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    real_client = boto3.client
+    seen: list[str] = []
+
+    def capture(name: str) -> Any:
+        assert name == "s3"
+        client = real_client("s3", aws_access_key_id="x", aws_secret_access_key="x")  # noqa: S106
+        seen.append(client.meta.endpoint_url)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(sync.boto3, "client", capture)
+    with pytest.raises(SystemExit):
+        sync.main(["down", "s3://bucket/data", "data"])
+    assert seen == ["http://s3:9090"]

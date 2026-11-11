@@ -142,7 +142,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 | **L5** ✅ | Frontends built and served behind the edge | L4 | 0.5 |
 | **L6** ✅ | Observability: JSON logs, request-ID lookup, Langfuse | L3 | 0.5 |
 | **L7** ✅ | Model replay mode | L3 | 0.5 |
-| **L8** | Offline build image against the local bucket | L3, L2 | 0.5 |
+| **L8** ✅ | Offline build image against the local bucket | L3, L2 | 0.5 |
 | **L9** | Verification: smoke test, HTTP eval, browser click-through | all | 1 |
 
 ### L0: prerequisites 👤
@@ -380,6 +380,26 @@ by `LLM_MODE=live|record|replay`. It lets the UI, guards and smoke test run with
 **Done when:** the bundle lands in `s3://sbc-local-data/bundles/2027.2-local/` with its eval report, and the API
 serves from it. This is the WP8 open check, minus ECS.
 
+> **Status: done 2026-11-11.** Model cost: $0 (no new embeddings; the eval was `bm25_only`).
+> - `scripts/local/build.sh seed` copied `data/markdown`, `data/catalog`, `data/reference` (9,700 files, no PDFs)
+>   and the embedding cache into the bucket (8.5 min). `build.sh run 2027.2-local` built the build image (native
+>   arm64, as ECS runs it) and ran `build-pipeline bundle` on the stack's network, with the OpenRouter key passed
+>   from the local Parameter Store by name, as the ECS task gets it from SSM.
+> - In the image: sync down (14 min), the release bundle (1 min: 9,690 plans, 1,381 preview-only, 0 missing),
+>   embeddings (0 new), the `bm25_only` eval (all gates pass, recall@5 0.847), sync up (9 min). Published:
+>   `s3://sbc-local-data/bundles/2027.2-local/` with `facts-2027.2-local.sqlite` and its eval report. The sync
+>   time is S3Mock answering one request per file; S3 is faster.
+> - `build.sh fetch 2027.2-local` copied it to `bundles/`. Its plans, chunks, plan sources, vectors and benefit
+>   rows equal the native build's. The API served it natively and baked into the API image
+>   (`SBC_BUNDLE_FILE=facts-2027.2-local.sqlite up.sh --image`): deep health showed `2027.2-local`, and the PDF
+>   proxy worked on it.
+> - **Fixed on the way:** the first run stopped before the container started, because the key lookup had no
+>   region (boto3 reads `AWS_DEFAULT_REGION`; the stack set only `AWS_REGION`; ECS sets both, and now so does
+>   `build.sh`). And `load_env` re-exported `stack.env` over variables set in the shell, so
+>   `FACTS_BUNDLE_PATH=… api.sh` was ignored; `stack.env` now supplies defaults only.
+> - **Not run locally:** the `full` mode (catalog refresh and PDF downloads from the portals), which needs the
+>   6 GB of PDFs in the bucket and hours of downloads.
+
 ### L9: verification
 
 - `scripts/local/smoke.sh`: every route and guard in section 2 as `curl` checks with pass/fail output, against
@@ -404,7 +424,7 @@ go to `main_AWS` unchanged (section 8).
 | 2 ✅ | `packages/api/src/sbc_api/deps.py` | `_authenticator`: `BearerAuthenticator` when Cognito is configured; `LocalAuthenticator` only for `local` without it |
 | 3 ✅ | `packages/core/src/sbc_core/config.py`, `sbc_api/auth/cognito.py` | Optional `COGNITO_JWKS_URL` overriding the derived JWKS URL (moto's tokens already use the real issuer format) |
 | 4 ✅ | `apps/broker/src/auth.ts` | Optional `VITE_COGNITO_ENDPOINT` passed to `CognitoUserPool`; with it set, `USER_PASSWORD_AUTH` instead of SRP (moto can't finish SRP) |
-| 5 | `infra/docker/s3_sync.py` | Honor `AWS_ENDPOINT_URL_S3` (check whether boto3 already does; then only a test) |
+| 5 ✅ | `infra/docker/s3_sync.py` | Honor `AWS_ENDPOINT_URL_S3`: botocore already does; a test holds it (`tests/unit/test_s3_sync.py`) |
 | 6 ✅ | `packages/api/src/sbc_api/logging.py` | Optional `LOG_FILE` for a JSON-lines copy of the log |
 | 6a ✅ | `packages/api/src/sbc_api/app.py`, `infra/cdk/sbc_infra/constructs/ops.py` | Not planned; found in L6: unhandled errors keep their request ID (JSON `ERROR` line, header, body), and an `ApiErrors` alarm on `ERROR` lines |
 | 7 ✅ | `packages/core/src/sbc_core/replay.py` (new), `config.py`, `sbc_api/deps.py`, `routes/health.py`, `sbc_retrieval/text_search.py` | L7 replay mode: `LLM_MODE`, `ReplayGateway`, the `ModelGateway` protocol |

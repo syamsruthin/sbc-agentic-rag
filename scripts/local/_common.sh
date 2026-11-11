@@ -15,12 +15,17 @@ say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null || die "missing: $1 ($2)"; }
 
-# load_env: the local stack's settings, then the generated ones, exported for the commands that follow.
-# .env (secrets) is read by the API itself; values set here win over it.
+# load_env: the local stack's settings as defaults (a variable already set in your shell wins, e.g.
+# FACTS_BUNDLE_PATH=bundles/other.sqlite scripts/local/api.sh), then the generated ones, exported for the commands
+# that follow. .env (secrets) is read by the API itself; values set here win over it.
 load_env() {
+  local line key
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|\#*) continue ;; esac
+    key=${line%%=*}
+    [ -n "${!key+set}" ] || export "$line"
+  done < "$STACK_ENV"
   set -a
-  # shellcheck source=/dev/null
-  . "$STACK_ENV"
   # shellcheck source=/dev/null
   [ -f "$RUNTIME_ENV" ] && . "$RUNTIME_ENV"
   set +a

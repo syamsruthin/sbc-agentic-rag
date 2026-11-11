@@ -84,6 +84,9 @@ Lambda numbers.
 
 ## 3. The offline SBC build (data bucket)
 
+To run the same image against a local bucket first (S3Mock, no AWS account), see `scripts/local/build.sh` in
+[docs/local/RUNBOOK.md](../local/RUNBOOK.md).
+
 **Image and modes:** `sbc-build` (`infra/docker/build.Dockerfile`) runs `build-pipeline` in `/work` (`SBC_PROJECT_ROOT`):
 
 | Mode | Steps | Use it when |

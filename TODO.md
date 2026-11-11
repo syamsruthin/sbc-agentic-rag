@@ -14,7 +14,8 @@ L5 (the apps built with the local settings and checked in a browser) L6 (JSON lo
 unhandled errors now keep their request ID and raise an `ApiErrors` alarm, Langfuse traces) and L7 (record and
 replay of model calls, so repeated local runs cost nothing) are done, and so is L2: the release bundle `2027.2`
 (1,381 preview-only plans, 0 missing, no new embeddings; retrieval eval as on 2027.1: full recall@5 0.920, every
-gate passes) with a live PDF proxy check.
+gate passes) with a live PDF proxy check, and L8: the offline build image ran `build-pipeline bundle` against the local
+bucket and produced the same bundle.
 
 ## Checkpoints
 

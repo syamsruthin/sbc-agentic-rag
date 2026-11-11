@@ -168,7 +168,7 @@ optional Langfuse tracing (one trace per turn).
 | WP4 | ~~A live streamed answer with a real OpenRouter key and bundle~~ Done on `main_local` (L3, L5) | ✅ |
 | WP5 | Sign-in against a real Cognito pool, and Turnstile with a real widget (after WP9) | 👤 + WP13 |
 | WP7 | ~~A live portal fetch of one preview-only SBC, with its hash matching~~ Done on `main_local` L2 | ✅ |
-| WP8 | An end-to-end `build-pipeline bundle` (then `full`) run against the real data bucket, as an ECS task | 👤 after WP9 |
+| WP8 | An end-to-end `build-pipeline bundle` (then `full`) run against the real data bucket, as an ECS task. The `bundle` mode ran end to end in the image against the local bucket on `main_local` L8 (identical bundle to the native build) | 👤 after WP9 |
 | WP8 | The arm64 API image builds (`buildx --platform linux/arm64`) and passes a smoke test | WP11's first CI deploy (`smoke-deployed.sh`) |
 | WP11 | `deploy-aws.yml` and `build-data.yml` against AWS: a push deploys in under 10 minutes, a rollback by `image_tag` works, a `bundle` build finishes within the 1-hour credentials | 👤 after §2.4 |
 | WP9 | `cdk deploy` of both stacks in a real account, and the eight `scripts/aws/*.sh` against AWS | 👤 (§2.4) |
