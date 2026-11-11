@@ -11,6 +11,10 @@ import {
 
 const POOL_ID: string = import.meta.env.VITE_COGNITO_USER_POOL_ID || "";
 const CLIENT_ID: string = import.meta.env.VITE_COGNITO_CLIENT_ID || "";
+/** Only for the full local stack (docs/local/LOCAL_PLAN.md): a Cognito stand-in instead of cognito-idp.<region>.
+ * Its SRP can't finish a sign-in, so with it set the app signs in with USER_PASSWORD_AUTH (over the local
+ * network, to the local stand-in); without it, as on AWS, the password never leaves the browser (SRP). */
+const ENDPOINT: string = import.meta.env.VITE_COGNITO_ENDPOINT || "";
 
 /** Without a user pool (local dev against `APP_ENV=local`), the API accepts every request as a local broker. */
 export const LOCAL_MODE = !POOL_ID || !CLIENT_ID;
@@ -32,7 +36,14 @@ class MemoryStorage implements ICognitoStorage {
 }
 
 const storage = new MemoryStorage();
-const pool = LOCAL_MODE ? null : new CognitoUserPool({ UserPoolId: POOL_ID, ClientId: CLIENT_ID, Storage: storage });
+const pool = LOCAL_MODE
+  ? null
+  : new CognitoUserPool({
+      UserPoolId: POOL_ID,
+      ClientId: CLIENT_ID,
+      Storage: storage,
+      ...(ENDPOINT ? { endpoint: ENDPOINT } : {}),
+    });
 
 export type SignInStep =
   | { kind: "done"; username: string }
@@ -57,8 +68,14 @@ function callbacks(
     mfaSetup: () => {
       user.associateSoftwareToken({
         associateSecretCode: (secret: string) => {
-          const label = encodeURIComponent(`SBC Broker Assistant:${user.getUsername()}`);
-          resolve({ kind: "totp_setup", secret, uri: `otpauth://totp/${label}?secret=${secret}&issuer=SBC` });
+          const label = encodeURIComponent(
+            `SBC Broker Assistant:${user.getUsername()}`,
+          );
+          resolve({
+            kind: "totp_setup",
+            secret,
+            uri: `otpauth://totp/${label}?secret=${secret}&issuer=SBC`,
+          });
         },
         onFailure: (err: Error) => reject(err),
       });
@@ -67,13 +84,24 @@ function callbacks(
   };
 }
 
-export function signIn(username: string, password: string): Promise<SignInStep> {
+export function signIn(
+  username: string,
+  password: string,
+): Promise<SignInStep> {
   if (!pool) return Promise.resolve({ kind: "done", username: "local" });
-  const user = new CognitoUser({ Username: username.trim(), Pool: pool, Storage: storage });
+  const user = new CognitoUser({
+    Username: username.trim(),
+    Pool: pool,
+    Storage: storage,
+  });
+  if (ENDPOINT) user.setAuthenticationFlowType("USER_PASSWORD_AUTH");
   pending = user;
   return new Promise((resolve, reject) =>
     user.authenticateUser(
-      new AuthenticationDetails({ Username: username.trim(), Password: password }),
+      new AuthenticationDetails({
+        Username: username.trim(),
+        Password: password,
+      }),
       callbacks(user, resolve, reject),
     ),
   );
@@ -83,7 +111,11 @@ export function submitTotp(code: string): Promise<SignInStep> {
   const user = pending;
   if (!user) return Promise.reject(new Error("Start signing in again."));
   return new Promise((resolve, reject) =>
-    user.sendMFACode(code.trim(), callbacks(user, resolve, reject), "SOFTWARE_TOKEN_MFA"),
+    user.sendMFACode(
+      code.trim(),
+      callbacks(user, resolve, reject),
+      "SOFTWARE_TOKEN_MFA",
+    ),
   );
 }
 
@@ -105,7 +137,11 @@ export function completeNewPassword(password: string): Promise<SignInStep> {
   const user = pending;
   if (!user) return Promise.reject(new Error("Start signing in again."));
   return new Promise((resolve, reject) =>
-    user.completeNewPasswordChallenge(password, {}, callbacks(user, resolve, reject)),
+    user.completeNewPasswordChallenge(
+      password,
+      {},
+      callbacks(user, resolve, reject),
+    ),
   );
 }
 
@@ -115,7 +151,11 @@ export function accessToken(): Promise<string | null> {
   if (!user) return Promise.resolve(null);
   return new Promise((resolve) =>
     user.getSession((err: Error | null, session: CognitoUserSession | null) =>
-      resolve(err || !session?.isValid() ? null : session.getAccessToken().getJwtToken()),
+      resolve(
+        err || !session?.isValid()
+          ? null
+          : session.getAccessToken().getJwtToken(),
+      ),
     ),
   );
 }
@@ -128,7 +168,10 @@ export function signOut(): void {
 
 /** Turn Cognito's errors into something a person can act on, without saying which part was wrong. */
 export function describe(err: unknown): string {
-  const name = (err as { name?: string; code?: string })?.code ?? (err as { name?: string })?.name ?? "";
+  const name =
+    (err as { name?: string; code?: string })?.code ??
+    (err as { name?: string })?.name ??
+    "";
   switch (name) {
     case "NotAuthorizedException":
     case "UserNotFoundException":

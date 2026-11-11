@@ -240,6 +240,9 @@ class EnvSettings(BaseSettings):
     s3_data_bucket: str | None = None
     cognito_user_pool_id: str | None = None
     cognito_app_client_id: str | None = None
+    cognito_jwks_url: str | None = None
+    """Where the pool's signing keys are; by default derived from the region and pool ID. Set only for a
+    Cognito stand-in (the full local stack, docs/local/LOCAL_PLAN.md); the issuer is checked either way."""
     public_base_url: str | None = None
     """The public site URL (the CloudFront distribution), for absolute links and the allowed origin."""
 

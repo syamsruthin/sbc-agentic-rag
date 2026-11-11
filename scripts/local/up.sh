@@ -40,7 +40,7 @@ if [ "$image" = 1 ]; then
   bundle="${SBC_BUNDLE_FILE:-$(basename "$(load_env; echo "$FACTS_BUNDLE_PATH")")}"
   [ -f "$REPO_ROOT/bundles/$bundle" ] || die "bundles/$bundle not found (set SBC_BUNDLE_FILE)"
   say "building and starting the API image with bundles/$bundle"
-  SBC_BUNDLE_FILE="$bundle" "${COMPOSE[@]}" --profile image up -d --build api
+  SBC_BUNDLE_FILE="$bundle" "${COMPOSE[@]}" --env-file "$RUNTIME_ENV" --profile image up -d --build api
   wait_for "API" "http://localhost:${SBC_PORT_API}/api/healthz" 120
 fi
 

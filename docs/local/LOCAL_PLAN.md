@@ -138,7 +138,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 | **L1** ✅ | Local profile, compose skeleton, one-command scripts | L0 | 0.5 |
 | **L2** | Bundle `2027.2` built locally | L0 credit (cents) | 0.5 (mostly waiting) |
 | **L3** ✅ | AWS stand-ins + bootstrap, API on them | L1 | 1 |
-| **L4** | Real auth: Cognito (moto) and Turnstile test keys | L3 | 1 |
+| **L4** ✅ | Real auth: Cognito (moto) and Turnstile test keys | L3 | 1 |
 | **L5** | Frontends built and served behind the edge | L4 | 0.5 |
 | **L6** | Observability: JSON logs, request-ID lookup, Langfuse | L3 | 0.5 |
 | **L7** | Optional: model replay mode | L3 | 0.5 |
@@ -231,18 +231,37 @@ a streamed answer works; after `down` and `up` the thread is still listed and co
 ### L4: real authentication locally
 
 - Bootstrap creates the user pool (SRP allowed, TOTP optional), the SPA client, the `broker` and `admin`
-  groups, and three users: `admin@local.test` (admin), `broker@local.test` (broker), `demo@local.test` (the
-  demo account, its `sub` written into `SBC_PORTFOLIO__DEMO_USER_IDS`). Passwords are generated and written
-  only to `.local/runtime.env`.
+  groups, and three users: `admin` (admin), `broker` (broker), `demo-broker` (the demo account, its `sub`
+  written into `SBC_PORTFOLIO__DEMO_USER_IDS`). Passwords are generated once into `.local/users.env`.
 - API: with Cognito configured, `APP_ENV=local` uses `BearerAuthenticator` like dev and prd; the
   developer bypass stays only when it isn't (code changes 2–3).
-- Turnstile with Cloudflare's always-pass test keys by default; `scripts/local/turnstile.sh block` switches to
-  the always-block pair to check refusal.
+- Turnstile with Cloudflare's always-pass test keys by default; `scripts/local/bootstrap.sh --turnstile block`
+  switches to the always-fail secret to check refusal.
 - Broker app: `VITE_COGNITO_ENDPOINT` points `amazon-cognito-identity-js` at moto (code change 4).
 
 **Done when:** sign-in works for each user; a broker token is refused on public routes and vice versa; the admin
 routes refuse the broker and the demo account; a Turnstile session opens with the pass keys and is refused with the
 block keys.
+
+> **Status: done 2026-11-11, with no model calls (no OpenRouter cost).**
+> - The bootstrap mirrors the CDK pool (password policy, optional TOTP, a public SPA client, groups) and the AWS
+>   users (`admin`, `broker`, `demo-broker`). It seeds moto first, so after a moto restart the pool ID, client ID
+>   and `sub`s come out identical (checked twice). `scripts/local/token.sh <user>` prints an access token.
+> - Through the edge, natively and in the API image: no token or a tampered one → 401; a token in
+>   `Authorization` → 401 (dropped, as CloudFront does); a broker token on the public bot → 401; a public session
+>   on the broker bot → 401; the admin kill switch → 403 for `broker` and `demo-broker`, 204 for `admin`.
+> - Turnstile against Cloudflare's real `siteverify` with its test secrets: pass → a session token; block → 403.
+> - The demo account's limit: with the broker kill switch on (turns refused before any model call, but still
+>   counted), the sixth demo turn in a minute gets the `limit` event; an ordinary broker isn't limited.
+> - **Spike outcome (risk in section 10):** moto can't finish an SRP sign-in. After the first step,
+>   `amazon-cognito-identity-js` sends the user's `sub` back as `USERNAME`, and moto only finds users by name or
+>   alias. So with `VITE_COGNITO_ENDPOINT` set (local only), the broker app signs in with `USER_PASSWORD_AUTH`;
+>   on AWS it keeps SRP. Through the app's own library against moto: `broker` and `admin` sign in and call the
+>   API; a wrong password is refused (moto checks it in this flow, unlike its SRP).
+> - **Dropped:** a test user with a temporary password. moto's `NEW_PASSWORD_REQUIRED` challenge leaves out the
+>   `userAttributes` the library parses, so the first-sign-in step can only be checked on AWS (section 7).
+> - The browser sign-in itself is checked in L5, when the apps are built with the local `VITE_*` values. Until
+>   then the site at :8088 is a build without them, and its broker app can't sign in.
 
 ### L5: frontends behind the edge
 
@@ -303,9 +322,9 @@ go to `main_AWS` unchanged (section 8).
 | # | File | Change |
 |---|---|---|
 | 1 ✅ | `packages/api/src/sbc_api/deps.py` | `load_secrets_into_environment`: load from SSM when `SSM_PREFIX` is set, in any environment (it skipped `local`). Tests in `tests/unit/aws/test_secrets_schema.py` |
-| 2 | `packages/api/src/sbc_api/deps.py` | `_authenticator`: `BearerAuthenticator` when Cognito is configured; `LocalAuthenticator` only for `local` without it |
-| 3 | `packages/core/src/sbc_core/config.py`, `sbc_api/auth/cognito.py` | Optional `COGNITO_JWKS_URL` overriding the derived JWKS URL (moto's tokens already use the real issuer format) |
-| 4 | `apps/broker/src/auth.ts` | Optional `VITE_COGNITO_ENDPOINT` passed to `CognitoUserPool` |
+| 2 ✅ | `packages/api/src/sbc_api/deps.py` | `_authenticator`: `BearerAuthenticator` when Cognito is configured; `LocalAuthenticator` only for `local` without it |
+| 3 ✅ | `packages/core/src/sbc_core/config.py`, `sbc_api/auth/cognito.py` | Optional `COGNITO_JWKS_URL` overriding the derived JWKS URL (moto's tokens already use the real issuer format) |
+| 4 ✅ | `apps/broker/src/auth.ts` | Optional `VITE_COGNITO_ENDPOINT` passed to `CognitoUserPool`; with it set, `USER_PASSWORD_AUTH` instead of SRP (moto can't finish SRP) |
 | 5 | `infra/docker/s3_sync.py` | Honor `AWS_ENDPOINT_URL_S3` (check whether boto3 already does; then only a test) |
 | 6 | `packages/api/src/sbc_api/logging.py` | Optional `LOG_FILE` for a JSON-lines copy of the log |
 | 7 | `packages/core/src/sbc_core/llm.py` or a new module | L7 replay mode (only if chosen) |
@@ -321,8 +340,9 @@ These stay on the AWS first-deploy checklist (docs/aws/TODO.md §2.4 and §4):
 
 - CloudFront origin access control signing to the Function URL, and the `X-Sbc-Authorization` path through it.
 - Lambda cold start, response streaming through the Function URL and the Lambda Web Adapter.
-- Cognito's real SRP password check and TOTP verification (moto accepts any proof), password policy, the demo
-  account's inability to change its password.
+- Cognito's SRP sign-in (locally the apps use `USER_PASSWORD_AUTH`, because moto can't finish SRP), the
+  first-sign-in "choose a new password" step (moto's challenge lacks `userAttributes`), TOTP verification (moto
+  accepts any code), and the demo account's inability to change its password.
 - DynamoDB TTL deletion (locally an expired thread's checkpoints stay resumable by ID), S3 lifecycle expiry, IAM
   permissions on every call.
 - CloudWatch metric filters, alarms, SNS emails, Budgets, Cost Anomaly Detection.
@@ -358,7 +378,7 @@ Decided 2026-11-11 (Syamsruthin Kaliki):
 
 | Risk | Mitigation |
 |---|---|
-| moto's Cognito SRP flow differs from what `amazon-cognito-identity-js` expects | Spike it first in L4; fallback: `USER_PASSWORD_AUTH` locally behind the same endpoint setting |
+| moto's Cognito SRP flow differs from what `amazon-cognito-identity-js` expects | **Happened (L4 spike):** the fallback is in place, `USER_PASSWORD_AUTH` locally behind `VITE_COGNITO_ENDPOINT`; SRP is checked on AWS |
 | DynamoDB Local behaves differently (TTL, limits) | Known gaps listed; the CDK template tests and the first deploy cover the rest |
 | No OpenRouter credit | L7 replay mode; L1, L3–L6 and L8 work without answers |
 | S3Mock differs from S3 | Checked in L1: path-style addressing and `ServerSideEncryption=AES256` work; the first deploy covers the rest |

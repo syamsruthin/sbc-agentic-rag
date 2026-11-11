@@ -19,9 +19,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     "hypothesis>=6.170",
-    "boto3-stubs[dynamodb,s3,ssm]>=1.43.64",
+    "boto3-stubs[cognito-idp,dynamodb,s3,ssm]>=1.43.64",
     "import-linter>=2.15",
-    "moto[dynamodb,s3,ssm]>=5.2",
+    "moto[cognitoidp,dynamodb,s3,ssm]>=5.2",
     "mypy>=2.4",
     "pytest>=9.2",
     "pytest-cov>=7.1",

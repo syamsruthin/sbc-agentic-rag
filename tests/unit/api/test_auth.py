@@ -16,12 +16,12 @@ from fastapi.testclient import TestClient
 
 from sbc_api.app import create_app
 from sbc_api.auth.anon import SessionTokens
-from sbc_api.auth.cognito import CognitoVerifier, TokenError, issuer
-from sbc_api.auth.principal import BearerAuthenticator, Principal, admin_principal
+from sbc_api.auth.cognito import CognitoVerifier, TokenError, issuer, jwks_client
+from sbc_api.auth.principal import BearerAuthenticator, LocalAuthenticator, Principal, admin_principal
 from sbc_api.auth.turnstile import SITEVERIFY_URL, TurnstileVerifier
-from sbc_api.deps import ApiState
-from sbc_core.config import BotName
-from tests.unit.api.conftest import Harness
+from sbc_api.deps import ApiState, _authenticator
+from sbc_core.config import BotName, Env, EnvSettings, Settings, load_settings
+from tests.unit.api.conftest import REPO, Harness
 from tests.unit.test_graph import ScriptedChat, classified, reply
 from tests.unit.test_tools import GOLD
 
@@ -287,3 +287,35 @@ def test_behind_cloudfront_the_token_comes_in_x_sbc_authorization(harness: Harne
     headers = {"authorization": sigv4, "x-sbc-authorization": f"Bearer {cognito_token()}"}
     assert client.get("/api/broker/plans/search?q=Gold", headers=headers).status_code == 200
     assert client.get("/api/broker/plans/search?q=Gold", headers={"authorization": sigv4}).status_code == 401
+
+
+# ------------------------------------------------------------------ which authenticator a deployment gets
+
+
+def _settings_for(env: EnvSettings) -> dict[BotName, Settings]:
+    return {bot: load_settings(bot, REPO / "config", env) for bot in BotName}
+
+
+def test_plain_local_runs_use_the_developer_principal() -> None:
+    env = EnvSettings(_env_file=None, app_env=Env.LOCAL)
+    authenticator = _authenticator(env, _settings_for(env), SessionTokens(SESSION_SECRET))
+    assert isinstance(authenticator, LocalAuthenticator)
+
+
+def test_a_local_run_with_a_cognito_stand_in_signs_in_for_real() -> None:
+    """The full local stack (docs/local/LOCAL_PLAN.md L4): Cognito configured locally means real tokens."""
+    env = EnvSettings(
+        _env_file=None,
+        app_env=Env.LOCAL,
+        cognito_user_pool_id=POOL,
+        cognito_app_client_id=CLIENT,
+        cognito_jwks_url="http://localhost:5050/pool/.well-known/jwks.json",
+    )
+    authenticator = _authenticator(env, _settings_for(env), SessionTokens(SESSION_SECRET))
+    assert isinstance(authenticator, BearerAuthenticator)
+
+
+def test_the_jwks_url_defaults_to_the_pool_and_can_be_replaced() -> None:
+    assert jwks_client(REGION, POOL).uri == f"{issuer(REGION, POOL)}/.well-known/jwks.json"
+    local = "http://localhost:5050/pool/.well-known/jwks.json"
+    assert jwks_client(REGION, POOL, local).uri == local

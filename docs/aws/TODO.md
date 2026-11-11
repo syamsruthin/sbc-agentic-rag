@@ -216,5 +216,5 @@ The AWS track hosts the app; these are features and evaluations the application 
 - **Answers are sent whole.** They are not streamed token by token, because nothing passes before the verifier; users see status events, then the answer.
 - **Quarantine is checked after the turn.** The model is still called for a quarantined plan; only the answer is withheld. Checking before the turn would need the plan resolved first.
 - **A cached answer still writes the audit record and the thread,** but not a LangGraph trace of its own.
-- **Local runs** use a developer principal for both bots, in-process stores, no Turnstile check and a per-process session secret. They never reach real users, because outside `APP_ENV=local` the API requires the real configuration.
+- **Plain local runs** use a developer principal for both bots, in-process stores, no Turnstile check and a per-process session secret. (The full local stack on `main_local` signs in for real against a Cognito stand-in, checks Turnstile with Cloudflare's test keys and uses DynamoDB Local; docs/local/LOCAL_PLAN.md.) They never reach real users, because outside `APP_ENV=local` the API requires the real configuration.
 - **The test helper `tests/unit/api/test_guards.py::app()`** changes frozen config objects with `object.__setattr__` to set limits. That is fine for tests, but it is not a pattern for the app.

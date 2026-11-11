@@ -259,14 +259,16 @@ def _session_tokens(env: EnvSettings) -> SessionTokens:
 def _authenticator(
     env: EnvSettings, settings: dict[BotName, Settings], sessions: SessionTokens
 ) -> Authenticator:
-    if env.app_env is Env.LOCAL:
-        return LocalAuthenticator()
+    cognito_configured = bool(env.cognito_user_pool_id and env.cognito_app_client_id)
+    if env.app_env is Env.LOCAL and not cognito_configured:
+        return LocalAuthenticator()  # plain local runs; the full local stack configures a Cognito stand-in
     cognito = None
-    if env.cognito_user_pool_id and env.cognito_app_client_id:
+    if cognito_configured:
         cognito = CognitoVerifier(
             region=env.aws_region,
-            user_pool_id=env.cognito_user_pool_id,
-            app_client_id=env.cognito_app_client_id,
+            user_pool_id=str(env.cognito_user_pool_id),
+            app_client_id=str(env.cognito_app_client_id),
+            jwks_url=env.cognito_jwks_url,
         )
     demo = frozenset(settings[BotName.BROKER].config.portfolio.demo_user_ids)
     return BearerAuthenticator(cognito=cognito, sessions=sessions, demo_user_ids=demo)

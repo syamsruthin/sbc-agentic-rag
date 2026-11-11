@@ -412,7 +412,7 @@ def stream(self, thread_id, message=None, *, resume=None, ui_selected=(), user_s
 > - **`auth/principal.py`:** `BearerAuthenticator` sends each token only to its own bot's verifier. A broker token needs the `broker` or `admin` group (else 403). The demo account loses `admin` whatever its token claims. `admin_principal` is ready for the WP6 admin routes.
 > - **Wiring and routes:**
 >   - `POST /api/public/session` gives 403 on a failed check and 503 when Cloudflare is down.
->   - `deps` uses `LocalAuthenticator` for `APP_ENV=local`, otherwise `BearerAuthenticator`.
+>   - `deps` uses `LocalAuthenticator` for `APP_ENV=local`, otherwise `BearerAuthenticator`. (Since `main_local` L4: `LocalAuthenticator` only for `APP_ENV=local` *without* Cognito settings; the full local stack sets them for a Cognito stand-in, with `COGNITO_JWKS_URL` pointing at its keys, and gets `BearerAuthenticator`.)
 >   - Locally without `TURNSTILE_SECRET_KEY` the check is skipped, and without `SESSION_JWT_SECRET` a per-process secret is used. Outside local runs both are required.
 > - **Tests:** 21 in `tests/unit/api/test_auth.py`, with a generated RSA key behind a fake JWKS and a mock HTTP transport for Turnstile (no network). They cover 10 kinds of bad token (expired, wrong issuer, wrong client, ID token, foreign key, unknown `kid`, missing claim, malformed groups, HS256 algorithm confusion, garbage), cross-bot tokens, tampered, expired and foreign-audience sessions, the IP passed to Turnstile, admin checks and the demo account.
 

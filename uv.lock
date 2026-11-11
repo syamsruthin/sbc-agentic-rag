@@ -153,6 +153,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+cognito-idp = [
+    { name = "mypy-boto3-cognito-idp" },
+]
 dynamodb = [
     { name = "mypy-boto3-dynamodb" },
 ]
@@ -892,6 +895,18 @@ wheels = [
 ]
 
 [[package]]
+name = "joserfc"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/31/5c3f27e82c92a7bbe1f028033ff19e0251540395c9be244c01a50de42bdb/joserfc-1.8.0.tar.gz", hash = "sha256:cbf03cb2c6db8cc5289f1ef8718842e53dba244b4c0de5fefa0c0eaee4bde8db", size = 241023, upload-time = "2026-11-03T10:45:57.948Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/7e/7ffaae13415e8f51c8e8d5d1845f2de7a27ebf2717e97a38d7e7446d6030/joserfc-1.8.0-py3-none-any.whl", hash = "sha256:176b836ac7ed9a46a88629e24076314b475f33a75d0bad7f26146e572eed7c79", size = 73147, upload-time = "2026-11-03T10:45:56.531Z" },
+]
+
+[[package]]
 name = "jsonpatch"
 version = "1.39"
 source = { registry = "https://pypi.org/simple" }
@@ -1288,6 +1303,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+cognitoidp = [
+    { name = "joserfc" },
+]
 dynamodb = [
     { name = "docker" },
     { name = "py-partiql-parser" },
@@ -1346,6 +1364,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/42/2f/005185e6ab4752fd6cc2d1a6d1421fe21979770afe2490c00c555f34a913/mypy-2.4.1-cp315-cp315t-win_amd64.whl", hash = "sha256:de95648e0a6d46fa9929b956ed2c87c5dc9933d4d59945e6390e9d753c74e7c1", size = 12353324, upload-time = "2026-10-28T19:22:51.481Z" },
     { url = "https://files.pythonhosted.org/packages/a1/d6/20420cc9c780087139662534d128c2f3274361f8bb7e9cf0d5495a846ed5/mypy-2.4.1-cp315-cp315t-win_arm64.whl", hash = "sha256:ef8d5be90032261197ac388d945d8ff4f476c95880798a1911760af64ddfe71f", size = 11845599, upload-time = "2026-10-28T19:22:23.136Z" },
     { url = "https://files.pythonhosted.org/packages/21/5c/6e8010f8f2c4ad817364592d4b3883633417269b913fc9d5174fdeb7e565/mypy-2.4.1-py3-none-any.whl", hash = "sha256:1784648d6ec8c2b5465e3f26241b845a0b3cb4e56c993c64abe16989e7698999", size = 2801286, upload-time = "2026-10-28T19:21:19.516Z" },
+]
+
+[[package]]
+name = "mypy-boto3-cognito-idp"
+version = "1.43.108"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/30/aa/92d39c3b291997cbaa10c98e567a2ad42ed9d5fd9bf1e1cdb011b14d2314/mypy_boto3_cognito_idp-1.43.108.tar.gz", hash = "sha256:7870f241049df1c807b10ac06d62fd751483802172435e297a36c897b7dee1de", size = 55876, upload-time = "2026-10-02T21:05:43.131Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/15/167d0a33aea4d9b638f56d5b8c7bd88d1da3fcde52b0865ee7241ca3d4de/mypy_boto3_cognito_idp-1.43.108-py3-none-any.whl", hash = "sha256:63b728a83a520cce327aabb33f8a82fdf5e923a637d1b4240375979ba57fdfde", size = 62201, upload-time = "2026-10-02T21:05:40.87Z" },
 ]
 
 [[package]]
@@ -2186,10 +2213,10 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3-stubs", extra = ["dynamodb", "s3", "ssm"] },
+    { name = "boto3-stubs", extra = ["cognito-idp", "dynamodb", "s3", "ssm"] },
     { name = "hypothesis" },
     { name = "import-linter" },
-    { name = "moto", extra = ["dynamodb", "s3", "ssm"] },
+    { name = "moto", extra = ["cognitoidp", "dynamodb", "s3", "ssm"] },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -2212,10 +2239,10 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3-stubs", extras = ["dynamodb", "s3", "ssm"], specifier = ">=1.43.64" },
+    { name = "boto3-stubs", extras = ["cognito-idp", "dynamodb", "s3", "ssm"], specifier = ">=1.43.64" },
     { name = "hypothesis", specifier = ">=6.170" },
     { name = "import-linter", specifier = ">=2.15" },
-    { name = "moto", extras = ["dynamodb", "s3", "ssm"], specifier = ">=5.2" },
+    { name = "moto", extras = ["cognitoidp", "dynamodb", "s3", "ssm"], specifier = ">=5.2" },
     { name = "mypy", specifier = ">=2.4" },
     { name = "pytest", specifier = ">=9.2" },
     { name = "pytest-cov", specifier = ">=7.1" },

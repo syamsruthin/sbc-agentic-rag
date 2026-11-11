@@ -37,7 +37,7 @@ SBC_BUNDLE_FILE=facts-2027.2.sqlite scripts/local/up.sh --image   # another file
 | API | 8080 | `scripts/local/api.sh` (native) or the `api` container (`--image`) | — |
 | `dynamodb` (DynamoDB Local) | 8000 | Tables `sbc-local-app`, `sbc-local-audit`, `sbc-local-checkpoints` | Named volume, survives `down` |
 | `s3` (Adobe S3Mock) | 9090 | Bucket `sbc-local-data`: PDF cache, checkpoint offload | Named volume, survives `down` |
-| `aws` (moto server) | 5050 | SSM Parameter Store (`/sbc/local/`) and, from L4, the Cognito user pool | In memory; recreated by the bootstrap on every `up` |
+| `aws` (moto server) | 5050 | SSM Parameter Store (`/sbc/local/`) and the Cognito user pool `sbc-local-brokers` | In memory; the bootstrap recreates it on every `up`, with the same IDs |
 
 All ports listen on 127.0.0.1 only. Override any of them with `SBC_PORT_EDGE`, `SBC_PORT_API`,
 `SBC_PORT_DYNAMODB`, `SBC_PORT_S3` or `SBC_PORT_MOTO` (5000 is avoided: macOS AirPlay Receiver uses it).
@@ -55,7 +55,9 @@ directly, so locally call it on :8080.
 | `infra/local/stack.env` | Endpoints, table and bucket names, dummy AWS credentials, the bundle path, and the portfolio limits (a global daily cap of 200 turns, demo limits of 5 a minute and 30 a day) as `SBC_PORTFOLIO__*` | Yes (no secrets) |
 | `.env` | Secrets: OpenRouter keys, Langfuse keys. The bootstrap copies them into the local Parameter Store | No |
 | `.local/secrets.env` | The session secret, generated once (mode 600); kept by `make wipe` | No |
-| `.local/runtime.env` | Values the bootstrap generates *(from L4: Cognito IDs, the demo user's `sub`)* | No |
+| `.local/users.env` | The local users' passwords, generated once (mode 600); kept by `make wipe` | No |
+| `.local/runtime.env` | Written by the bootstrap on every start: Cognito pool and client IDs, `COGNITO_JWKS_URL`, the demo user's `sub` (`SBC_PORTFOLIO__DEMO_USER_IDS`) | No |
+| `.local/turnstile` | `pass` or `block`: which Turnstile test secret the bootstrap uses | No |
 | `config/env/local.yaml` | Behavior for every `APP_ENV=local` run (the portfolio limits stay off there) | Yes |
 
 The AWS SDK reaches the stand-ins through `AWS_ENDPOINT_URL_<SERVICE>` variables, so the API's AWS code is the
@@ -71,22 +73,60 @@ native API also reads `.env` itself, but the Parameter Store values win.
 
 **After changing `.env`,** run `scripts/local/bootstrap.sh` (or `make up`), then restart the API.
 
-## 5. Scripts
+## 5. Sign-in, users and Turnstile
+
+Every API call is authenticated as on AWS: the local API checks Cognito access tokens against the stand-in's keys,
+and public sessions need a Turnstile check. (Plain local runs without the stack still use the developer
+principal.)
+
+| User | Groups | Use |
+|---|---|---|
+| `admin` | `broker`, `admin` | The admin routes (kill switches, quarantine) |
+| `broker` | `broker` | An ordinary broker |
+| `demo-broker` | `broker` | The shared demo account: the demo limits (5 turns a minute, 30 a day), 24-hour history, never admin |
+
+Passwords are in `.local/users.env`. For `curl`, get an access token with `scripts/local/token.sh <user>` and send
+it in `X-Sbc-Authorization` (the edge drops `Authorization`, as CloudFront does):
+
+```bash
+curl -s -H "X-Sbc-Authorization: Bearer $(scripts/local/token.sh broker)" localhost:8088/api/broker/threads
+```
+
+**Public sessions:** the bootstrap stores Cloudflare's Turnstile test secret, which the API checks with
+Cloudflare's real `siteverify`. With the `pass` secret every token passes; with `block`, every token fails:
+
+```bash
+curl -s -X POST localhost:8088/api/public/session -H 'content-type: application/json' \
+  -d '{"turnstile_token":"XXXX.DUMMY.TOKEN.XXXX","state":"OH"}'            # {"token": "..."}
+scripts/local/bootstrap.sh --turnstile block    # then restart the API; sessions now get 403
+scripts/local/bootstrap.sh --turnstile pass     # back (the choice is remembered in .local/turnstile)
+```
+
+A `TURNSTILE_SECRET_KEY` in `.env` replaces the test secret.
+
+**Differences from AWS** (docs/local/LOCAL_PLAN.md section 7): the broker app signs in with `USER_PASSWORD_AUTH`
+instead of SRP when `VITE_COGNITO_ENDPOINT` is set, because moto can't finish an SRP sign-in; there is no user
+with a temporary password, because moto's "choose a new password" challenge doesn't work with the app's Cognito
+library; and moto accepts any TOTP code. The local app client also allows `ADMIN_USER_PASSWORD_AUTH`, for
+`token.sh`; the AWS client allows SRP only.
+
+## 6. Scripts
 
 | Script | Make | What |
 |---|---|---|
 | `scripts/local/up.sh [--image]` | `make up`, `make up-image` | Start the stack, wait for it, bootstrap, print status |
 | `scripts/local/api.sh` | `make api` | The API natively on :8080 with reload; logs to the console and `.local/logs/api.jsonl` |
-| `scripts/local/bootstrap.sh` | — | Create the tables and the bucket, and mirror the secrets into the local Parameter Store (idempotent; `up.sh` runs it). It refuses to run unless every AWS endpoint points at a stand-in |
+| `scripts/local/bootstrap.sh [--turnstile pass\|block]` | — | Create the tables, the bucket, the user pool and users; mirror the secrets into the local Parameter Store; write `.local/runtime.env` (idempotent; `up.sh` runs it). It refuses to run unless every AWS endpoint points at a stand-in |
+| `scripts/local/token.sh <user>` | — | Print an access token for `admin`, `broker` or `demo-broker` |
 | `scripts/local/status.sh` | `make status` | Which services answer |
 | `scripts/local/logs.sh [service…]` | `make logs` | Follow the containers' logs |
 | `scripts/local/down.sh [--wipe]` | `make down`, `make wipe` | Stop; `--wipe` drops the volumes and `.local/runtime.env` |
 
-## 6. Checks
+## 7. Checks
 
 ```bash
 curl -s 'localhost:8088/api/healthz?deep=1'    # "stores": "dynamodb"; both bots "ready" when keys are set
-curl -s 'localhost:8088/api/broker/plans/search?q=blue&limit=2'
+curl -s -H "X-Sbc-Authorization: Bearer $(scripts/local/token.sh broker)" 'localhost:8088/api/broker/plans/search?q=blue&limit=2'
 grep '"event": "init"' .local/logs/api.jsonl | tail -1    # "secrets_loaded": 2 or more
 DDB_LOCAL_ENDPOINT=http://localhost:8000 uv run pytest -m integration tests/integration   # needs no model calls
 ```
@@ -95,7 +135,7 @@ The integration tests use their own tables in the stack's DynamoDB Local, with s
 
 Full smoke test *(coming in L9)*.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 - **`Docker isn't running`:** start Docker Desktop and wait for it to say it's running.
 - **A port is taken:** `lsof -i :8088` (or the port in question), or set the matching `SBC_PORT_*`.
@@ -103,4 +143,8 @@ Full smoke test *(coming in L9)*.
   `scripts/local/bootstrap.sh`, and restart the API.
 - **Every answer is "I couldn't answer this from the SBC…":** look at the `turn` line in `.local/logs/api.jsonl`;
   `fallback: model_unavailable … HTTP 403: Key limit exceeded` means the OpenRouter key is out of credit.
-- **Start over:** `make wipe && make up`.
+- **401 on every API call:** send a token (`scripts/local/token.sh`) in `X-Sbc-Authorization`, not `Authorization`.
+- **The broker app at :8088 can't sign in:** it has to be built with the local `VITE_*` values *(L5:
+  `scripts/local/web.sh`)*.
+- **Start over:** `make wipe && make up`. The passwords and the session secret in `.local/` are kept; delete
+  `.local/users.env` too for new passwords.

@@ -77,6 +77,9 @@ services:
       SSM_PREFIX: /sbc/local/
       PUBLIC_BASE_URL: http://localhost:${SBC_PORT_EDGE:-8088}
       FACTS_BUNDLE_PATH: /opt/bundle/facts.sqlite
+      # The Cognito stand-in's keys by its Docker name (runtime.env has the host's URL). up.sh passes
+      # .local/runtime.env as --env-file, so the pool ID is known here.
+      COGNITO_JWKS_URL: http://aws:5000/${COGNITO_USER_POOL_ID:-}/.well-known/jwks.json
     ports: ["127.0.0.1:${SBC_PORT_API:-8080}:8080"]
     read_only: true
     tmpfs: ["/tmp"]

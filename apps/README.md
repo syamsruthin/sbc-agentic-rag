@@ -78,6 +78,7 @@ All public by design; `scripts/aws/deploy-web.sh` sets them from the stack outpu
 |---|---|
 | `VITE_API_BASE_URL` | `/api` |
 | `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID` | `SbcFoundation` outputs `UserPoolId`, `UserPoolClientId` |
+| `VITE_COGNITO_ENDPOINT` | Never on AWS. Only for the full local stack (docs/local/LOCAL_PLAN.md): the Cognito stand-in's URL; with it set, the broker app signs in with `USER_PASSWORD_AUTH`, because the stand-in can't complete SRP |
 | `VITE_TURNSTILE_SITE_KEY` | the Turnstile widget's site key (saved in SSM under `/sbc-deploy/<env>/turnstileSiteKey`) |
 | `VITE_REPORT_URL` | optional: where "Report a problem" points (default: this repository's new-issue page) |
 

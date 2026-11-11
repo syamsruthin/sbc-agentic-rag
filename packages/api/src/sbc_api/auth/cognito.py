@@ -40,10 +40,11 @@ def issuer(region: str, user_pool_id: str) -> str:
     return f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}"
 
 
-def jwks_client(region: str, user_pool_id: str) -> jwt.PyJWKClient:
-    """Fetches the pool's keys once and caches them (a new key ID triggers one refetch)."""
+def jwks_client(region: str, user_pool_id: str, url: str | None = None) -> jwt.PyJWKClient:
+    """Fetches the pool's keys once and caches them (a new key ID triggers one refetch). ``url`` replaces the
+    pool's own JWKS URL, for a local Cognito stand-in only."""
     return jwt.PyJWKClient(
-        f"{issuer(region, user_pool_id)}/.well-known/jwks.json",
+        url or f"{issuer(region, user_pool_id)}/.well-known/jwks.json",
         cache_keys=True,
         lifespan=JWKS_CACHE_SECONDS,
         timeout=JWKS_TIMEOUT_SECONDS,
@@ -58,11 +59,12 @@ class CognitoVerifier:
         user_pool_id: str,
         app_client_id: str,
         keys: SigningKeys | None = None,
+        jwks_url: str | None = None,
         leeway_seconds: int = 30,
     ) -> None:
         self._issuer = issuer(region, user_pool_id)
         self._client_id = app_client_id
-        self._keys = keys if keys is not None else jwks_client(region, user_pool_id)
+        self._keys = keys if keys is not None else jwks_client(region, user_pool_id, jwks_url)
         self._leeway = leeway_seconds
 
     def verify(self, token: str) -> CognitoClaims:
