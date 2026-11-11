@@ -455,8 +455,8 @@ serves from it. This is the WP8 open check, minus ECS.
 > - `make up` from a stopped stack: 8 s.
  Code changes, by file
 
-All changes are switched by configuration and keep today's behavior when the new settings are absent, so they can
-go to `main_AWS` unchanged (section 8).
+All changes are switched by configuration and keep today's behavior when the new settings are absent (section 8:
+this branch is never merged).
 
 | # | File | Change |
 |---|---|---|
@@ -491,15 +491,24 @@ These stay on the AWS first-deploy checklist (docs/aws/TODO.md §2.4 and §4):
   arm64 on Apple Silicon, which helps).
 - The OIDC deploy role and the GitHub deploy workflow.
 
-## 8. Branch and merge strategy
+## 8. Branch strategy
 
 - `main_local` is cut from `main_AWS` (which has the API, auth, guards and frontends that `main` lacks).
+- **`main_local` is exclusively for running locally. It is never merged into `main_AWS` or `main`** (decided
+  2026-11-11, Syamsruthin Kaliki).
 - Commits go directly to `main_local`, one per phase, with the doc audit in the same commit, the way `main_AWS`
   works.
-- Every code change is configuration-switched, and local-only files sit in their own folders, so `main_local` can
-  merge into `main_AWS` before the first deploy with no conflicts in behavior. The local stack then stays as the
-  pre-deploy check.
-- If `main_AWS` moves meanwhile, merge it into `main_local` (no rebase of pushed history).
+- Every code change is configuration-switched, and local-only files sit in their own folders, so the branch keeps
+  AWS behavior intact and stays easy to update.
+- If `main_AWS` moves, merge it **into** `main_local` (never the other way; no rebase of pushed history).
+- **Fixes found here that also apply on AWS exist only on this branch.** Bringing any of them to `main_AWS` is a
+  separate change made there, not a merge of this branch:
+  - unhandled errors keep their request ID, and the `ApiErrors` alarm (L6; `sbc_api/app.py`, CDK `ops.py`);
+  - `LANGFUSE_BASE_URL` for non-EU Langfuse projects (L6; `config.py`, `tracing.py`, `put-secrets.sh`);
+  - cached answers get the quarantine check (L9; `routes/chat.py`);
+  - the HTTP eval adapter (L9; `evals/harness/http_api.py`, WP13), and the record/replay gateway (L7) if wanted.
+  The checks recorded here (the 2027.2 bundle, the PDF proxy, live answers) were made with `main_AWS`'s code plus
+  these changes.
 
 ## 9. Decisions
 
@@ -526,7 +535,7 @@ Decided 2026-11-11 (Syamsruthin Kaliki):
 | Docker memory on a 16 GB Mac | Stand-ins need under 1.5 GB; Langfuse is the cloud service |
 | Port clashes (5000 AirPlay, 8000, 8080) | Ports in one env file; `status.sh` checks them first |
 | Insurer portal changes or rate-limits the PDF proxy | One plan in the smoke test, cached after the first fetch |
-| `main_AWS` and `main_local` diverge | Config-switched changes only; merge back before the first deploy |
+| `main_AWS` and `main_local` diverge | Config-switched changes only; merge `main_AWS` into `main_local` when it moves (never the reverse) |
 
 ## 11. Definition of done
 

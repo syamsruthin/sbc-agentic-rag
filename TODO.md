@@ -17,8 +17,9 @@ replay of model calls, so repeated local runs cost nothing) are done, and so is 
 gate passes) with a live PDF proxy check, and L8: the offline build image ran `build-pipeline bundle` against the local
 bucket and produced the same bundle. L9 is done too: a 43-check smoke test through the edge (free in replay mode), the
 HTTP eval adapter (WP13), and a browser walkthrough; it found and fixed cached answers skipping the quarantine
-check. The 30-item HTTP eval passed every scored hard gate (30/30 correct). The local track is complete; next,
-merge `main_local` into `main_AWS` before the first deploy (docs/local/LOCAL_PLAN.md section 8).
+check. The 30-item HTTP eval passed every scored hard gate (30/30 correct). The local track is complete. `main_local` is for
+local runs only and is never merged; fixes found there that also apply on AWS are listed in docs/local/LOCAL_PLAN.md
+section 8.
 
 ## Checkpoints
 

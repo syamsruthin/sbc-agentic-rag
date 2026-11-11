@@ -4,7 +4,8 @@ on:
   pull_request:
   push:
     # main_AWS is the long-lived branch of the AWS implementation; it is not merged into main.
-    # main_local is the full local stack (docs/local/LOCAL_PLAN.md); it merges into main_AWS. Only main_AWS deploys.
+    # main_local is the full local stack (docs/local/LOCAL_PLAN.md), for local runs only; it is never merged.
+    # Only main_AWS deploys.
     branches: [main, main_AWS, main_local]
 
 permissions:
