@@ -874,6 +874,7 @@ Each WP PR must keep `ruff`, `ruff format --check`, `mypy` (strict for `sbc_aws.
 - **No AWS at all:** `APP_ENV=local`, with in-memory ports (`sbc_api/memory.py`), an `InMemorySaver` checkpointer, a stubbed broker auth (a fixed local principal, only when `APP_ENV=local`) and Turnstile test keys. Run with `APP_ENV=local uv run uvicorn --factory sbc_api.app:create_app --port 8080` (add `--reload` while developing) and, once WP10 exists, `npm run dev` in each app (a Vite proxy sends `/api` to `:8080`).
 - **AWS-like:** `docker compose -f infra/docker/compose.yaml up` (DynamoDB Local plus the API), with the DynamoDB adapters and the real checkpointer. This catches key-schema and TTL mistakes before deploying.
 - **The `sbc-ask` CLI stays unchanged** for offline agent work.
+- **Full local stack (branch `main_local`):** every AWS service stood in locally (DynamoDB Local, S3Mock, moto for Cognito and SSM, Caddy for CloudFront), with real sign-in and Turnstile test keys; [docs/local/LOCAL_PLAN.md](../local/LOCAL_PLAN.md).
 
 ---
 

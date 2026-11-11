@@ -6,6 +6,10 @@ port of the generation eval (2026-11-05), a doc audit against the code, WP11 (20
 
 All work goes to `main_AWS`, the long-lived AWS branch; it isn't merged into `main`.
 
+Before the first deploy, the branch `main_local` runs the whole application locally with AWS stand-ins
+([docs/local/LOCAL_PLAN.md](../local/LOCAL_PLAN.md)). Its L2 rebuilds the bundle `2027.2` (§2.3) and its L9 builds the
+WP13 HTTP eval adapter; it merges back into `main_AWS` before the first deploy.
+
 Items marked 👤 need you (an account, credentials or data that isn't in this environment). Everything else can be
 done in code here.
 

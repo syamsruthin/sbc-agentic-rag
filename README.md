@@ -117,10 +117,13 @@ packages/      Python workspace packages (imported as sbc_<name>)
 apps/          landing/, broker/, shopper/, chat-ui/ (React + Vite npm workspace, AWS WP10; see apps/README.md)
 evals/         golden datasets, judge calibration, harness
 tests/         unit/, integration/, contract/, load/
-infra/         Docker images and compose (docker/), AWS CDK app (cdk/: SbcFoundation + SbcApp stacks)
+infra/         Docker images and compose (docker/), AWS CDK app (cdk/: SbcFoundation + SbcApp stacks),
+               the full local stack (local/: compose with AWS stand-ins and the Caddy edge)
 scripts/aws/   bootstrap, deploy, frontends, secrets, images, users, demo password, offline build, smoke tests
+scripts/local/ start, stop, bootstrap and run the full local stack (docs/local/RUNBOOK.md)
 spikes/        throwaway AWS experiments and their scripts (docs/aws/SPIKES.md)
-docs/          pipeline, agent graph, tools and answer-path notes; review sheets; ADRs; aws/ deployment track
+docs/          pipeline, agent graph, tools and answer-path notes; review sheets; ADRs; aws/ deployment track;
+               local/ full local stack (branch main_local)
 data/          fetched and generated SBC data (not committed)
 ```
 
@@ -166,6 +169,21 @@ It prints the answer with its citations, then the path taken, the model calls an
 a question for an interactive session. How a turn is handled is in [docs/agent-graph.md](docs/agent-graph.md);
 the tools and the answer checks are in [docs/agent-tools.md](docs/agent-tools.md) and
 [docs/answer-path.md](docs/answer-path.md).
+
+### Run the whole stack locally
+
+The branch `main_local` runs everything on one machine with stand-ins for the AWS services (DynamoDB Local,
+S3Mock, moto for Cognito and SSM, Caddy in place of CloudFront), so the API uses the same AWS code paths it uses
+on AWS:
+
+```bash
+make up      # stand-ins, edge, tables
+make api     # the API natively with reload (or `make up-image` for the Lambda image)
+```
+
+Then open http://localhost:8088. [docs/local/RUNBOOK.md](docs/local/RUNBOOK.md) has the details and
+[docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md) the plan and what is built so far. The quicker setups below
+still work.
 
 ### Run the API locally
 
@@ -215,6 +233,7 @@ if any secret it needs is missing.
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
+| Local track (branch `main_local`): the whole app on one machine with AWS stand-ins | L1 done (stack and scripts); L2–L9 left, see [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md) |
 | AWS deployment track (branch `main_AWS`, the long-lived AWS branch; not merged into `main`) | WP0–WP12 done in code (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers, CDK stacks, frontends, deploy and data-build workflows, observability with optional Langfuse); first deploy, WP13 and WP14 left |
 
 [TODO.md](TODO.md) has the detailed checklist; PLAN.md section 11 has each phase's acceptance criteria and

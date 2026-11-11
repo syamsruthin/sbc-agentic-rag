@@ -1,0 +1,86 @@
+# The whole application on one machine, with local stand-ins for the AWS services (docs/local/LOCAL_PLAN.md).
+# Don't run this file by hand: scripts/local/up.sh (or `make up`) starts it, bootstraps the resources and
+# prints what to do next. docs/local/RUNBOOK.md has the details.
+#
+#   dynamodb  DynamoDB Local, on a named volume (state survives `down`; `down.sh --wipe` drops it)
+#   aws       moto server: Cognito user pool, SSM Parameter Store (in memory; bootstrap recreates them on every
+#             start with a fixed seed, so the pool ID and the users' `sub`s stay the same)
+#   s3        Adobe S3Mock: the data bucket (PDF cache, checkpoint offload, bundles), on a named volume
+#   edge      Caddy, the CloudFront stand-in: the built frontends at /, the API at /api/*
+#   api       the API image Lambda runs (profile `image`); without it, scripts/local/api.sh runs the API natively
+name: sbc-local
+
+x-aws-in-docker: &aws-in-docker
+  APP_ENV: local
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: local
+  AWS_SECRET_ACCESS_KEY: local
+  AWS_ENDPOINT_URL_DYNAMODB: http://dynamodb:8000
+  AWS_ENDPOINT_URL_S3: http://s3:9090
+  AWS_ENDPOINT_URL_SSM: http://aws:5000
+  AWS_ENDPOINT_URL_COGNITO_IDENTITY_PROVIDER: http://aws:5000
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:2.6.1
+    user: root  # the image's user can't write to a fresh named volume
+    working_dir: /home/dynamodblocal
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/data"]
+    volumes: ["dynamodb:/data"]
+    ports: ["127.0.0.1:${SBC_PORT_DYNAMODB:-8000}:8000"]
+
+  aws:
+    image: motoserver/moto:5.2.5
+    environment:
+      MOTO_PORT: "5000"
+    ports: ["127.0.0.1:${SBC_PORT_MOTO:-5050}:5000"]
+
+  s3:
+    image: adobe/s3mock:4.11.0
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_ROOT: /data
+      COM_ADOBE_TESTING_S3MOCK_STORE_RETAIN_FILES_ON_EXIT: "true"
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: sbc-local-data
+    volumes: ["s3:/data"]
+    ports: ["127.0.0.1:${SBC_PORT_S3:-9090}:9090"]
+
+  edge:
+    image: caddy:2.10.2-alpine
+    environment:
+      # The native API (scripts/local/api.sh) by default; up.sh --image points it at the api container.
+      SBC_API_UPSTREAM: ${SBC_API_UPSTREAM:-host.docker.internal:8080}
+      SBC_MOTO_PUBLIC: http://localhost:${SBC_PORT_MOTO:-5050}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../apps/site:/srv/site:ro
+    ports: ["127.0.0.1:${SBC_PORT_EDGE:-8088}:8088"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  api:
+    profiles: ["image"]
+    image: sbc-api:local
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      additional_contexts:
+        bundle: ../../bundles
+      args:
+        BUNDLE_FILE: ${SBC_BUNDLE_FILE:-facts-2027.1.sqlite}
+    depends_on: [dynamodb, aws, s3]
+    env_file: [../../.local/runtime.env]  # up.sh creates it (bootstrap fills it in)
+    environment:
+      <<: *aws-in-docker
+      DDB_TABLE_APP: sbc-local-app
+      DDB_TABLE_AUDIT: sbc-local-audit
+      DDB_TABLE_CHECKPOINTS: sbc-local-checkpoints
+      S3_DATA_BUCKET: sbc-local-data
+      SSM_PREFIX: /sbc/local/
+      PUBLIC_BASE_URL: http://localhost:${SBC_PORT_EDGE:-8088}
+      FACTS_BUNDLE_PATH: /opt/bundle/facts.sqlite
+    ports: ["127.0.0.1:${SBC_PORT_API:-8080}:8080"]
+    read_only: true
+    tmpfs: ["/tmp"]
+
+volumes:
+  dynamodb:
+  s3:

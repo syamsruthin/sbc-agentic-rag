@@ -9,6 +9,9 @@ How to build, run, deploy and operate the app on AWS (PLAN.md revision 3).
 
 ## 1. Run locally
 
+For the full stack with every AWS service stood in locally (DynamoDB Local, S3Mock, moto, a Caddy edge in place
+of CloudFront), use [docs/local/RUNBOOK.md](../local/RUNBOOK.md). The setups below are the quicker ones.
+
 ### 1.1 API on your machine (in-process stores)
 
 ```bash

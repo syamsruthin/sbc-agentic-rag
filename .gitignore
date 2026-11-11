@@ -72,3 +72,6 @@ infra/cdk/.venv/
 
 # Assembled frontend build (apps/scripts/assemble.mjs)
 apps/site/
+
+# Local stack state and generated settings (scripts/local)
+/.local/

@@ -1,0 +1,63 @@
+# The CloudFront stand-in (infra/cdk/sbc_infra/constructs/web.py), on one origin at http://localhost:8088:
+#
+#   /api/*      -> the API, uncached, with only CloudFront's allow-listed request headers that matter here:
+#                  Authorization is dropped (on AWS, origin access control overwrites it with its SigV4
+#                  signature, so the apps must send X-Sbc-Authorization), and CloudFront-Viewer-Address is set
+#                  from the client socket, never taken from the client.
+#   everything  -> the built frontends (apps/site), with the same SPA rewrite as the CloudFront function and the
+#                  same cache headers as scripts/aws/deploy-web.sh.
+#
+# The security headers match the CloudFront response headers policy, except: no HSTS (plain HTTP), and the CSP
+# lets the browser reach the local Cognito stand-in instead of cognito-idp.<region>.amazonaws.com.
+{
+	admin off
+	auto_https off
+}
+
+:8088 {
+	encode gzip
+
+	header {
+		Content-Security-Policy "default-src 'self'; connect-src 'self' {$SBC_MOTO_PUBLIC}; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	handle /api/* {
+		header Cache-Control "no-store"
+		reverse_proxy {$SBC_API_UPSTREAM} {
+			header_up -Authorization
+			header_up -Cookie
+			header_up CloudFront-Viewer-Address {remote_host}:{remote_port}
+			flush_interval -1
+			transport http {
+				read_timeout 60s
+			}
+		}
+	}
+
+	handle {
+		root * /srv/site
+		redir /broker /broker/ 301
+		redir /shopper /shopper/ 301
+
+		@hashed path */assets/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@html path *.html */
+		header @html Cache-Control "no-cache"
+
+		# SPA rewrite: a path without a file extension goes to its app's index.html.
+		@broker path_regexp ^/broker/[^.]*$
+		rewrite @broker /broker/index.html
+		@shopper path_regexp ^/shopper/[^.]*$
+		rewrite @shopper /shopper/index.html
+		@landing {
+			not path /broker/* /shopper/*
+			path_regexp ^/[^.]*$
+		}
+		rewrite @landing /index.html
+
+		file_server
+	}
+}

@@ -6,6 +6,10 @@ The AWS deployment track (PLAN.md revision 3, branch `main_AWS`) also builds the
 work packages are tracked in detail in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_DONE.md) and
 [docs/aws/TODO.md](docs/aws/TODO.md). Items below that the AWS track changed say so.
 
+The local track (branch `main_local`, from `main_AWS`) runs the whole application on one machine with stand-ins
+for the AWS services before the first deploy; its roadmap (L0–L9) and progress are in
+[docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md). L1 (the stack and its scripts) is done.
+
 ## Checkpoints
 
 - [x] 1. Repository created and first push

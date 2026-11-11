@@ -15,6 +15,9 @@
   - [RUNBOOK.md](aws/RUNBOOK.md): running, building and operating it (local stack, images, offline build, first
     deployment, rollback, secrets, costs and alarms).
   - [TASKS_DONE.md](aws/TASKS_DONE.md) and [TODO.md](aws/TODO.md): what is finished and what is left.
+- [local/](local/): the whole application on one machine (branch `main_local`):
+  - [LOCAL_PLAN.md](local/LOCAL_PLAN.md): the plan, roadmap (L0–L9), feature matrix and what local can't prove.
+  - [RUNBOOK.md](local/RUNBOOK.md): starting, stopping and checking the local stack.
 - `reviews/`: human review sheets and sign-offs (cost grammar, converter fix, corpus snapshot).
 - `adr/`: architecture decision records, one per major decision (added as decisions are revisited).
 - `runbook.md`: incident runbook (Phase 4; PLAN.md section 7.4 has the draft).
