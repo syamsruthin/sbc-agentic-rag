@@ -233,7 +233,7 @@ if any secret it needs is missing.
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
-| Local track (branch `main_local`): the whole app on one machine with AWS stand-ins | L1 done (stack and scripts); L2–L9 left, see [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md) |
+| Local track (branch `main_local`): the whole app on one machine with AWS stand-ins | L1 and L3 done (stack, scripts, bootstrap, secrets from the local Parameter Store); L2 and L4–L9 left, see [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md) |
 | AWS deployment track (branch `main_AWS`, the long-lived AWS branch; not merged into `main`) | WP0–WP12 done in code (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers, CDK stacks, frontends, deploy and data-build workflows, observability with optional Langfuse); first deploy, WP13 and WP14 left |
 
 [TODO.md](TODO.md) has the detailed checklist; PLAN.md section 11 has each phase's acceptance criteria and

@@ -139,9 +139,13 @@ def _tables_configured(env: EnvSettings) -> bool:
 
 
 def load_secrets_into_environment() -> list[str]:
-    """Copy SSM parameters under ``SSM_PREFIX`` into the environment (outside local runs). Returns names."""
+    """Copy SSM parameters under ``SSM_PREFIX`` into the environment. Returns the names it set.
+
+    Runs whenever ``SSM_PREFIX`` is set, locally too: the full local stack (docs/local/LOCAL_PLAN.md) sets
+    it and points the SDK at a local Parameter Store with ``AWS_ENDPOINT_URL_SSM``. Plain local runs leave it
+    unset."""
     prefix = os.environ.get("SSM_PREFIX")
-    if not prefix or os.environ.get("APP_ENV", "local") == Env.LOCAL.value:
+    if not prefix:
         return []
     import boto3
 

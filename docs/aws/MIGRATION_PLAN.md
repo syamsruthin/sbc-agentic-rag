@@ -379,7 +379,7 @@ def stream(self, thread_id, message=None, *, resume=None, ui_selected=(), user_s
 **App wiring (`deps.py`):**
 
 - **At cold start:**
-  1. `load_ssm_parameters()` (only when `APP_ENV != local`);
+  1. `load_ssm_parameters()` whenever `SSM_PREFIX` is set (first written as "only when `APP_ENV != local`"; `main_local` L3 lets the full local stack load from its local Parameter Store too, and plain local runs leave `SSM_PREFIX` unset);
   2. `EnvSettings()`;
   3. `load_settings(bot)` for **both** bots.
 - **Shared by both bots:** one `SqliteFactsReader` and one `SqliteSearchIndex` (the bundle is read-only and thread-safe for reads with `check_same_thread=False`).

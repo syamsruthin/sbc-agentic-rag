@@ -197,7 +197,7 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 - **`sbc_api`:**
   - **App:** `app.create_app()` is the uvicorn factory. Request-ID middleware reads `x-amzn-request-id` and returns `x-request-id`; JSON access logs.
   - **`deps.build_state()`:**
-    - loads SSM secrets (outside local runs), then settings for both bots;
+    - loads SSM secrets (outside local runs; since `main_local` L3, whenever `SSM_PREFIX` is set), then settings for both bots;
     - opens the reader with `pdf_proxy_base` and the search index (BM25-only locally if the bundle has no embeddings; dev and prd require them);
     - picks the stores: DynamoDB and S3 when the tables are set, otherwise in-process;
     - builds one agent per bot with its own OpenRouter key and checkpointer. A bot without a key locally reports 503.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -35,6 +36,35 @@ def test_parameters_become_environment_variables_by_last_segment(ssm: SSMClient)
     }
     assert loaded.names == ("LANGFUSE_HOST", "OPENROUTER_API_KEY_BROKER", "SESSION_JWT_SECRET")
     assert "sk-or-broker" not in repr(loaded)
+
+
+@pytest.mark.parametrize("app_env", ["local", "dev"])
+def test_the_api_loads_parameter_store_whenever_a_prefix_is_set(
+    ssm: SSMClient, monkeypatch: pytest.MonkeyPatch, app_env: str
+) -> None:
+    """Locally too: the full local stack points the SDK at a local Parameter Store."""
+    from sbc_api.deps import load_secrets_into_environment
+
+    _put(ssm, "/sbc/local/SESSION_JWT_SECRET", "from-parameter-store")
+    monkeypatch.setenv("APP_ENV", app_env)
+    monkeypatch.setenv("SSM_PREFIX", "/sbc/local/")
+    monkeypatch.setenv("SESSION_JWT_SECRET", "")  # restored (unset) after the test, whatever the loader sets
+    monkeypatch.delenv("SESSION_JWT_SECRET")
+    assert load_secrets_into_environment() == ["SESSION_JWT_SECRET"]
+    assert os.environ.get("SESSION_JWT_SECRET") == "from-parameter-store"
+
+
+def test_the_api_skips_parameter_store_without_a_prefix(
+    ssm: SSMClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sbc_api.deps import load_secrets_into_environment
+
+    _put(ssm, "/sbc/local/SESSION_JWT_SECRET", "unused")
+    monkeypatch.delenv("SSM_PREFIX", raising=False)
+    monkeypatch.setenv("SESSION_JWT_SECRET", "")  # restored (unset) after the test, whatever the loader sets
+    monkeypatch.delenv("SESSION_JWT_SECRET")
+    assert load_secrets_into_environment() == []
+    assert "SESSION_JWT_SECRET" not in os.environ
 
 
 def test_every_page_is_read(ssm: SSMClient) -> None:

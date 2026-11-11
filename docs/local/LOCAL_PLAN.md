@@ -137,7 +137,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 | **L0** | Prerequisites | 👤 Docker running, Node 22, OpenRouter credit | 30 min of yours |
 | **L1** ✅ | Local profile, compose skeleton, one-command scripts | L0 | 0.5 |
 | **L2** | Bundle `2027.2` built locally | L0 credit (cents) | 0.5 (mostly waiting) |
-| **L3** | AWS stand-ins + bootstrap, API on them | L1 | 1 |
+| **L3** ✅ | AWS stand-ins + bootstrap, API on them | L1 | 1 |
 | **L4** | Real auth: Cognito (moto) and Turnstile test keys | L3 | 1 |
 | **L5** | Frontends built and served behind the edge | L4 | 0.5 |
 | **L6** | Observability: JSON logs, request-ID lookup, Langfuse | L3 | 0.5 |
@@ -203,6 +203,26 @@ docs/aws/TODO.md §2.3 items 1–2 and the WP3 open check.
 
 **Done when:** `/api/healthz?deep=1` shows `"stores": "dynamodb"`, `"secrets_loaded"` > 0 and both bots `ready`;
 a streamed answer works; after `down` and `up` the thread is still listed and continues.
+
+> **Status: done 2026-11-11, except the parts that need OpenRouter credit.**
+> - `bootstrap.py` creates the tables and the bucket and mirrors the secrets into `/sbc/local/` (names printed,
+>   never values; parameters `.env` no longer has are removed). The session secret is generated once into
+>   `.local/secrets.env` (mode 600), so public sessions survive restarts. The Turnstile secret and the Cognito
+>   resources come with L4.
+> - The API logs `"secrets_loaded": 2` at start-up. The API image, which has no `.env`, shows the broker bot
+>   `ready` from Parameter Store alone. `secrets_loaded` is in the start-up log line, not in deep health.
+> - The existing DynamoDB integration tests (a clarification resumed by a second app instance) pass against the
+>   stack's DynamoDB Local.
+> - A kill switch set through `POST /api/admin/kill-switch` survives `down`/`up` and still blocks the turn; a
+>   thread written by the native API is listed by the API image.
+> - A real turn runs end to end (classify, resolve, answer, checkpoints, thread list) and ends in the safe fallback
+>   message, because the broker key is out of credit (`HTTP 403: Key limit exceeded`, logged in the `turn` line).
+>   **Left for when there is credit:** a streamed answer, and a thread continued after a restart. The public bot
+>   stays `unavailable` until `OPENROUTER_API_KEY_PUBLIC` exists.
+> - **Expired items:** every app store (answer and embedding caches, threads, feedback) checks the expiry time
+>   when it reads, and rate-limit counters are keyed by time window, so DynamoDB Local keeping expired items
+>   changes nothing for them. Only checkpoints differ: an expired thread stays resumable by its ID locally,
+>   though the thread list hides it. Noted in section 7.
 
 ### L4: real authentication locally
 
@@ -278,7 +298,7 @@ go to `main_AWS` unchanged (section 8).
 
 | # | File | Change |
 |---|---|---|
-| 1 | `packages/api/src/sbc_api/deps.py` | `load_secrets_into_environment`: load from SSM when `SSM_PREFIX` is set, in any environment (today it skips `local`) |
+| 1 ✅ | `packages/api/src/sbc_api/deps.py` | `load_secrets_into_environment`: load from SSM when `SSM_PREFIX` is set, in any environment (it skipped `local`). Tests in `tests/unit/aws/test_secrets_schema.py` |
 | 2 | `packages/api/src/sbc_api/deps.py` | `_authenticator`: `BearerAuthenticator` when Cognito is configured; `LocalAuthenticator` only for `local` without it |
 | 3 | `packages/core/src/sbc_core/config.py`, `sbc_api/auth/cognito.py` | Optional `COGNITO_JWKS_URL` overriding the derived JWKS URL (moto's tokens already use the real issuer format) |
 | 4 | `apps/broker/src/auth.ts` | Optional `VITE_COGNITO_ENDPOINT` passed to `CognitoUserPool` |
@@ -299,7 +319,8 @@ These stay on the AWS first-deploy checklist (docs/aws/TODO.md §2.4 and §4):
 - Lambda cold start, response streaming through the Function URL and the Lambda Web Adapter.
 - Cognito's real SRP password check and TOTP verification (moto accepts any proof), password policy, the demo
   account's inability to change its password.
-- DynamoDB TTL deletion, S3 lifecycle expiry, IAM permissions on every call.
+- DynamoDB TTL deletion (locally an expired thread's checkpoints stay resumable by ID), S3 lifecycle expiry, IAM
+  permissions on every call.
 - CloudWatch metric filters, alarms, SNS emails, Budgets, Cost Anomaly Detection.
 - ECS Fargate Spot scheduling and the 1-hour build credentials; the arm64 image build (local builds are native
   arm64 on Apple Silicon, which helps).

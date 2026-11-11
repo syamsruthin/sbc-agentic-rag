@@ -89,7 +89,7 @@ known-first-party = [
 
 [tool.mypy]
 python_version = "3.13"
-files = ["packages", "tests", "evals"]
+files = ["packages", "tests", "evals", "scripts"]
 plugins = ["pydantic.mypy"]
 check_untyped_defs = true
 warn_redundant_casts = true
