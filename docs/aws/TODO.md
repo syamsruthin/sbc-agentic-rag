@@ -60,7 +60,7 @@ exist.
   uv run sbc-embed-bundle bundles/facts-2027.2.sqlite
   ```
   Check the printed counts: about 1,383 preview-only plans, and 0 missing.
-- [ ] Run the retrieval eval on `2027.2` (`main_local` L2 ran `bm25_only` and `no_rerank`: all hard gates pass, recall@5 0.847 and 0.903, as on 2027.1; `full` still to run, about $0.50): `python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup full`. Expect the 2027.1 numbers (recall@5 ≈ 0.920).
+- [x] Run the retrieval eval on `2027.2`. Done on `main_local` L2 (2026-11-11): `full` recall@5 0.920, recall@10 0.962, MRR@10 0.727, every gate passes ($0.24); `bm25_only` 0.847 and `no_rerank` 0.903, all as on 2027.1. The command: `python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup full`. Expect the 2027.1 numbers (recall@5 ≈ 0.920).
 - [x] A live answer through the API with your OpenRouter key (done on `main_local`, L3 and L5, verified against the SBCs): `APP_ENV=local FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite uv run uvicorn --factory sbc_api.app:create_app --port 8080`, then the README's `curl` example. Also `sbc-ask "What's the deductible on BTCU8?"`.
 - [x] A live PDF proxy check (done on `main_local` L2: portal fetch, sha256 match, cached second request): `curl -o x.pdf 'localhost:8080/api/sbc/<a preview-only plan_key>.pdf'` returns a PDF (the API checks its sha256 itself).
 - [ ] Upload the bundle and embedding cache to S3 once the foundation stack has created the data bucket (`scripts/aws/upload-bundle.sh`; §2.4).

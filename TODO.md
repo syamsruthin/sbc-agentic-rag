@@ -13,8 +13,8 @@ Parameter Store, the API on the stand-ins) L4 (real sign-in against a Cognito st
 L5 (the apps built with the local settings and checked in a browser) L6 (JSON log file, request-ID lookup;
 unhandled errors now keep their request ID and raise an `ApiErrors` alarm, Langfuse traces) and L7 (record and
 replay of model calls, so repeated local runs cost nothing) are done, and so is L2: the release bundle `2027.2`
-(1,381 preview-only plans, 0 missing, no new embeddings; retrieval eval as on 2027.1 without rerank) with a live
-PDF proxy check.
+(1,381 preview-only plans, 0 missing, no new embeddings; retrieval eval as on 2027.1: full recall@5 0.920, every
+gate passes) with a live PDF proxy check.
 
 ## Checkpoints
 
