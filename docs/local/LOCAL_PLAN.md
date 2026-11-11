@@ -302,7 +302,7 @@ CSV export, a Shopper session and answer all work, at desktop and phone widths.
 **Done when:** a deliberate error is found by its request ID; with Langfuse on, a turn's trace shows its model and
 tool calls and cost.
 
-> **Status: done 2026-11-11, except the Langfuse trace, which waits for your Langfuse Cloud keys 👤.** No model cost.
+> **Status: done 2026-11-11.** Model cost: $0.0083 (one turn, to check the trace).
 > - `LOG_FILE` (code change 6): the API writes the same JSON lines to `.local/logs/api.jsonl`; `api.sh` sets it
 >   and runs uvicorn with `--no-access-log`, as the image does, so the file holds JSON only.
 >   `scripts/local/find-request.sh <id>` prints one request's lines from that file and from the API container.
@@ -313,10 +313,15 @@ tool calls and cost.
 >   traceback), and a 500 with the ID in the header and body (the apps already show the header's ID under
 >   "Report a problem"). A new CloudWatch alarm, `ApiErrors` (`{ $.level = "ERROR" }`, 9 of the 10 free),
 >   covers it and failed or timed-out turns. Re-run locally: `find-request.sh` shows both lines for the ID.
-> - **Langfuse 👤:** create a Langfuse Cloud Hobby project and put `LANGFUSE_PUBLIC_KEY` and
->   `LANGFUSE_SECRET_KEY` in `.env` (and `LANGFUSE_HOST=https://us.cloud.langfuse.com` for a US-region project;
->   the default is the EU region). Then `scripts/local/bootstrap.sh`, restart the API, and deep health shows
->   `"tracing": "langfuse"`. One cached-miss turn (about $0.007) checks the trace.
+> - **Langfuse Cloud (US region):** the keys and `LANGFUSE_BASE_URL` from `.env` reach the API through local
+>   Parameter Store; deep health shows `"tracing": "langfuse"`. **Found and fixed:** the API read only
+>   `LANGFUSE_HOST` and passed it as the SDK's old `host`, so with `LANGFUSE_BASE_URL` (the name Langfuse shows
+>   with a project's keys) every trace would have gone to the EU default, where US keys aren't valid. It now reads
+>   `LANGFUSE_BASE_URL` first (`EnvSettings.langfuse_url`), passes it as `base_url`, and `put-secrets.sh` asks for
+>   it on AWS. One turn ("What is the specialist visit copay on BTCU8?", $0.0083, the SBC's wording exactly)
+>   arrived as one trace: the turn, 3 model calls and the `get_plan_facts` tool, total cost $0.008294 (as the
+>   turn reported), metadata with the request ID, bundle, config hash, intent, path, plans and prompt versions.
+>   Read back with Langfuse's `GET /api/public/v2/observations` (its older `/api/public/traces` is retired).
 
 ### L7 (optional): model replay mode
 

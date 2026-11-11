@@ -840,6 +840,7 @@ event: done      data: {}
 | `OPENROUTER_API_KEY_BROKER` / `_PUBLIC` | `.env` | SSM | `put-secrets.sh` |
 | `SESSION_JWT_SECRET`, `TURNSTILE_SECRET_KEY` | `.env` (Turnstile test keys) | SSM | `put-secrets.sh` |
 | `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` | optional | optional (SSM) | `put-secrets.sh` |
+| `LANGFUSE_BASE_URL` | optional (EU default) | optional (SSM; `https://us.cloud.langfuse.com` for a US project) | `put-secrets.sh` |
 | `SBC_PORTFOLIO__DEMO_USER_IDS` | — | the demo user's `sub` | CDK context |
 | `AWS_LWA_INVOKE_MODE`, `AWS_LWA_READINESS_CHECK_PATH`, `PORT` | — | Dockerfile | Dockerfile |
 

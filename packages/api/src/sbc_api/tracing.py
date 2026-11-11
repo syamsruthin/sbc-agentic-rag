@@ -102,7 +102,7 @@ class LangfuseTracer:
 
         secret = env.langfuse_secret_key.get_secret_value() if env.langfuse_secret_key else None
         client = Langfuse(
-            public_key=env.langfuse_public_key, secret_key=secret, host=env.langfuse_host, mask=mask,
+            public_key=env.langfuse_public_key, secret_key=secret, base_url=env.langfuse_url, mask=mask,
             environment=env.app_env.value, **client_options,
         )  # fmt: skip
         return cls(client)

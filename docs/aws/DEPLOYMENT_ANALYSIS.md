@@ -443,7 +443,7 @@ What has to be stored: LangGraph checkpoints (a few KB to tens of KB per step), 
 | `LOG_LEVEL` | `INFO` |
 | `FACTS_BUNDLE_PATH` | `/opt/bundle/facts-2027.1.sqlite` |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` |
-| `LANGFUSE_HOST` | `https://cloud.langfuse.com` |
+| `LANGFUSE_BASE_URL` (or the older `LANGFUSE_HOST`) | `https://cloud.langfuse.com` (EU) or `https://us.cloud.langfuse.com` (US) |
 | `DDB_TABLE_APP` / `DDB_TABLE_AUDIT` / `DDB_TABLE_CHECKPOINTS` | `sbc-demo-app` / `sbc-demo-audit` / `sbc-demo-checkpoints` |
 | `S3_DATA_BUCKET` | `sbc-demo-data-<account>` |
 | `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | from the pool |

@@ -44,7 +44,7 @@ exist.
 - [ ] `cdk bootstrap aws://<account>/us-east-1`, needed for the spike run and the first deploy (`scripts/aws/bootstrap.sh` does it).
 - [ ] **OpenRouter keys and credit limits:** a broker key at $15 a month and a separate public key at $10 a month (`OPENROUTER_API_KEY_PUBLIC`; the local `.env` has only the broker key), before any public URL exists. This is the hard LLM cost cap. The current broker key is spent ($5.09 of $5, checked 2026-11-10), so raise its limit or replace it first.
 - [ ] A Cloudflare Turnstile widget. Note its site key (for `deploy-web.sh`, §2.4) and secret (for `put-secrets.sh`); its allowed hostnames get the CloudFront domain after the first deploy.
-- [ ] Decide whether Langfuse Cloud Hobby is wanted (optional). If so, create a project and give its keys to `put-secrets.sh` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`); the API then traces each turn (`"tracing": "langfuse"` in deep health).
+- [ ] Decide whether Langfuse Cloud Hobby is wanted (optional). If so, create a project and give its keys and region to `put-secrets.sh` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`; a US-region project exists and was checked locally on `main_local` L6); the API then traces each turn (`"tracing": "langfuse"` in deep health).
 
 ### 2.2 Spikes 2 and 3 on AWS (costs cents)
 

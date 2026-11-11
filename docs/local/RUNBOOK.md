@@ -67,8 +67,8 @@ same code that runs on AWS.
 
 **Secrets travel the AWS way.** `bootstrap.py` mirrors the secrets into the local Parameter Store under
 `/sbc/local/`, as `scripts/aws/put-secrets.sh` does on AWS: from `.env`, `OPENROUTER_API_KEY_BROKER`,
-`OPENROUTER_API_KEY_PUBLIC`, `TURNSTILE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and
-`LANGFUSE_HOST` when set; and `SESSION_JWT_SECRET` from `.local/secrets.env`. It prints names, never values, and
+`OPENROUTER_API_KEY_PUBLIC`, `TURNSTILE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`,
+`LANGFUSE_BASE_URL` and `LANGFUSE_HOST` when set; and `SESSION_JWT_SECRET` from `.local/secrets.env`. It prints names, never values, and
 removes parameters `.env` no longer has. The API loads `/sbc/local/` at start-up (the start-up log line shows
 `"secrets_loaded"`). The API image has no `.env` at all, so there the keys come only from Parameter Store; the
 native API also reads `.env` itself, but the Parameter Store values win.
@@ -154,9 +154,11 @@ jq -c 'select(.event == "turn") | {request_id, bot, path, cost_usd}' .local/logs
 An unhandled error answers 500 with `{"detail": …, "request_id": …}`. On AWS the same lines go to CloudWatch, and
 the `ApiErrors` alarm emails on any `ERROR` line.
 
-**Langfuse Cloud** (optional): put `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` (plus
-`LANGFUSE_HOST=https://us.cloud.langfuse.com` for a US-region project), run `scripts/local/bootstrap.sh` and restart
-the API; deep health then shows `"tracing": "langfuse"`, and each turn sends one redacted trace.
+**Langfuse Cloud** (optional): put `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_BASE_URL` (as
+Langfuse shows them with the project's keys; `https://us.cloud.langfuse.com` for a US-region project, the EU region
+by default) in `.env`, run `scripts/local/bootstrap.sh` and restart the API; deep health then shows
+`"tracing": "langfuse"`, and each turn sends one redacted trace (the turn, its model and tool calls, cost, and the
+request ID in its metadata).
 
 ## 9. Troubleshooting
 

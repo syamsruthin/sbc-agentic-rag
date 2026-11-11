@@ -54,6 +54,7 @@ SECRETS_FROM_DOTENV = (
     "TURNSTILE_SECRET_KEY",
     "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_SECRET_KEY",
+    "LANGFUSE_BASE_URL",
     "LANGFUSE_HOST",
 )
 # Generated once, kept in .local/secrets.env so sessions survive restarts.

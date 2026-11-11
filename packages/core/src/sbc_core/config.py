@@ -249,6 +249,9 @@ class EnvSettings(BaseSettings):
     turnstile_secret_key: SecretStr | None = None
     session_jwt_secret: SecretStr | None = None
 
+    langfuse_base_url: str | None = None
+    """The Langfuse region, ``https://cloud.langfuse.com`` (EU) or ``https://us.cloud.langfuse.com``, under
+    the name Langfuse shows with a project's keys. Wins over ``LANGFUSE_HOST``, the older name."""
     langfuse_host: str = "https://cloud.langfuse.com"
     langfuse_public_key: str | None = None
     langfuse_secret_key: SecretStr | None = None
@@ -256,6 +259,11 @@ class EnvSettings(BaseSettings):
 
     def openrouter_key_for(self, bot: BotName) -> SecretStr | None:
         return self.openrouter_api_key_broker if bot is BotName.BROKER else self.openrouter_api_key_public
+
+    @property
+    def langfuse_url(self) -> str:
+        """Where traces go: ``LANGFUSE_BASE_URL`` if set, else ``LANGFUSE_HOST`` (default: the EU region)."""
+        return self.langfuse_base_url or self.langfuse_host
 
     @property
     def langfuse_enabled(self) -> bool:
