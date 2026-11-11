@@ -10,8 +10,9 @@ The local track (branch `main_local`, from `main_AWS`) runs the whole applicatio
 for the AWS services before the first deploy; its roadmap (L0–L9) and progress are in
 [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md). L1 (the stack and its scripts) and L3 (bootstrap, secrets from the local
 Parameter Store, the API on the stand-ins) L4 (real sign-in against a Cognito stand-in, Turnstile test keys)
-L5 (the apps built with the local settings and checked in a browser) and L6 (JSON log file, request-ID lookup;
-unhandled errors now keep their request ID and raise an `ApiErrors` alarm) are done.
+L5 (the apps built with the local settings and checked in a browser) L6 (JSON log file, request-ID lookup;
+unhandled errors now keep their request ID and raise an `ApiErrors` alarm, Langfuse traces) and L7 (record and
+replay of model calls, so repeated local runs cost nothing) are done.
 
 ## Checkpoints
 
@@ -122,7 +123,9 @@ unhandled errors now keep their request ID and raise an `ApiErrors` alarm) are d
       (exact match, ungrounded numbers, plan filter, wrong plan, errors), behavior and tool selection
 - [ ] Full Phase 1 gating run (353 items): blocked by the OpenRouter key's $5 total limit, which is used up
       (checked 2026-11-10); no live model call works until it is raised (docs/aws/TODO.md §2.1)
-- [ ] Recorded model responses for replaying the generation eval in CI without keys
+- [ ] Recorded model responses for replaying the generation eval in CI without keys. The mechanism exists on
+      `main_local` (`LLM_MODE=record|replay`, `sbc_core.replay`; local runs only); left: where CI keeps the
+      recordings, since they contain SBC text and the repository commits no SBC data
 - [ ] LLM judge for faithfulness and citation accuracy, after the calibration set (PLAN.md 5.4)
 - [x] FastAPI with SSE (`sbc_api`, AWS WP4): `POST /api/{bot}/chat` and `/chat/choose` stream status events and
       the verified answer; checkpoints in DynamoDB (`DynamoDBSaver`) instead of PostgresSaver on Supabase (rev. 3)

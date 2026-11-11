@@ -225,6 +225,10 @@ class EnvSettings(BaseSettings):
     app_env: Env = Env.LOCAL
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     facts_bundle_path: str = "bundles/facts.sqlite"
+    llm_mode: Literal["live", "record", "replay"] = "live"
+    """``record`` saves every model call, ``replay`` answers them from the saved files at no cost
+    (:mod:`sbc_core.replay`). Local runs only: the API refuses anything but ``live`` elsewhere."""
+    llm_recordings_dir: str = ".local/llm-recordings"
 
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_api_key_broker: SecretStr | None = None

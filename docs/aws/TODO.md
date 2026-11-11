@@ -199,7 +199,7 @@ The AWS track hosts the app; these are features and evaluations the application 
         `feat/phase-1-generation-eval`; TASKS_DONE.md, P).
   - [ ] 👤 The full gating run (353 items, about $5): blocked by the OpenRouter key's $5 total limit, which is
         used up (§2.1). Raise the limit or use a new key, then `python -m evals.harness.generation --bundle … --golden evals/golden/0.2.0`.
-  - [ ] Recorded model responses, so CI can replay the generation eval without keys.
+  - [ ] Recorded model responses, so CI can replay the generation eval without keys. The record/replay mechanism exists on `main_local` (L7, `sbc_core.replay`); left: storing recordings outside the repository (they contain SBC text) and a CI job that uses them.
   - [ ] The LLM judge for faithfulness and citation accuracy, after the calibration set (PLAN.md 5.4).
   - [ ] Model bake-off report (Haiku 5.5 vs Sonnet 5.5 vs Opus 5.5, per bot and per path; the cheapest model that passes every hard gate).
   - [ ] The MVP gating set (353 items of golden 0.2.0) passing all hard gates; the other 57 reported separately.

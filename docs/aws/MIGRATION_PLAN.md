@@ -751,7 +751,7 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 
 - `packages/aws/src/sbc_aws/bedrock.py`;
 - `packages/core/src/sbc_core/interfaces.py` (new `EmbeddingModel` and `Reranker` protocols);
-- `packages/retrieval/src/sbc_retrieval/text_search.py` (`with_gateway` takes the protocols instead of `OpenRouterClient`);
+- `packages/retrieval/src/sbc_retrieval/text_search.py` (`with_gateway` takes the protocols instead of `OpenRouterClient`; since `main_local` L7 it already takes `sbc_core.replay.ModelGateway`, a protocol over `chat`, `embed` and `rerank`, which a Bedrock gateway can implement);
 - `config/base.yaml` (a `provider: openrouter | bedrock` per model role);
 - `sbc_index` (embedding through Bedrock for `sbc-embed-bundle`).
 

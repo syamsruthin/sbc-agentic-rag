@@ -141,7 +141,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 | **L4** ✅ | Real auth: Cognito (moto) and Turnstile test keys | L3 | 1 |
 | **L5** ✅ | Frontends built and served behind the edge | L4 | 0.5 |
 | **L6** ✅ | Observability: JSON logs, request-ID lookup, Langfuse | L3 | 0.5 |
-| **L7** | Optional: model replay mode | L3 | 0.5 |
+| **L7** ✅ | Model replay mode | L3 | 0.5 |
 | **L8** | Offline build image against the local bucket | L3, L2 | 0.5 |
 | **L9** | Verification: smoke test, HTTP eval, browser click-through | all | 1 |
 
@@ -323,13 +323,30 @@ tool calls and cost.
 >   turn reported), metadata with the request ID, bundle, config hash, intent, path, plans and prompt versions.
 >   Read back with Langfuse's `GET /api/public/v2/observations` (its older `/api/public/traces` is retired).
 
-### L7 (optional): model replay mode
+### L7: model replay mode
 
 A `ChatModel` that records each OpenRouter exchange (redacted, keyed by a hash of the request) and replays it, set
-by `SBC_LLM_MODE=live|record|replay`. It lets the UI, guards and smoke test run with no credit, and is the
+by `LLM_MODE=live|record|replay`. It lets the UI, guards and smoke test run with no credit, and is the
 "recorded model responses" item in TODO.md (CI replay of the generation eval). Never on outside `APP_ENV=local`.
 
 **Done when:** the smoke test passes in `replay` with OpenRouter unreachable.
+
+> **Status: done 2026-11-11.** Model cost: $0.019 (one recorded two-turn conversation).
+> - `sbc_core.replay.ReplayGateway` wraps the gateway's `chat`, `embed` and `rerank` (so search embeddings and
+>   rerank replay too); `TextSearcher.with_gateway` takes the new `ModelGateway` protocol. `LLM_MODE` and
+>   `LLM_RECORDINGS_DIR` (default `.local/llm-recordings`) are `EnvSettings` fields; the API refuses `record` or
+>   `replay` outside `APP_ENV=local`, and replay needs no OpenRouter key. Deep health shows `"llm"`. A replayed call
+>   reports cost 0 and `request_id` `replay`; an unrecorded request raises `ReplayMissError`, a `GatewayError`, so
+>   the turn ends in the safe fallback. 7 unit tests.
+> - On the stack (`make api-record`): "What is the emergency room copay on BTCU8?" and the follow-up "And for urgent
+>   care?" recorded 6 model calls ($0.019; both answers the SBC's wording exactly). Then, with the answer cache
+>   cleared and `OPENROUTER_BASE_URL` pointing at a closed port, `make api-replay` gave both answers identical to
+>   the recorded ones, 3 model calls each at $0, natively and in the API image (the recordings folder is mounted).
+>   The follow-up replaying shows the conversation's requests are deterministic across a restart.
+> - **Not done here:** keyless CI replay of the generation eval. Recordings contain SBC text (tool results in the
+>   messages), and the repository commits no SBC data, so CI would need recordings stored outside the repository
+>   (for example an Actions cache or the data bucket). Left as a decision in TODO.md.
+> - The smoke test itself comes in L9, which runs it in replay mode.
 
 ### L8: offline build against the local bucket
 
@@ -368,7 +385,7 @@ go to `main_AWS` unchanged (section 8).
 | 5 | `infra/docker/s3_sync.py` | Honor `AWS_ENDPOINT_URL_S3` (check whether boto3 already does; then only a test) |
 | 6 ✅ | `packages/api/src/sbc_api/logging.py` | Optional `LOG_FILE` for a JSON-lines copy of the log |
 | 6a ✅ | `packages/api/src/sbc_api/app.py`, `infra/cdk/sbc_infra/constructs/ops.py` | Not planned; found in L6: unhandled errors keep their request ID (JSON `ERROR` line, header, body), and an `ApiErrors` alarm on `ERROR` lines |
-| 7 | `packages/core/src/sbc_core/llm.py` or a new module | L7 replay mode (only if chosen) |
+| 7 ✅ | `packages/core/src/sbc_core/replay.py` (new), `config.py`, `sbc_api/deps.py`, `routes/health.py`, `sbc_retrieval/text_search.py` | L7 replay mode: `LLM_MODE`, `ReplayGateway`, the `ModelGateway` protocol |
 | 8 | `evals/harness/http.py` | The HTTP eval adapter (WP13) |
 | — | New: `infra/local/`, `scripts/local/`, `docs/local/`, `Makefile` | The stack, scripts and runbook |
 

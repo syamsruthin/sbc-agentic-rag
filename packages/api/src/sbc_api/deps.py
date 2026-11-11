@@ -54,6 +54,7 @@ from sbc_aws.sessions import DynamoSessionStore
 from sbc_core.config import BotName, Env, EnvSettings, Settings, load_settings
 from sbc_core.facts import SqliteFactsReader
 from sbc_core.llm import OpenRouterClient
+from sbc_core.replay import ModelGateway, ReplayGateway
 from sbc_core.search import SearchIndexError, SqliteSearchIndex
 from sbc_core.taxonomy import load_taxonomy
 from sbc_retrieval.text_search import TextSearcher
@@ -186,6 +187,8 @@ def build_state(
     started = time.perf_counter()
     secrets = load_secrets_into_environment() if env is None else []
     env = env if env is not None else EnvSettings()
+    if env.llm_mode != "live" and env.app_env is not Env.LOCAL:
+        raise RuntimeError(f"LLM_MODE={env.llm_mode} is for local runs only; this is {env.app_env.value}")
     settings = {bot: load_settings(bot, config_dir, env) for bot in BotName}
     reader = SqliteFactsReader(env.facts_bundle_path, pdf_proxy_base=PDF_PROXY_BASE)
     index, search_mode = _open_index(env, settings[BotName.BROKER])
@@ -199,11 +202,11 @@ def build_state(
         if chat_factory is not None:
             chat = chat_factory(bot, s)
             searcher = TextSearcher(index, s.config.retrieval)
-        elif env.openrouter_key_for(bot) is None:
+        elif env.llm_mode != "replay" and env.openrouter_key_for(bot) is None:
             bots[bot] = BotRuntime(s, None, f"OPENROUTER_API_KEY_{bot.value.upper()} is not set")
             continue
         else:
-            gateway = OpenRouterClient.for_bot(env, bot)
+            gateway = _gateway(env, bot)
             chat = gateway
             searcher = TextSearcher.with_gateway(index, s.config.retrieval, s.config.models, gateway)
             if search_mode == "bm25":
@@ -231,7 +234,7 @@ def build_state(
     init = {
         "ms": round((time.perf_counter() - started) * 1000), "secrets_loaded": len(secrets),
         "bundle_version": reader.bundle_version, "search": search_mode, "stores": stores.backend,
-        "tracing": tracer.name,
+        "tracing": tracer.name, "llm": env.llm_mode,
     }  # fmt: skip
     return ApiState(
         env,
@@ -245,6 +248,15 @@ def build_state(
         init=init,
         tracer=tracer,
     )
+
+
+def _gateway(env: EnvSettings, bot: BotName) -> ModelGateway:
+    """OpenRouter with the bot's key; in local record or replay mode, wrapped by :class:`ReplayGateway`
+    (replay works without a key: it never calls OpenRouter)."""
+    if env.llm_mode == "live":
+        return OpenRouterClient.for_bot(env, bot)
+    inner = OpenRouterClient.for_bot(env, bot) if env.openrouter_key_for(bot) is not None else None
+    return ReplayGateway(inner, env.llm_recordings_dir, env.llm_mode)
 
 
 def _session_tokens(env: EnvSettings) -> SessionTokens:

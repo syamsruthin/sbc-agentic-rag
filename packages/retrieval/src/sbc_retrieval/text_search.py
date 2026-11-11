@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 from sbc_core.bm25 import Bm25Encoder
 from sbc_core.config import Models, Retrieval
 from sbc_core.interfaces import SearchIndex
-from sbc_core.llm import GatewayError, OpenRouterClient
+from sbc_core.llm import GatewayError
+from sbc_core.replay import ModelGateway
 from sbc_core.taxonomy import Taxonomy, load_taxonomy
 from sbc_core.types import ChunkType, SearchHit, SearchQuery
 
@@ -59,9 +60,9 @@ class TextSearcher:
         index: SearchIndex,
         settings: Retrieval,
         models: Models,
-        gateway: OpenRouterClient,
+        gateway: ModelGateway,
     ) -> TextSearcher:
-        """Wire query embedding and rerank to OpenRouter with the configured models."""
+        """Wire query embedding and rerank to the gateway (OpenRouter, or record/replay locally)."""
         embed_model, dims, rerank_model = (
             models.embeddings.model,
             models.embeddings.dimensions,

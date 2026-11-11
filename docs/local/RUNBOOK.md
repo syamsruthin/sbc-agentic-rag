@@ -117,7 +117,7 @@ library; and moto accepts any TOTP code. The local app client also allows `ADMIN
 | Script | Make | What |
 |---|---|---|
 | `scripts/local/up.sh [--image]` | `make up`, `make up-image` | Start the stack, wait for it, bootstrap, print status |
-| `scripts/local/api.sh` | `make api` | The API natively on :8080 with reload; its JSON log lines go to the console and `.local/logs/api.jsonl` (`LOG_FILE`) |
+| `scripts/local/api.sh` (`LLM_MODE=record\|replay` optional) | `make api`, `make api-record`, `make api-replay` | The API natively on :8080 with reload; its JSON log lines go to the console and `.local/logs/api.jsonl` (`LOG_FILE`) |
 | `scripts/local/find-request.sh <id>` | — | Every log line of one request, by its request ID (from `.local/logs/api.jsonl` and the API container) |
 | `scripts/local/bootstrap.sh [--turnstile pass\|block]` | — | Create the tables, the bucket, the user pool and users; mirror the secrets into the local Parameter Store; write `.local/runtime.env` (idempotent; `up.sh` runs it). It refuses to run unless every AWS endpoint points at a stand-in |
 | `scripts/local/token.sh <user>` | — | Print an access token for `admin`, `broker` or `demo-broker` |
@@ -160,7 +160,29 @@ by default) in `.env`, run `scripts/local/bootstrap.sh` and restart the API; dee
 `"tracing": "langfuse"`, and each turn sends one redacted trace (the turn, its model and tool calls, cost, and the
 request ID in its metadata).
 
-## 9. Troubleshooting
+## 9. Record and replay model calls (no OpenRouter cost)
+
+Repeated runs (the smoke test, UI work, demos) don't need to pay for the same model calls again:
+
+```bash
+make api-record     # LLM_MODE=record: calls OpenRouter and saves every call to .local/llm-recordings/
+make api-replay     # LLM_MODE=replay: answers from those files; no network, no key needed, cost 0
+LLM_MODE=replay scripts/local/up.sh --image     # the same for the API image (the folder is mounted)
+```
+
+Deep health shows `"llm": "live" | "record" | "replay"`, and each replayed answer's details show `cost_usd` 0.
+
+- **What replays:** the same question in the same conversation state sends exactly the same requests, so a
+  recorded conversation, follow-ups included, replays identically. A changed prompt, model, bundle or behavior
+  setting changes the requests: record again.
+- **A request that wasn't recorded** fails like an OpenRouter outage: the answer is the safe "I couldn't answer
+  this…" message, and the `turn` log line says `model_unavailable: replay: no recorded chat call …`.
+- **The answer cache comes first.** A first question already in the answer cache is served from DynamoDB without
+  any model call, in every mode. Clear it (or `make wipe`) when you want to exercise the model path.
+- **Local only.** The API refuses `record` and `replay` outside `APP_ENV=local`. The recordings contain SBC text,
+  so they stay in `.local/` (git-ignored); delete the folder to start over.
+
+## 10. Troubleshooting
 
 - **`Docker isn't running`:** start Docker Desktop and wait for it to say it's running.
 - **A port is taken:** `lsof -i :8088` (or the port in question), or set the matching `SBC_PORT_*`.

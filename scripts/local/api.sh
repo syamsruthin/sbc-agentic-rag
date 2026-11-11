@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run the API natively against the local stack, with reload, on :8080 (the edge serves it at :8088/api).
 # Extra arguments go to uvicorn. The JSON log lines go to the console and to .local/logs/api.jsonl
-# (scripts/local/find-request.sh reads them).
+# (scripts/local/find-request.sh reads them). LLM_MODE=record|replay records model calls or answers them from
+# .local/llm-recordings at no cost (make api-record, make api-replay; docs/local/RUNBOOK.md).
 source "$(dirname "$0")/_common.sh"
 load_env
 cd "$REPO_ROOT"

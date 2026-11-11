@@ -82,6 +82,10 @@ services:
       # The Cognito stand-in's keys by its Docker name (runtime.env has the host's URL). up.sh passes
       # .local/runtime.env as --env-file, so the pool ID is known here.
       COGNITO_JWKS_URL: http://aws:5000/${COGNITO_USER_POOL_ID:-}/.well-known/jwks.json
+      # Model calls: live by default; LLM_MODE=record or replay before up.sh --image (sbc_core.replay).
+      LLM_MODE: ${LLM_MODE:-live}
+      LLM_RECORDINGS_DIR: /recordings
+    volumes: ["../../.local/llm-recordings:/recordings"]
     ports: ["127.0.0.1:${SBC_PORT_API:-8080}:8080"]
     read_only: true
     tmpfs: ["/tmp"]
