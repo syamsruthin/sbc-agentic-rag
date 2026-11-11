@@ -1,4 +1,4 @@
-"""The generation eval through a running API over HTTP (docs/aws/MIGRATION_PLAN.md WP13; LOCAL_PLAN.md L9).
+"""The generation eval through a running API over HTTP (docs/aws/MIGRATION_PLAN.md WP13).
 
 Golden items go to ``POST /api/{bot}/chat`` as SSE turns, exactly as the apps send them (bearer token in
 ``X-Sbc-Authorization``), and the final event is scored with :func:`evals.harness.generation.score`. It reuses
@@ -8,7 +8,7 @@ What HTTP can't show: the turn's internal trace. So ``no_ungrounded_numbers`` an
 need the drafts and the tool arguments) are reported as not scored (None), never as passed. Behavior, exact
 values, the disclaimer, the plan filter and confident wrong-plan answers are scored as in the in-process eval.
 
-    # local stack, API in replay mode (no cost once recorded; record once with LLM_MODE=record)
+    # the main_local branch's local stack (in replay mode it costs nothing once recorded)
     scripts/local/eval-http.sh --sample 30
     # any API: a broker access token, and a Turnstile token the API accepts (local: any, with the test secret)
     SBC_EVAL_BROKER_TOKEN=... python -m evals.harness.http_api --base-url https://<site> \
@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     token = os.environ.get("SBC_EVAL_BROKER_TOKEN", "")
     if not token:
         raise SystemExit(
-            "set SBC_EVAL_BROKER_TOKEN to a broker access token (locally: scripts/local/eval-http.sh)"
+            "set SBC_EVAL_BROKER_TOKEN to a broker access token (on main_local: scripts/local/eval-http.sh)"
         )
 
     items: list[GoldenItem] = load_golden(args.golden)

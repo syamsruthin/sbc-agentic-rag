@@ -501,12 +501,12 @@ These stay on the AWS first-deploy checklist (docs/aws/TODO.md §2.4 and §4):
 - Every code change is configuration-switched, and local-only files sit in their own folders, so the branch keeps
   AWS behavior intact and stays easy to update.
 - If `main_AWS` moves, merge it **into** `main_local` (never the other way; no rebase of pushed history).
-- **Fixes found here that also apply on AWS exist only on this branch.** Bringing any of them to `main_AWS` is a
-  separate change made there, not a merge of this branch:
+- **Fixes found here that also apply on AWS** were ported to `main_AWS` as their own change (`59f6b50`, 2026-11-11,
+  the same code and tests), not by merging this branch:
   - unhandled errors keep their request ID, and the `ApiErrors` alarm (L6; `sbc_api/app.py`, CDK `ops.py`);
   - `LANGFUSE_BASE_URL` for non-EU Langfuse projects (L6; `config.py`, `tracing.py`, `put-secrets.sh`);
   - cached answers get the quarantine check (L9; `routes/chat.py`);
-  - the HTTP eval adapter (L9; `evals/harness/http_api.py`, WP13), and the record/replay gateway (L7) if wanted.
+  - the HTTP eval adapter (L9; `evals/harness/http_api.py`, WP13). The record/replay gateway (L7) stays local.
   The checks recorded here (the 2027.2 bundle, the PDF proxy, live answers) were made with `main_AWS`'s code plus
   these changes.
 

@@ -9,7 +9,7 @@ All work goes to `main_AWS`, the long-lived AWS branch; it isn't merged into `ma
 Before the first deploy, the branch `main_local` runs the whole application locally with AWS stand-ins
 ([docs/local/LOCAL_PLAN.md](../local/LOCAL_PLAN.md)). Its L2 rebuilds the bundle `2027.2` (§2.3) and its L9 builds the
 WP13 HTTP eval adapter. `main_local` is for local runs only and is never merged into `main_AWS`; the fixes it found
-that also apply here are listed in its LOCAL_PLAN.md section 8.
+that also apply here were ported to `main_AWS` as their own change (LOCAL_PLAN.md section 8).
 
 Items marked 👤 need you (an account, credentials or data that isn't in this environment). Everything else can be
 done in code here.

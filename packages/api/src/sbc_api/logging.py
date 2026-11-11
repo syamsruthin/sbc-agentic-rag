@@ -28,7 +28,7 @@ class JsonFormatter(logging.Formatter):
 
 def configure(level: str = "INFO", log_file: str | None = None) -> None:
     """JSON lines on stdout (CloudWatch on AWS) and, when ``log_file`` (default: ``LOG_FILE``) is set, the
-    same lines appended to that file (the full local stack's ``.local/logs/api.jsonl``)."""
+    same lines appended to that file (the main_local branch's stack uses ``.local/logs/api.jsonl``)."""
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
     path = log_file if log_file is not None else os.environ.get("LOG_FILE")
     if path:
