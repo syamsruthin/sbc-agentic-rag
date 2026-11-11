@@ -8,7 +8,8 @@ can and can't prove are in [LOCAL_PLAN.md](LOCAL_PLAN.md). This runbook grows wi
 
 - Docker Desktop, running (4 GB of memory is plenty). Compose 2.23 or newer.
 - [uv](https://docs.astral.sh/uv/) and `uv sync` done in the repository.
-- A facts bundle in `bundles/` (`FACTS_BUNDLE_PATH` in `infra/local/stack.env`; today `facts-2027.1.sqlite`).
+- A facts bundle in `bundles/` (`FACTS_BUNDLE_PATH` in `infra/local/stack.env`; today `facts-2027.2.sqlite`,
+  built by `sbc-build-bundle --version 2027.2 --release` and `sbc-embed-bundle`, docs/local/LOCAL_PLAN.md L2).
 - `.env` with `OPENROUTER_API_KEY_BROKER` and `OPENROUTER_API_KEY_PUBLIC` for answers (keys with credit).
 - Node.js for the frontends: 20.10 works, 22 is recommended (Node 20 is end of life).
 

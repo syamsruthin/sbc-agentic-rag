@@ -49,7 +49,7 @@ scripted model responses (`tests/unit/test_graph.py`); the API uses `DynamoDBSav
 ## Trying it
 
 ```bash
-FACTS_BUNDLE_PATH=bundles/facts-2027.1.sqlite uv run sbc-ask "What's the deductible on BTCU8?"
+FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite uv run sbc-ask "What's the deductible on BTCU8?"
 ```
 
 `sbc-ask` needs `OPENROUTER_API_KEY_BROKER` and an embedded bundle. It prints the answer, the path taken, the

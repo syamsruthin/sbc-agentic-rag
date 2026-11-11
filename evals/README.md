@@ -28,11 +28,11 @@ uv run python -m evals.harness.ci_gate
 ```
 
 ```bash
-uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0 --setup bm25_only
+uv run python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup bm25_only
 ```
 
 ```bash
-uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0
+uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0
 ```
 
 - `bm25_only` searches the bundle's BM25 index and needs no keys.
@@ -42,7 +42,7 @@ uv run python -m evals.harness.pdf_check --bundle bundles/facts-2027.1.sqlite --
 ### Generation eval
 
 ```bash
-uv run python -m evals.harness.generation --bundle bundles/facts-2027.1.sqlite --golden evals/golden/0.2.0 --sample 24
+uv run python -m evals.harness.generation --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --sample 24
 ```
 
 - Each item's user turns go to its bot (`both` runs as the broker) with its UI selection and, for the public

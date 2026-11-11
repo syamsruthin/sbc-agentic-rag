@@ -136,7 +136,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 |---|---|---|---|
 | **L0** | Prerequisites | 👤 Docker running, Node 22, OpenRouter credit | 30 min of yours |
 | **L1** ✅ | Local profile, compose skeleton, one-command scripts | L0 | 0.5 |
-| **L2** | Bundle `2027.2` built locally | L0 credit (cents) | 0.5 (mostly waiting) |
+| **L2** ✅ | Bundle `2027.2` built locally | L0 credit (cents) | 0.5 (mostly waiting) |
 | **L3** ✅ | AWS stand-ins + bootstrap, API on them | L1 | 1 |
 | **L4** ✅ | Real auth: Cognito (moto) and Turnstile test keys | L3 | 1 |
 | **L5** ✅ | Frontends built and served behind the edge | L4 | 0.5 |
@@ -192,6 +192,26 @@ python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden 
 
 **Done when:** about 1,383 preview-only plans with 0 missing; recall@5 ≈ 0.920 as on `2027.1`. This also closes
 docs/aws/TODO.md §2.3 items 1–2 and the WP3 open check.
+
+> **Status: done 2026-11-11, except the `full` (rerank) eval, which waits for your go-ahead (about $0.50).** Model
+> cost: under $0.001.
+> - `sbc-build-bundle --version 2027.2 --release` (1 min): 9,690 plans (2 quarantined: a blank deductible answer,
+>   an unlabeled column), 99.99% of cost cells exact, 30,498 unique chunks, plan sources for all 9,690 plans,
+>   **1,381 preview-only** (the two quarantined plans are among the manifest's 1,383), **0 missing**. 150 MB, then
+>   221 MB with embeddings.
+> - `sbc-embed-bundle`: **0 newly embedded** (every chunk came from `bundles/embeddings.sqlite`), 20 plan-filter
+>   checks passed; $0.
+> - Retrieval eval on golden 0.2.0 (4 min; only the `no_rerank` question embeddings cost anything): every hard
+>   gate passes (plan filter 1.000, 0 confident wrong-plan, service mapping 0.980). bm25_only recall@5 0.847,
+>   recall@10 0.952, MRR@10 0.712 (2027.1: the same); no_rerank recall@5 0.903, recall@10 0.945, MRR@10 0.783
+>   (2027.1: 0.900, 0.945, 0.783). The `full` setup reranks about 430 searches of 20 chunks; not run yet.
+> - The stack now uses `facts-2027.2.sqlite` (`stack.env`, and the image's default `SBC_BUNDLE_FILE`). Deep health
+>   shows `plan_source` with 9,690 rows.
+> - **PDF proxy, through the edge:** a preview-only SBC (`2027:166713509987`, Missouri) came from the insurer's
+>   portal in 9.8 s, its sha256 equal to the bundle's; the second request came from the S3Mock cache in 0.15 s
+>   (`"cached": true` in the log). A plan with a direct link redirects (302) to the insurer's PDF; an unknown plan
+>   gets 404. Plan details now carry `/api/sbc/<plan_key>.pdf` for preview-only plans, so their citations open the
+>   PDF itself (on 2027.1, BTCU8's citations could only link to the portal's search page).
 
 ### L3: AWS stand-ins and the API on them
 

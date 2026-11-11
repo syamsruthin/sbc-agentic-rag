@@ -162,7 +162,7 @@ and verifies SBCs is described in [docs/sbc-pipeline.md](docs/sbc-pipeline.md).
 With an embedded facts bundle and `OPENROUTER_API_KEY_BROKER` set, ask a question from the terminal:
 
 ```bash
-FACTS_BUNDLE_PATH=bundles/facts-2027.1.sqlite uv run sbc-ask "What's the deductible on BTCU8?"
+FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite uv run sbc-ask "What's the deductible on BTCU8?"
 ```
 
 It prints the answer with its citations, then the path taken, the model calls and their cost. Run it without
@@ -236,7 +236,7 @@ if any secret it needs is missing.
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
-| Local track (branch `main_local`): the whole app on one machine with AWS stand-ins | L1 and L3–L7 done (stack, scripts, bootstrap, secrets from the local Parameter Store, real sign-in, Turnstile test keys, the apps behind the edge, request-ID lookup, Langfuse traces, record/replay of model calls); L2, L8 and L9 left, see [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md) |
+| Local track (branch `main_local`): the whole app on one machine with AWS stand-ins | L1–L7 done (bundle 2027.2 with the PDF proxy, stack, scripts, bootstrap, secrets from the local Parameter Store, real sign-in, Turnstile test keys, the apps behind the edge, request-ID lookup, Langfuse traces, record/replay of model calls); L8 and L9 left, see [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md) |
 | AWS deployment track (branch `main_AWS`, the long-lived AWS branch; not merged into `main`) | WP0–WP12 done in code (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers, CDK stacks, frontends, deploy and data-build workflows, observability with optional Langfuse); first deploy, WP13 and WP14 left |
 
 [TODO.md](TODO.md) has the detailed checklist; PLAN.md section 11 has each phase's acceptance criteria and

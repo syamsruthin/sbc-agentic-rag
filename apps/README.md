@@ -31,7 +31,7 @@ Needs Node 20.10 or newer (Node 22 recommended: Node 20 reached end of life on 2
 port 8080.
 
 ```bash
-APP_ENV=local FACTS_BUNDLE_PATH=bundles/facts-2027.1.sqlite uv run uvicorn --factory sbc_api.app:create_app --port 8080
+APP_ENV=local FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite uv run uvicorn --factory sbc_api.app:create_app --port 8080
 ```
 
 ```bash

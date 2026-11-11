@@ -54,15 +54,15 @@ exist.
 
 ### 2.3 Data and live checks
 
-- [ ] **Rebuild the real bundle as `2027.2`** where the corpus lives. Almost all embeddings come from the cache. The local `2027.1` bundle has 9,690 plans and the manifest lists 9,692, so chunks new with the 2 added SBCs are embedded (cents; needs OpenRouter credit):
+- [x] **Rebuild the real bundle as `2027.2`** where the corpus lives. Done on `main_local` L2 (2026-11-11): 9,690 plans, 1,381 preview-only (the 2 quarantined plans are among the manifest's 1,383), 0 missing; 0 chunks newly embedded. Almost all embeddings come from the cache. The local `2027.1` bundle has 9,690 plans and the manifest lists 9,692, so chunks new with the 2 added SBCs are embedded (cents; needs OpenRouter credit):
   ```bash
   uv run sbc-build-bundle --version 2027.2 --release      # needs data/catalog/sbc_manifest_2027.csv
   uv run sbc-embed-bundle bundles/facts-2027.2.sqlite
   ```
   Check the printed counts: about 1,383 preview-only plans, and 0 missing.
-- [ ] Run the retrieval eval on `2027.2`: `python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup full`. Expect the 2027.1 numbers (recall@5 ≈ 0.920).
-- [ ] A live answer through the API with your OpenRouter key: `APP_ENV=local FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite uv run uvicorn --factory sbc_api.app:create_app --port 8080`, then the README's `curl` example. Also `sbc-ask "What's the deductible on BTCU8?"`.
-- [ ] A live PDF proxy check: `curl -o x.pdf 'localhost:8080/api/sbc/<a preview-only plan_key>.pdf'` returns a PDF (the API checks its sha256 itself).
+- [ ] Run the retrieval eval on `2027.2` (`main_local` L2 ran `bm25_only` and `no_rerank`: all hard gates pass, recall@5 0.847 and 0.903, as on 2027.1; `full` still to run, about $0.50): `python -m evals.harness.retrieval --bundle bundles/facts-2027.2.sqlite --golden evals/golden/0.2.0 --setup full`. Expect the 2027.1 numbers (recall@5 ≈ 0.920).
+- [x] A live answer through the API with your OpenRouter key (done on `main_local`, L3 and L5, verified against the SBCs): `APP_ENV=local FACTS_BUNDLE_PATH=bundles/facts-2027.2.sqlite uv run uvicorn --factory sbc_api.app:create_app --port 8080`, then the README's `curl` example. Also `sbc-ask "What's the deductible on BTCU8?"`.
+- [x] A live PDF proxy check (done on `main_local` L2: portal fetch, sha256 match, cached second request): `curl -o x.pdf 'localhost:8080/api/sbc/<a preview-only plan_key>.pdf'` returns a PDF (the API checks its sha256 itself).
 - [ ] Upload the bundle and embedding cache to S3 once the foundation stack has created the data bucket (`scripts/aws/upload-bundle.sh`; §2.4).
 
 ### 2.4 The first deploy (RUNBOOK §4)
@@ -164,10 +164,10 @@ optional Langfuse tracing (one trace per turn).
 | From | Check | Who |
 |---|---|---|
 | Spikes 2 and 3 | The AWS run of `deploy_spike.sh` (streaming through CloudFront, real cold start) | 👤 |
-| WP3 | Rebuild the bundle `2027.2` with the manifest; ≈ 1,383 preview-only and 0 missing | 👤 |
-| WP4 | A live streamed answer with a real OpenRouter key and bundle | 👤 |
+| WP3 | ~~Rebuild the bundle `2027.2` with the manifest; ≈ 1,383 preview-only and 0 missing~~ Done on `main_local` L2: 1,381 preview-only, 0 missing | ✅ |
+| WP4 | ~~A live streamed answer with a real OpenRouter key and bundle~~ Done on `main_local` (L3, L5) | ✅ |
 | WP5 | Sign-in against a real Cognito pool, and Turnstile with a real widget (after WP9) | 👤 + WP13 |
-| WP7 | A live portal fetch of one preview-only SBC, with its hash matching | 👤 |
+| WP7 | ~~A live portal fetch of one preview-only SBC, with its hash matching~~ Done on `main_local` L2 | ✅ |
 | WP8 | An end-to-end `build-pipeline bundle` (then `full`) run against the real data bucket, as an ECS task | 👤 after WP9 |
 | WP8 | The arm64 API image builds (`buildx --platform linux/arm64`) and passes a smoke test | WP11's first CI deploy (`smoke-deployed.sh`) |
 | WP11 | `deploy-aws.yml` and `build-data.yml` against AWS: a push deploys in under 10 minutes, a rollback by `image_tag` works, a `bundle` build finishes within the 1-hour credentials | 👤 after §2.4 |

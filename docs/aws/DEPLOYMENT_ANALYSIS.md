@@ -398,7 +398,7 @@ What has to be stored: LangGraph checkpoints (a few KB to tens of KB per step), 
 |---|---|
 | `EnvSettings` required variables (`config.py:207`) | Replace `DATABASE_URL`, `UPSTASH_*` and `SUPABASE_*` with AWS settings: `DDB_TABLE_APP`, `DDB_TABLE_AUDIT`, `DDB_TABLE_CHECKPOINTS`, `S3_DATA_BUCKET`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID`, `COGNITO_ISSUER` |
 | Secrets loading | Read SecureString parameters under `/sbc/<env>/` at Lambda init (boto3 or the Parameters and Secrets Lambda Extension); keep the "fail fast if missing" check |
-| `FACTS_BUNDLE_PATH` | Point at the bundle path inside the image, e.g. `/opt/bundle/facts-2027.1.sqlite` |
+| `FACTS_BUNDLE_PATH` | Point at the bundle path inside the image, `/opt/bundle/facts.sqlite` (the image installs whichever bundle it was built with there) |
 | `.env.example`, `README` | Document the AWS variables (Supabase and Upstash removed) |
 | Frontend env (`VITE_*`) | `VITE_API_BASE_URL=/api`; `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID` instead of `VITE_SUPABASE_*`; keep `VITE_TURNSTILE_SITE_KEY` |
 | Prompt and trace metadata | Add the Lambda request ID to the trace correlation (replaces the Cloud Run request header) |
@@ -441,7 +441,7 @@ What has to be stored: LangGraph checkpoints (a few KB to tens of KB per step), 
 |---|---|
 | `APP_ENV` | `dev` (demo) |
 | `LOG_LEVEL` | `INFO` |
-| `FACTS_BUNDLE_PATH` | `/opt/bundle/facts-2027.1.sqlite` |
+| `FACTS_BUNDLE_PATH` | `/opt/bundle/facts.sqlite` |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` |
 | `LANGFUSE_BASE_URL` (or the older `LANGFUSE_HOST`) | `https://cloud.langfuse.com` (EU) or `https://us.cloud.langfuse.com` (US) |
 | `DDB_TABLE_APP` / `DDB_TABLE_AUDIT` / `DDB_TABLE_CHECKPOINTS` | `sbc-demo-app` / `sbc-demo-audit` / `sbc-demo-checkpoints` |

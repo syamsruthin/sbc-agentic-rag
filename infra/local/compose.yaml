@@ -67,7 +67,7 @@ services:
       additional_contexts:
         bundle: ../../bundles
       args:
-        BUNDLE_FILE: ${SBC_BUNDLE_FILE:-facts-2027.1.sqlite}
+        BUNDLE_FILE: ${SBC_BUNDLE_FILE:-facts-2027.2.sqlite}
     depends_on: [dynamodb, aws, s3]
     env_file: [../../.local/runtime.env]  # up.sh creates it (bootstrap fills it in)
     environment:
