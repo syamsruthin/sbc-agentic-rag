@@ -127,6 +127,22 @@ jobs:
       - name: Shell scripts pass shellcheck
         run: uvx --from shellcheck-py shellcheck -x -P SCRIPTDIR -s bash scripts/aws/*.sh infra/docker/*.sh
 
+  frontend:
+    name: Frontends lint, typecheck, test and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps
+    steps:
+      # docs/aws/MIGRATION_PLAN.md WP10. Node comes with the runner image (20 LTS or newer).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: node --version && npm --version
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   changes:
     name: Decide whether to deploy
     if: github.event_name == 'push' && github.ref == 'refs/heads/main_AWS'
@@ -159,7 +175,7 @@ jobs:
   deploy:
     name: Deploy to AWS
     # docs/aws/MIGRATION_PLAN.md WP11: only after every check passes, only from main_AWS.
-    needs: [changes, lint, typecheck, test, secrets, eval-gate, image, cdk]
+    needs: [changes, lint, typecheck, test, secrets, eval-gate, image, cdk, frontend]
     if: needs.changes.outputs.deploy == 'true'
     permissions:
       id-token: write

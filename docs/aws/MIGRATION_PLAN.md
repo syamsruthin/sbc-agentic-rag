@@ -1,7 +1,7 @@
 # AWS migration plan: code changes, step by step
 
 **Branch:** `main_AWS`, created from `main` at `e7ec0e7`. It is the long-lived main branch of the AWS implementation and is **not merged into `main`** (decided 2026-11-05; the PR to `main`, #14, was closed unmerged). Work packages are committed straight to `main_AWS`; CI runs on every push to it.
-**Status:** WP0–WP9 are done on `main_AWS`, and WP11 in code (each work package below has its own status note); the first real deploy, WP10, WP12–WP14, and WP11's frontend parts are left. Progress is tracked in [TASKS_DONE.md](TASKS_DONE.md) and [TODO.md](TODO.md).
+**Status:** WP0–WP9 are done on `main_AWS`, and WP10–WP12 in code (each work package below has its own status note); the first real deploy, WP13 and WP14 are left. Progress is tracked in [TASKS_DONE.md](TASKS_DONE.md) and [TODO.md](TODO.md).
 **Companion document:** [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md) covers the architecture, the costs and the reasons behind each choice. §17 there ("portfolio mode") is the target operating model.
 
 This plan turns that analysis into ordered work packages. For each one it says which files change, what goes in them, how it is tested and when it is done.
@@ -135,12 +135,12 @@ packages/
       admin.py                # /api/admin/kill-switch, /api/admin/quarantine
     portal_preview.py         # minimal previewDocument client (mirrors sbc_ingest's form)
     logging.py                # JSON logs with request ID, bot, path, cost
-apps/                         # WP10
-  chat-ui/                    # shared React components: chat stream, citations, comparison table, plan picker
+apps/                         # WP10 (as built: one npm workspace)
+  chat-ui/                    # shared: API client, SSE over fetch, chat panel, sources, plan picker, feedback
   broker/                     # Broker SPA (Cognito sign-in)
   shopper/                    # Plan Shopper SPA (Turnstile)
   landing/                    # portfolio landing + "How it works" + "Quality and cost" pages
-  package.json, pnpm-workspace.yaml (or npm workspaces)
+  package.json, package-lock.json, scripts/assemble.mjs   # builds → apps/site/ (/, /broker/, /shopper/)
 infra/
   docker/
     api.Dockerfile            # WP8: python:3.13-slim + uv + Lambda Web Adapter + bundle
@@ -159,10 +159,11 @@ scripts/aws/                  # WP9/WP13: helper scripts (bash, aws CLI)
   upload-bundle.sh            # bundles/facts-<v>.sqlite → s3://…/bundles/<v>/, embeddings.sqlite → bundles/cache/
   seed-users.sh               # admin + demo-broker Cognito users
   rotate-demo-password.sh     # new demo password → Cognito + /landing/demo.json + invalidation
+  deploy-web.sh               # WP10: build apps/ with the stack outputs, s3 sync, invalidate
   run-build.sh                # aws ecs run-task for the offline pipeline
 .github/workflows/
   ci.yml                      # WP11: + sbc_aws tests (moto), cdk synth + tests, frontend build
-  deploy-aws.yml              # WP11: OIDC → build image, push, cdk deploy SbcApp, smoke test (SPA sync with WP10)
+  deploy-aws.yml              # WP11: OIDC → build image, push, cdk deploy SbcApp, smoke test, frontends (WP10)
   build-data.yml              # WP11: workflow_dispatch → run the Fargate offline build
 docs/aws/
   DEPLOYMENT_ANALYSIS.md, MIGRATION_PLAN.md (this file), RUNBOOK.md (WP13)
@@ -652,6 +653,17 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 
 ### WP10: Frontends
 
+> **Status: done in code** on `main_AWS` (not run against AWS yet; it needs the first deploy). Checked locally against the API (`APP_ENV=local`) through the landing dev server's proxy, on desktop and phone widths: plan search, a streamed turn, the details footer and request ID, the public session and its errors.
+>
+> **As built:**
+> - **One npm workspace** in `apps/` (`chat-ui`, `landing`, `broker`, `shopper`), React 18, Vite 6, TypeScript 5.9, Tailwind 3. `npm run check` lints, typechecks, runs `chat-ui`'s unit tests (Vitest: the SSE parser, the token and body-hash headers, CSV) and builds; `scripts/assemble.mjs` puts the builds in `apps/site/` at `/`, `/broker/` and `/shopper/`.
+> - **`chat-ui`:** `createApi` sends the token in `X-Sbc-Authorization` and the body hash on every POST, raises the API's `detail` and `x-request-id` on errors, and parses SSE from `fetch` (split chunks, CRLF, multi-byte characters, keepalive comments). `useChat` keeps one thread, follows `thread`/`status`/`answer`/`clarify`/`limit`/`error`/`done`, and can be stopped. Answers render as Markdown (raw HTML off) with a numbered source list; tables get "Export as CSV" in the broker app (formula-looking cells are prefixed with `'`).
+> - **Broker:** `amazon-cognito-identity-js` with SRP, TOTP (and TOTP enrollment for an admin), and a new-password step; tokens in an in-memory store (a reload signs out). Plan picker with state, market, plan type and metal filters (6 plans). Conversations: `GET /api/broker/threads`, or for the shared demo account the IDs this browser kept. The API can't send an old thread's messages back, so reopening one continues it without showing them.
+> - **Shopper:** state choice (the 17 states with Individual plans in the 2027 catalog), Turnstile rendered explicitly, then `POST /api/public/session`; a 401 sends the visitor back to the start. Plan picker limited to 3 plans; the state is also sent with each request for local runs (the API takes it from the session token).
+> - **Landing:** the demo login from `/landing/demo.json` at runtime with copy buttons; "Try these" questions that open an app with `?q=` (shown as the first suggestion, never sent automatically); "How it works" and "Quality and cost" pages. The quality page shows only recorded numbers (TODO.md, DEPLOYMENT_ANALYSIS §10) and says the full answer-quality run is still to come.
+> - **Deploy:** `scripts/aws/deploy-web.sh` builds with the stack outputs and the Turnstile site key (saved in SSM under `/sbc-deploy/<env>/turnstileSiteKey` by the first manual run), syncs with `--delete` while never touching `landing/`, sets a one-year cache on hashed assets and none on `index.html`, and invalidates `/*`. `smoke-deployed.sh --web` checks each app's page, CSP header and script.
+> - **Dependencies:** runtime packages audit clean. Dev-only advisories remain in Vitest and typescript-eslint; their fixes need majors (Vite 7+, Vitest 4+) that need Node 20.19 or newer. Move the toolchain to Node 22 and those majors together.
+
 **Files:** `apps/**`, plus a `frontend` job in CI.
 
 - **Stack:** React + Vite + TypeScript + Tailwind, per PLAN.md §4. There are three apps (`landing`, `broker`, `shopper`) plus the shared `chat-ui` package. Base paths are `/`, `/broker/` and `/shopper/`.
@@ -678,7 +690,7 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 
 ### WP11: CI/CD
 
-> **Status: done in code** on `main_AWS` (not run against AWS yet; it needs the first manual deploy). Left: the `frontend` job and the SPA sync, which come with WP10, and the optional canary.
+> **Status: done in code** on `main_AWS` (not run against AWS yet; it needs the first manual deploy), including the frontend parts added with WP10. Left: the optional canary.
 >
 > **As built:**
 > - **`ci.yml` calls `deploy-aws.yml`** as its last job (`deploy`), so a deploy happens only after every check passes, only on a push to `main_AWS`, and only when the push changes more than docs (`docs/`, `spikes/`, root `*.md`). A `changes` job decides; until the repository variable `AWS_DEPLOY_ROLE_ARN` exists it skips the deploy with a notice, so CI stays green before the first manual deploy. Pull requests still cancel older runs; pushes now queue, so a deploy is never cut off halfway.
@@ -691,15 +703,25 @@ These assertions encode the cost guardrails from DEPLOYMENT_ANALYSIS.md §12.
 > - **IAM-widening changes fail in CI on purpose.** The workflow deploys with `--require-approval broadening`; with no terminal the CDK refuses such a change instead of asking. Deploy those by hand with `scripts/aws/deploy.sh`.
 > - **The deploy role** (`infra/cdk/sbc_infra/constructs/cicd.py`) gained `sts:AssumeRole` on the CDK bootstrap roles `cdk-hnb659fds-deploy-role-…` and `cdk-hnb659fds-file-publishing-role-…`, `cloudformation:DescribeStacks` on its two stacks and `ssm:GetParametersByPath` on `/sbc-deploy/<env>`. It lost the direct Lambda permissions (`UpdateFunctionCode`, `PublishVersion`, `UpdateAlias`, …), since CloudFormation owns the alias. It can't save deploy context or read secrets. A template test checks all of this (13 template tests).
 > - **`build-data.yml`** (`workflow_dispatch`, inputs `version` and `bundle|full`): `scripts/aws/run-build.sh`. It waits for a `bundle` build and fails with the task. A `full` build takes 2–3 hours, longer than the role's 1-hour credentials, so the workflow only starts it.
-> - **Not done:** the optional canary (a gradual alias shift needs `aws_codedeploy`; not worth it for a portfolio deploy unless traffic grows). The `frontend` job and the SPA build, `s3 sync --delete` and invalidation are added with WP10.
+> - **Frontends (with WP10):** a `frontend` job in `ci.yml` (`npm ci`, lint, typecheck, tests, build) that the deploy waits for, and in `deploy-aws.yml`, after the API smoke test, `scripts/aws/deploy-web.sh` and `smoke-deployed.sh --web`.
+> - **Not done:** the optional canary (a gradual alias shift needs `aws_codedeploy`; not worth it for a portfolio deploy unless traffic grows).
 
 **Done when** a push to `main_AWS` deploys in under 10 minutes, and a rollback works: through the workflow with an earlier tag, or in an emergency by moving the alias by hand (under 1 minute), followed by a deploy of the wanted tag (RUNBOOK §5).
 
 ### WP12: Observability
 
+> **Status: done in code** on `main_AWS`. Not checked on AWS yet.
+>
+> **As built:**
+> - **Lambda log format `JSON`**, application and system log level `INFO` (`infra/cdk/sbc_infra/constructs/api.py`), the same level as `LOG_LEVEL`. The API's lines were already JSON with a `level` field. **To check on the first deploy:** that CloudWatch keeps the API's lines as JSON objects (so the metric filters still match `$.event`) rather than wrapping them, and that Lambda's `REPORT` lines now come as `platform.report` JSON (`initDurationMs`).
+> - **`x-request-id`** was already on every response; the apps show it under each answer and error with a "Report a problem" link (a new GitHub issue with the ID only, or `VITE_REPORT_URL`).
+> - **`demo_user_limit_reached`:** the demo account's refusals log this event (others log `rate_limited`), and the `DemoAccountLimited` metric filter matches it. A template test checks the filters against the events the API logs (14 template tests).
+> - **The details footer:** answer events carry `details` (graph path, model calls, cost, tools) from the turn's trace, shared with the `turn` log line; the apps show it under "Details". Cached answers leave it out (no model call was made).
+> - **Langfuse: one trace per turn** (`sbc_api/tracing.py`, decided 2026-11-11), built after the turn from its recorded trace with the `langfuse` SDK (5.0.x) alone: the root observation (redacted question in, verified answer out; path, intent, plan keys, verifier rejections, fallback, prompt versions as metadata), one generation or embedding per model call (model, tokens, OpenRouter cost, latency in metadata) and one tool observation per tool call (name and success, never arguments). Trace attributes: bot and kind as tags, the thread as the session, the hashed actor as the user, request ID, bundle version and config hash. A mask runs the ingress redaction over every exported string. On only when both keys are set; the SDK is imported only then; the trace is flushed after each response (Lambda freezes the process); failures are logged as `trace_failed` and never reach the user; deep health shows `tracing`. Cached answers are traced with a `cached` tag. Not built: a span per graph node and real start times per call (calls are recorded after the turn, so their latency is metadata). The LangGraph callback was rejected: it needs the full `langchain` package and wouldn't see the model calls, which go through `sbc_core.llm`.
+
 - JSON logs (WP4) with the CloudWatch metric filters defined in WP9. Use the Lambda log format `JSON` and the application log level from `LOG_LEVEL`.
 - `request_id` is returned in the `x-request-id` response header and shown in the UI's "Report a problem" link (PLAN.md §7.1 correlation).
-- **Langfuse:** when both keys are set, attach the LangGraph Langfuse callback with the redaction mask. Otherwise skip it with no error. Keep PLAN.md's trace attributes (`bot`, `bundle_version`, `config_hash`, prompt versions, usage).
+- **Langfuse:** when both keys are set, trace each turn (as built: one trace per turn from the turn's own trace, not the LangGraph callback; see the status note) with the redaction mask. Otherwise skip it with no error. Keep PLAN.md's trace attributes (`bot`, `bundle_version`, `config_hash`, prompt versions, usage).
 - An optional per-answer "details" footer (path, model calls, cost) for the portfolio, from the existing trace fields.
 
 **Done when** a deliberate error shows in CloudWatch, raises the alarm email, and is traceable by request ID.
@@ -878,7 +900,7 @@ Run once. **The exact commands are in [RUNBOOK.md](RUNBOOK.md) §4**, which repl
 ## 10. Rollback and teardown
 
 - **App rollback:** deploy the previous image tag: run `deploy-aws.yml` with `image_tag`, or `scripts/aws/deploy.sh app <previous-tag>` (ECR keeps the last 3). In an emergency, `aws lambda update-alias --function-name sbc-<env>-api --name live --function-version <previous>` works at once, but CloudFormation owns the alias, so follow it with a deploy of the wanted tag (RUNBOOK §5). The image carries code, config and bundle, so all three roll back together (PLAN.md §9.4).
-- **Frontend rollback:** redeploy the previous commit's SPA build (added to `deploy-aws.yml` with WP10).
+- **Frontend rollback:** check out the previous commit and run `scripts/aws/deploy-web.sh` (it rebuilds and republishes `apps/site/`). A rollback through `deploy-aws.yml` with an `image_tag` also republishes the frontends, from the branch head.
 - **Infrastructure rollback:** CloudFormation rolls back failed updates automatically; data resources use `RETAIN`.
 - **Pause everything without deleting:** set the kill switch (LLM off) for both bots, or set the Lambda reserved concurrency to 0. Either way the AWS cost stays at storage cents.
 - **Teardown after the portfolio period:**
@@ -919,7 +941,7 @@ The PLAN.md decisions on models, the bundle, retrieval, the verifier and the eva
 | 1 | `langgraph-checkpoint-aws` compatibility with the locked `langgraph 1.2.x`, its table schema, and S3 offload behavior | Spike first in WP2: pin a version and run the interrupt/resume test across two saver instances. Fallback: a small custom `BaseCheckpointSaver` over DynamoDB (≈ 200 lines) **Status (2026-11-05): resolved.** Spike 1 and WP2: version 1.2.6 works with langgraph 1.2.19; table keys `PK`/`SK`, TTL attribute `ttl`; resume verified across processes, saver instances and app instances (moto and DynamoDB Local). |
 | 2 | SSE through CloudFront → Function URL (buffering, timeouts) | WP4/WP9 spike early: deploy a canned SSE endpoint first and check incremental delivery and 10 s keepalives through CloudFront **Status: passed locally** (spike 2: the container streams SSE event by event; WP4 adds 10 s keepalives). The CloudFront leg needs `spikes/aws/deploy_spike.sh up` in an AWS account. |
 | 3a | OAC replaces the browser's `Authorization` header with its SigV4 signature, so Bearer tokens would be lost | **Found and fixed in WP9:** tokens travel in `X-Sbc-Authorization`, which CloudFront forwards and the API reads first (`sbc_api.auth.principal.TOKEN_HEADER`). WP10's `chat-ui` must send it. |
-| 3 | OAC needs `x-amz-content-sha256` on POSTs | Built into `chat-ui` (WP10). Fallback: Function URL auth `NONE` + a secret origin header checked by the app **Status: verified locally** (spike 2 checks the header both ways); the frontend part is WP10. |
+| 3 | OAC needs `x-amz-content-sha256` on POSTs | Built into `chat-ui` (WP10, done in code: `apps/chat-ui/src/api.ts`, unit-tested). Fallback: Function URL auth `NONE` + a secret origin header checked by the app **Status: verified locally** (spike 2 checks the header both ways); the frontend part is WP10. |
 | 4 | Cold start with a large image | Presidio and spaCy are deferred (D3), so the launch image has no NER model. Measure in WP8; warm on load + optional warmer (WP9). Re-measure when Presidio is added later **Status: measured locally** at 2.1–2.3 s from container start to ready (spike 3); the Lambda number needs the AWS run. |
 | 5 | The PDF proxy depends on the portal's preview form and on fields missing from the bundle | WP3 adds the fields; WP7 has a hash check and a graceful fallback link. Find out whether the portal rate-limits AWS IPs **Status: done in code** (WP3 adds the fields, WP7 the proxy, with a field-for-field test against the ingest form). Still open: rebuilding the real bundle `2027.2` and a live portal check. |
 | 6 | Shared demo-broker history across interviewers | Short TTL (24 h) + listing by browser-held thread IDs for the demo user **Status: done** (WP6: the demo account has its own checkpointer with a 24 h TTL, and `GET /api/broker/threads` returns none for it). |

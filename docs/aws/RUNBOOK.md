@@ -21,6 +21,9 @@ curl -s 'localhost:8080/api/healthz?deep=1'
 - Turnstile is skipped when `TURNSTILE_SECRET_KEY` is empty.
 - The stores, checkpoints and caches are in-process.
 - A bot without its `OPENROUTER_API_KEY_<BOT>` answers 503.
+- **The frontends** run against it: `cd apps && npm install`, then `npm run dev:broker`, `npm run dev:shopper` and
+  `npm run dev:landing`, and open http://localhost:5173 (apps/README.md). Locally the broker app skips sign-in
+  and the shopper skips Turnstile.
 
 ### 1.2 The Lambda image on DynamoDB Local (Docker Compose)
 
@@ -125,7 +128,8 @@ On AWS it runs as an ECS Fargate Spot task (4 vCPU, 8 GB, 50 GB ephemeral storag
 ## 4. First deployment
 
 You need: AWS CLI v2 with credentials for the account (an IAM Identity Center profile, `export AWS_PROFILE=…`),
-Docker with buildx (arm64), uv, Node (for `npx`), and the bundle `2027.2` built locally (TODO.md §2.3). Every
+Docker with buildx (arm64), uv, Node 20.10 or newer (for `npx` and the frontends; Node 22 recommended), the
+Turnstile widget's site key, and the bundle `2027.2` built locally (TODO.md §2.3). Every
 script reads `SBC_ENV` (default `dev`) and uses `us-east-1`.
 
 | # | Step | Command |
@@ -139,9 +143,10 @@ script reads `SBC_ENV` (default `dev`) and uses `us-east-1`.
 | 7 | Users: admin (TOTP at first sign-in) and demo-broker | `scripts/aws/seed-users.sh <admin> <admin-email>` (prints the demo `sub`) |
 | 8 | Redeploy with the demo account's ID | `DEMO_USER_IDS='["<sub>"]' scripts/aws/deploy.sh app <api-tag>` |
 | 9 | Publish the demo password to the landing page | `scripts/aws/rotate-demo-password.sh` |
-| 10 | Turnstile: add the CloudFront host name to the widget's allowed domains | Cloudflare dashboard |
-| 11 | Confirm the SNS subscription email, then check | `scripts/aws/smoke-deployed.sh 2027.2` (deep health, a POST through origin access control) |
-| 12 | Turn on CI deploys | GitHub → Settings → Secrets and variables → Actions → Variables: `AWS_DEPLOY_ROLE_ARN` = the `SbcApp` output `DeployRoleArn` |
+| 10 | Frontends: build with the stack outputs, publish, invalidate (saves the site key in SSM for CI) | `TURNSTILE_SITE_KEY=0x… scripts/aws/deploy-web.sh` |
+| 11 | Turnstile: add the CloudFront host name to the widget's allowed domains | Cloudflare dashboard |
+| 12 | Confirm the SNS subscription email, then check | `scripts/aws/smoke-deployed.sh 2027.2` (deep health, a POST through origin access control), then `scripts/aws/smoke-deployed.sh --web` |
+| 13 | Turn on CI deploys | GitHub → Settings → Secrets and variables → Actions → Variables: `AWS_DEPLOY_ROLE_ARN` = the `SbcApp` output `DeployRoleArn` |
 
 **Saved deploy context.** `deploy.sh` saves each value you give it (`ALARM_EMAIL`, `DEMO_USER_IDS`, `WARMER`,
 `GITHUB_OIDC_PROVIDER_ARN`, `BUILD_IMAGE_TAG` or the third argument) under `/sbc-deploy/<env>/` in SSM after a
@@ -149,14 +154,17 @@ successful deploy, and every later deploy reuses them, so a deploy that leaves o
 remove the alarm email or the demo account's limits. `aws ssm get-parameters-by-path --path /sbc-deploy/dev`
 shows them; to clear one, `aws ssm delete-parameter --name /sbc-deploy/dev/<key>`.
 
-Until the frontends exist (WP10) the site root returns 403/404 from S3; the API answers under `/api/*`.
+Then open the site URL: the landing page shows the demo login (step 9); sign in to the Broker Assistant with it,
+and start a Plan Shopper session (it needs step 11).
 
 ## 5. Deploy and roll back
 
 - **Deploy a new API image:** push to `main_AWS`. After every CI check passes, the `deploy` job runs
   `deploy-aws.yml`: it builds the arm64 image with the pinned bundle (`PINNED_BUNDLE_VERSION`) on a native arm64
   runner, pushes `<git-sha12>-<bundle>`, runs `scripts/aws/deploy.sh app <tag>` (CloudFormation publishes a new
-  version and moves `live`) and `scripts/aws/smoke-deployed.sh`. Docs-only pushes don't deploy.
+  version and moves `live`) and `scripts/aws/smoke-deployed.sh`, then builds and publishes the frontends
+  (`scripts/aws/deploy-web.sh`, `smoke-deployed.sh --web`). Docs-only pushes don't deploy.
+  - **Frontends only,** by hand: `scripts/aws/deploy-web.sh` (it reads the saved Turnstile site key).
   - **By hand,** without CI: `scripts/aws/push-images.sh <bundle-version> api`, then `scripts/aws/deploy.sh app <new-tag>`.
   - **Changes that widen IAM** (a new permission, a new role) fail in CI on purpose: CI deploys with
     `--require-approval broadening` and no terminal. Deploy them by hand with `deploy.sh`, which asks.
@@ -165,6 +173,8 @@ Until the frontends exist (WP10) the site root returns 403/404 from S3; the API 
   `aws lambda update-alias --function-name sbc-dev-api --name live --function-version <previous>` works at
   once, but the next `cdk deploy` moves the alias to whatever tag it is given, so follow it with a deploy of
   the tag you want.
+  - **Frontends:** check out the commit you want and run `scripts/aws/deploy-web.sh`. A workflow rollback with
+    `image_tag` republishes the frontends from the branch head.
 - **New data:** Actions → Build SBC data (`version` 2027.3, `bundle` or `full`), or `scripts/aws/run-build.sh 2027.3 bundle --wait`.
   Read the bundle's `retrieval-2027.3.txt`, then set `PINNED_BUNDLE_VERSION` in `deploy-aws.yml` and push (or
   run the deploy workflow with `bundle_version`). The workflow waits for a `bundle` build but only starts a `full`

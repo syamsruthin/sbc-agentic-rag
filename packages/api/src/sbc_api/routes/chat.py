@@ -18,7 +18,9 @@ from sbc_api import guards
 from sbc_api.auth.principal import Principal, current_principal
 from sbc_api.deps import ApiState
 from sbc_api.routes.session import client_ip
-from sbc_api.sse import reply_payload, single, stream_turn
+from sbc_api.sse import reply_payload, single, stream_turn, turn_details
+from sbc_api.tracing import TracedTurn, flushed_after
+from sbc_aws.audit import hash_actor
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,6 +59,29 @@ def _sse(events: Iterator[str]) -> StreamingResponse:
     return StreamingResponse(events, media_type="text/event-stream", headers=SSE_HEADERS)
 
 
+def _trace(
+    api: ApiState,
+    principal: Principal,
+    request_id: str,
+    thread_id: str,
+    question: str,
+    reply: Reply,
+    *,
+    cached: bool = False,
+) -> None:
+    """Optional Langfuse trace (:mod:`sbc_api.tracing`). Tracing never fails a turn."""
+    try:
+        settings = api.bots[principal.bot].settings
+        api.tracer.record(TracedTurn(
+            request_id=request_id, thread_id=thread_id, bot=principal.bot.value,
+            actor_hash=hash_actor(principal.subject), question=question, reply=reply,
+            bundle_version=api.reader.bundle_version, config_hash=settings.config_hash,
+            demo=principal.is_demo, cached=cached,
+        ))  # fmt: skip
+    except Exception:
+        log.warning("trace failed", exc_info=True, extra={"event": "trace_failed", "request_id": request_id})
+
+
 def _agent(api: ApiState, principal: Principal) -> Agent:
     runtime = api.bots[principal.bot]
     agent = runtime.agent_for(principal.is_demo)
@@ -67,14 +92,12 @@ def _agent(api: ApiState, principal: Principal) -> Agent:
 
 def _log_turn(principal: Principal, request_id: str, reply: Reply) -> None:
     trace = reply.trace
-    usage = list(trace.get("usage", [])) + ([trace["classify_usage"]] if trace.get("classify_usage") else [])
+    details = turn_details(reply) or {"path": None, "llm_calls": 0, "cost_usd": 0.0, "tools": []}
     log.info(
         "turn",
         extra={
             "event": "turn", "request_id": request_id, "bot": principal.bot.value, "kind": reply.kind,
-            "demo": principal.is_demo, "path": trace.get("path"), "llm_calls": len(usage),
-            "cost_usd": round(sum(u.get("cost_usd") or 0 for u in usage), 6),
-            "tools": [t.get("name") for t in trace.get("tools", [])], "plans": len(reply.plan_keys),
+            "demo": principal.is_demo, **details, "plans": len(reply.plan_keys),
             "fallback": trace.get("fallback_reason"), "pii_found": len(trace.get("pii_found", [])),
         },
     )  # fmt: skip
@@ -102,6 +125,7 @@ def _run(
     request: Request,
     thread_id: str,
     run: Callable[[], Iterator[Progress | Reply]],
+    question: str,
     cache_key: str | None = None,
 ) -> StreamingResponse:
     request_id: str = request.state.request_id
@@ -110,11 +134,15 @@ def _run(
         final = guards.apply_quarantine(api, reply)
         _log_turn(principal, request_id, final)
         guards.audit_turn(api, principal, request_id, final)
+        _trace(api, principal, request_id, thread_id, question, final)
         if cache_key is not None and final.kind == "answer":
-            api.stores.answers.put(cache_key, reply_payload(final)[1])
+            # The cached copy leaves out this turn's details: a cache hit makes no model call.
+            cached = {k: v for k, v in reply_payload(final)[1].items() if k != "details"}
+            api.stores.answers.put(cache_key, cached)
         return final
 
-    return _sse(stream_turn(run, thread_id=thread_id, request_id=request_id, on_reply=finish))
+    turn = stream_turn(run, thread_id=thread_id, request_id=request_id, on_reply=finish)
+    return _sse(flushed_after(turn, api.tracer))
 
 
 @router.post("/api/{bot}/chat")
@@ -144,13 +172,13 @@ def chat(
                           tuple(cached.get("plan_keys", [])))  # fmt: skip
             agent.remember(thread_id, message=body.message, reply=reply)
             guards.audit_turn(api, principal, request_id, reply, cached=True)
+            _trace(api, principal, request_id, thread_id, title, reply, cached=True)
             log.info(
                 "cache hit",
                 extra={"event": "cache_hit", "request_id": request_id, "bot": principal.bot.value},
             )
-            return _sse(
-                single("answer", {**cached, "cached": True}, thread_id=thread_id, request_id=request_id)
-            )
+            answer = single("answer", {**cached, "cached": True}, thread_id=thread_id, request_id=request_id)
+            return _sse(flushed_after(answer, api.tracer))
 
     capped = guards.global_cap_reached(api)
     if capped is not None:
@@ -165,7 +193,7 @@ def chat(
             thread_id, body.message, ui_selected=tuple(body.ui_selected), user_state=user_state
         )
 
-    return _run(api, principal, request, thread_id, run, cache_key)
+    return _run(api, principal, request, thread_id, run, title, cache_key)
 
 
 @router.post("/api/{bot}/chat/choose")
@@ -184,4 +212,5 @@ def choose(
     def run() -> Iterator[Progress | Reply]:
         return agent.stream(body.thread_id, choice={"plan_key": body.plan_key, "text": body.text})
 
-    return _run(api, principal, request, body.thread_id, run)
+    answer = redact(body.text).text if body.text is not None else f"(chose plan {body.plan_key})"
+    return _run(api, principal, request, body.thread_id, run, answer)

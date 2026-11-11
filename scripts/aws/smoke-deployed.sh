@@ -2,6 +2,7 @@
 # Smoke-test a deployed API through CloudFront (run by .github/workflows/deploy-aws.yml after every deploy).
 #   scripts/aws/smoke-deployed.sh [<bundle-version>]      # the site URL comes from the SbcApp stack outputs
 #   SITE_URL=https://dxxxx.cloudfront.net scripts/aws/smoke-deployed.sh 2027.2
+#   scripts/aws/smoke-deployed.sh --web                   # the frontends instead (after deploy-web.sh)
 #
 # Checks, with no credentials and no model call:
 # 1. /api/healthz?deep=1: DynamoDB stores, both bots ready, the bundle has plans and the plan_source table,
@@ -10,11 +11,30 @@
 #    and be refused by the bot check (403 with the API's JSON). A missing or wrong x-amz-content-sha256 would
 #    be refused by the Function URL itself, with a different body.
 # Asking a question needs a broker or public session token, so that check stays with WP13.
+# With --web: /, /broker/ and /shopper/ (and an app route) serve their index.html with the CSP header, and
+# each page's script loads.
 source "$(dirname "$0")/_common.sh"
 need curl
 site="${SITE_URL:-$(out "$APP" SiteUrl)}"
 expect="${1:-}"
 echo "smoke test: ${site}"
+
+if [ "$expect" = "--web" ]; then
+  fail=0
+  for path in / /broker/ /shopper/ /broker/some/route; do
+    headers=$(mktemp)
+    page=$(curl -sf --max-time 30 -D "$headers" "${site}${path}") || { echo "FAIL: GET ${path}" >&2; fail=1; continue; }
+    grep -qi '^content-security-policy:' "$headers" || { echo "FAIL: ${path} has no CSP header" >&2; fail=1; }
+    rm -f "$headers"
+    script=$(printf '%s' "$page" | grep -o 'src="/[^"]*\.js"' | head -1 | cut -d'"' -f2)
+    [ -n "$script" ] || { echo "FAIL: ${path} has no app script" >&2; fail=1; continue; }
+    curl -sf --max-time 30 -o /dev/null "${site}${script}" || { echo "FAIL: ${path} script ${script}" >&2; fail=1; }
+    echo "  ${path} ok (${script})"
+  done
+  [ "$fail" = 0 ] || exit 1
+  echo "SMOKE (web): PASS"
+  exit 0
+fi
 
 deep=""
 for attempt in 1 2 3 4 5; do

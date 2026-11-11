@@ -1,0 +1,20 @@
+{
+  "name": "@sbc/chat-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Shared chat components and the API client for the Broker Assistant and the Plan Shopper.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "react-markdown": "9.1.0",
+    "remark-gfm": "4.0.1"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

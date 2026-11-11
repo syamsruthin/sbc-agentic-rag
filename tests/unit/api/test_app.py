@@ -72,6 +72,11 @@ def test_a_lookup_streams_status_then_the_verified_answer(harness: Harness) -> N
     assert answer["plan_keys"] == [GOLD]
     assert "The overall deductible on Example Gold is $" in answer["markdown"]
     assert answer["citations"]
+    # WP12's details footer: where the answer came from, never user text
+    details = answer["details"]
+    assert set(details) == {"path", "llm_calls", "cost_usd", "tools"}
+    assert details["llm_calls"] == 2  # classify, then the fast path's answer
+    assert details["path"]
     # nothing but the rendered answer carries text the model wrote
     assert all("deductible on Example Gold" not in str(d) for e, d in events if e != "answer")
 

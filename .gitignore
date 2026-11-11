@@ -69,3 +69,6 @@ node_modules/
 spikes/aws/cdk_sse/cdk.out/
 infra/cdk/cdk.out/
 infra/cdk/.venv/
+
+# Assembled frontend build (apps/scripts/assemble.mjs)
+apps/site/

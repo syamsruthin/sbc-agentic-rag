@@ -82,11 +82,15 @@ def test_limits_are_per_caller(harness: Harness) -> None:
     assert last(post_sse(second, "/api/broker/chat", {"message": "A different question?"}))[0] == "answer"
 
 
-def test_the_demo_account_has_its_own_tighter_limits(harness: Harness) -> None:
+def test_the_demo_account_has_its_own_tighter_limits(harness: Harness, caplog: Any) -> None:
     portfolio = Portfolio(demo_rate_limits=RateLimits(per_minute=1, per_day=5))
     client = app(harness, auth=Fixed("demo", demo=True), portfolio=portfolio, broker=lookups(1))
     assert last(post_sse(client, "/api/broker/chat", {"message": QUESTION}))[0] == "answer"
-    assert last(post_sse(client, "/api/broker/chat", {"message": "Again?"}))[0] == "limit"
+    with caplog.at_level("INFO", logger="sbc_api.guards"):
+        assert last(post_sse(client, "/api/broker/chat", {"message": "Again?"}))[0] == "limit"
+    # Its own event, for the DemoAccountLimited alarm (WP12); other callers log "rate_limited".
+    events = [getattr(r, "event", None) for r in caplog.records if r.name == "sbc_api.guards"]
+    assert events == ["demo_user_limit_reached"]
 
 
 def test_the_public_bot_is_also_limited_per_ip(harness: Harness) -> None:
@@ -126,6 +130,9 @@ def test_a_repeated_first_question_is_served_from_the_cache_without_a_model_call
     assert name == "answer"
     assert body["cached"] is True
     assert body["markdown"] == original[1]["markdown"]
+    # The first turn's details (path, model calls, cost) aren't replayed: the cache hit made no model call.
+    assert original[1]["details"]["llm_calls"] == 2
+    assert "details" not in body
     assert chat.requests == []
     assert harness.stores.audit.records[-1].detail == {"cached": "true"}  # type: ignore[attr-defined]
 

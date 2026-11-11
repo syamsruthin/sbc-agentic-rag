@@ -21,6 +21,9 @@ from sbc_infra.config import REGION, Settings
 from sbc_infra.constructs.auth import Auth
 from sbc_infra.constructs.data import Data
 
+LOG_LEVEL = "INFO"
+"""The API's log level, for both Lambda's filter and the app (``LOG_LEVEL``)."""
+
 
 class Api(Construct):
     def __init__(
@@ -45,10 +48,16 @@ class Api(Construct):
             timeout=cdk.Duration.seconds(60),
             ephemeral_storage_size=cdk.Size.mebibytes(1024),
             log_group=self.log_group,
+            # JSON log format (WP12): Lambda's own lines (START, REPORT…) become JSON too, and the application
+            # level filter matches the API's JSON lines by their "level" field. LOG_LEVEL below is the same
+            # level, applied inside the app.
+            logging_format=lambda_.LoggingFormat.JSON,
+            application_log_level_v2=lambda_.ApplicationLogLevel[LOG_LEVEL],
+            system_log_level_v2=lambda_.SystemLogLevel.INFO,
             description=f"sbc-agentic-rag API ({settings.env_name}), image {settings.api_image_tag}",
             environment={
                 "APP_ENV": "dev" if settings.env_name == "dev" else "prd",
-                "LOG_LEVEL": "INFO",
+                "LOG_LEVEL": LOG_LEVEL,
                 "SSM_PREFIX": settings.ssm_prefix,
                 "DDB_TABLE_APP": data.tables["app"].table_name,
                 "DDB_TABLE_AUDIT": data.tables["audit"].table_name,

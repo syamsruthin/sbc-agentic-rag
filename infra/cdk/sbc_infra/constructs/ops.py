@@ -28,7 +28,7 @@ LOG_EVENTS = {
     "PdfHashMismatch": ('{ $.event = "pdf_hash_mismatch" }', "An SBC changed upstream: rebuild the bundle"),
     "AuditFailed": ('{ $.event = "audit_failed" }', "An audit record could not be written"),
     "DemoAccountLimited": (
-        '{ ($.event = "rate_limited") && ($.demo IS TRUE) }',
+        '{ $.event = "demo_user_limit_reached" }',
         "The shared demo account hit its limits",
     ),
     "PlanFilterViolation": ('"PlanFilterViolationError"', "A search returned a chunk outside its plans (P1)"),

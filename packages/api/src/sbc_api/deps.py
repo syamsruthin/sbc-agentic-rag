@@ -41,6 +41,7 @@ from sbc_api.memory import (
 )
 from sbc_api.portal_preview import PortalPreviewClient
 from sbc_api.ports import AnswerCache, AuditSink, DailyCap, KillSwitches, PdfCache, RateLimiter, SessionStore
+from sbc_api.tracing import NoTracing, TurnTracer, build_tracer
 from sbc_aws.audit import DynamoAuditSink
 from sbc_aws.cache import DynamoAnswerCache, QueryEmbeddingCache
 from sbc_aws.checkpoint import checkpoint_ttl_seconds, make_checkpointer
@@ -107,6 +108,8 @@ class ApiState:
     """None only in local runs without ``TURNSTILE_SECRET_KEY``: the session route then skips the check."""
     portal: PortalPreviewClient = field(default_factory=PortalPreviewClient)
     init: dict[str, Any] = field(default_factory=dict)
+    tracer: TurnTracer = field(default_factory=NoTracing)
+    """Langfuse, one trace per turn, when both keys are set (:mod:`sbc_api.tracing`)."""
 
 
 def memory_stores() -> Stores:
@@ -220,12 +223,23 @@ def build_state(
         authenticator = _authenticator(env, settings, session_tokens)
     turnstile_secret = env.turnstile_secret_key.get_secret_value() if env.turnstile_secret_key else ""
     turnstile = TurnstileVerifier(turnstile_secret) if turnstile_secret else None
+    tracer = build_tracer(env)
     init = {
         "ms": round((time.perf_counter() - started) * 1000), "secrets_loaded": len(secrets),
         "bundle_version": reader.bundle_version, "search": search_mode, "stores": stores.backend,
+        "tracing": tracer.name,
     }  # fmt: skip
     return ApiState(
-        env, reader, search_mode, bots, stores, authenticator, session_tokens, turnstile, init=init
+        env,
+        reader,
+        search_mode,
+        bots,
+        stores,
+        authenticator,
+        session_tokens,
+        turnstile,
+        init=init,
+        tracer=tracer,
     )
 
 

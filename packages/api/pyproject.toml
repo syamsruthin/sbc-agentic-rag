@@ -10,6 +10,7 @@ dependencies = [
     "sbc-agent",
     "sbc-aws",
     "sbc-core",
+    "langfuse>=5.0.4,<5.1",
 ]
 
 [build-system]

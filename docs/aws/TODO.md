@@ -1,8 +1,8 @@
 # AWS track: to do
 
-Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-10**: after WP9, the
-port of the generation eval (2026-11-05), a doc audit against the code and WP11 (2026-11-10). Finished
-work is in [TASKS_DONE.md](TASKS_DONE.md); each work package's full spec is in [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
+Everything still open on the AWS deployment track (PLAN.md revision 3), as of **2026-11-11**: after WP9, the
+port of the generation eval (2026-11-05), a doc audit against the code, WP11 (2026-11-10), and WP10 and WP12
+(2026-11-11). Finished work is in [TASKS_DONE.md](TASKS_DONE.md); each work package's full spec is in [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 
 All work goes to `main_AWS`, the long-lived AWS branch; it isn't merged into `main`.
 
@@ -14,12 +14,13 @@ done in code here.
 ## 1. Next up, in order
 
 1. ~~WP8: containers and the local stack~~ (done).
-2. ~~WP9: the CDK stacks~~ (done in code). 👤 **The first real deploy** (§2.4, RUNBOOK §4) can happen now: the API answers under `/api/*` before any frontend exists.
-3. ~~WP11: CI/CD~~ (done in code; the frontend job and SPA sync come with WP10). It deploys automatically once the first manual deploy sets `AWS_DEPLOY_ROLE_ARN` (§2.4).
-4. **WP10:** frontends.
-5. **WP12:** observability.
+2. ~~WP9: the CDK stacks~~ (done in code). 👤 **The first real deploy** (§2.4, RUNBOOK §4) can happen now; it publishes the API and the frontends (WP10).
+3. ~~WP11: CI/CD~~ (done in code, with the frontend job and publishing from WP10). It deploys automatically once the first manual deploy sets `AWS_DEPLOY_ROLE_ARN` (§2.4).
+4. ~~WP10: frontends~~ (done in code; checked locally, not on AWS).
+5. ~~WP12: observability~~ (done in code, including optional Langfuse tracing).
 6. **WP13:** portfolio readiness and docs.
 7. **WP14 (later):** Bedrock.
+8. **Toolchain:** move the frontends to Node 22 and the current majors (Vite, Vitest, typescript-eslint), which clears the dev-only `npm audit` advisories (§3 WP10).
 
 👤 items 2.1–2.3 come before the first deploy (2.4). Start with the OpenRouter keys: as of 2026-11-10 the
 broker key has used all of its $5 limit, so every live model call fails until the limit is raised or new keys
@@ -35,11 +36,11 @@ exist.
 - [ ] Create an IAM Identity Center admin user with MFA. Don't create long-lived access keys.
 - [ ] AWS Budgets at $5 and $10 a month with email alerts, plus Cost Anomaly Detection. These are free. WP9 also creates them in code; this is the manual safety net.
 - [ ] Check Service Quotas → Lambda → "Concurrent executions" in `us-east-1`. New accounts can start low. Request 1,000 if it's under 100.
-- [ ] Install AWS CLI v2 and have Docker running with buildx (arm64) on the machine that deploys.
+- [ ] Install AWS CLI v2 and have Docker running with buildx (arm64) on the machine that deploys. Upgrade Node to 22 there too: the local Node 20.10 reached end of life on 2026-10-29 (it still builds the frontends).
 - [ ] `cdk bootstrap aws://<account>/us-east-1`, needed for the spike run and the first deploy (`scripts/aws/bootstrap.sh` does it).
 - [ ] **OpenRouter keys and credit limits:** a broker key at $15 a month and a separate public key at $10 a month (`OPENROUTER_API_KEY_PUBLIC`; the local `.env` has only the broker key), before any public URL exists. This is the hard LLM cost cap. The current broker key is spent ($5.09 of $5, checked 2026-11-10), so raise its limit or replace it first.
-- [ ] A Cloudflare Turnstile widget. Note its site key and secret; its allowed hostnames get the CloudFront domain after the first deploy.
-- [ ] Decide whether Langfuse Cloud Hobby is wanted (optional). If so, create a project and keep its keys.
+- [ ] A Cloudflare Turnstile widget. Note its site key (for `deploy-web.sh`, §2.4) and secret (for `put-secrets.sh`); its allowed hostnames get the CloudFront domain after the first deploy.
+- [ ] Decide whether Langfuse Cloud Hobby is wanted (optional). If so, create a project and give its keys to `put-secrets.sh` (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`); the API then traces each turn (`"tracing": "langfuse"` in deep health).
 
 ### 2.2 Spikes 2 and 3 on AWS (costs cents)
 
@@ -67,8 +68,8 @@ exist.
 - [ ] `scripts/aws/put-secrets.sh` (OpenRouter keys with credit limits, Turnstile secret; session secret generated).
 - [ ] `scripts/aws/upload-bundle.sh bundles/facts-2027.2.sqlite bundles/embeddings.sqlite`.
 - [ ] `scripts/aws/push-images.sh 2027.2` (arm64 build and push; prints the tags).
-- [ ] `scripts/aws/deploy.sh app <api-tag> <build-tag>`; `seed-users.sh`; redeploy with `DEMO_USER_IDS`; `rotate-demo-password.sh`; add the CloudFront host to Turnstile.
-- [ ] Check `https://<site>/api/healthz?deep=1` (`"stores": "dynamodb"`, both bots `ready`), a public session, a broker sign-in token on `/api/broker/plans/search` sent as `X-Sbc-Authorization: Bearer …`, and a streamed chat turn through CloudFront.
+- [ ] `scripts/aws/deploy.sh app <api-tag> <build-tag>`; `seed-users.sh`; redeploy with `DEMO_USER_IDS`; `rotate-demo-password.sh`; `TURNSTILE_SITE_KEY=0x… scripts/aws/deploy-web.sh` (frontends; saves the site key for CI); add the CloudFront host to Turnstile.
+- [ ] Check `https://<site>/api/healthz?deep=1` (`"stores": "dynamodb"`, both bots `ready`) and `smoke-deployed.sh --web`, then in a browser: the landing page's demo login, a Broker Assistant sign-in, plan search and a streamed answer, and a Plan Shopper session (Turnstile) and answer, on desktop and phone widths.
 - [ ] Set the repository variable `AWS_DEPLOY_ROLE_ARN` (GitHub → Settings → Secrets and variables → Actions → Variables) to the `SbcApp` output `DeployRoleArn`. From then on, pushes to `main_AWS` deploy (WP11).
 - [ ] Check the first CI deploy: run `deploy-aws.yml` by hand on `main_AWS`, then a rollback with the previous `image_tag`.
 - [ ] Note any fixes the scripts needed (none has run against AWS yet) and update RUNBOOK §4.
@@ -87,27 +88,18 @@ and an arm64 build (WP11).
 Done on `main_AWS` (TASKS_DONE.md, WP9): the two stacks, 12 template tests (13 since WP11), the scripts and a CI `cdk` job.
 Open: the first real deploy (§2.4).
 
-### WP10: frontends
+### WP10: frontends: done in code
 
-- [ ] **Toolchain:** `apps/` workspace (npm or pnpm), React + Vite + TypeScript + Tailwind; four packages: `chat-ui`, `landing`, `broker`, `shopper`. Vite `base` per app (`/`, `/broker/`, `/shopper/`), and a dev proxy from `/api` to `localhost:8080`.
-- [ ] **`chat-ui`:**
-  - [ ] SSE over `fetch`: read the body stream; parse `thread`, `status`, `answer`, `clarify`, `limit`, `error` and `done`; ignore keepalive comments.
-  - [ ] Every POST gets `x-amz-content-sha256` (the body's SHA-256 through `crypto.subtle`).
-  - [ ] **The bearer token goes in `X-Sbc-Authorization: Bearer …`, never in `Authorization`.** CloudFront's signing replaces `Authorization` (WP9 finding).
-  - [ ] Bearer token handling.
-  - [ ] Components: chat stream with status line, citations panel (opening `/api/sbc/...pdf#page=N`), comparison table, plan picker (`/api/{bot}/plans/search`), clarification options, and a limit or kill-switch notice.
-  - [ ] Feedback buttons (thumbs plus reason codes).
-  - [ ] Warm-on-load: `fetch('/api/healthz')` at start.
-- [ ] **`broker`:** Cognito sign-in (`amazon-cognito-identity-js`, or Amplify Auth only) with SRP and TOTP for admins; tokens in memory with refresh; plan picker filters; CSV export of comparisons; thread list from `/api/broker/threads`, or browser-held thread IDs for the demo account (`shared_account: true`).
-- [ ] **`shopper`:** Turnstile widget → `POST /api/public/session` with the state; token in memory; guided state → plan flow; plain-language UI; the "don't enter personal or health information" notice.
-- [ ] **`landing`:**
-  - [ ] Intro and "Try Plan Shopper" / "Try Broker Assistant" buttons.
-  - [ ] Demo credentials from `/landing/demo.json` (runtime, not baked in), with copy buttons and the shared-account note.
-  - [ ] "Try these" chips (4–6 per bot: a lookup, a comparison, a coverage check, a clarification and an out-of-scope question).
-  - [ ] "How it works" page (diagrams) and "Quality and cost" page (eval numbers, cost per question, monthly AWS cost).
-- [ ] **Environment:** `VITE_API_BASE_URL=/api`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, `VITE_TURNSTILE_SITE_KEY` from the CDK outputs.
-- [ ] **CI job:** `npm ci`, lint, typecheck, build.
-- **Done when:** both bots work end to end at the CloudFront URL, on desktop and phone widths.
+Done on `main_AWS` (TASKS_DONE.md, WP10): the `apps/` npm workspace (`chat-ui`, `landing`, `broker`, `shopper`),
+`scripts/aws/deploy-web.sh`, the CI `frontend` job and publishing in `deploy-aws.yml`. Checked locally against the
+API; not yet against AWS. Left:
+
+- [ ] 👤 The **Done when** check: both bots end to end at the CloudFront URL, on desktop and phone widths (§2.4).
+- [ ] Toolchain: Node 22, then Vite 7+, Vitest 4+ and a typescript-eslint without the `minimatch` advisory. Today's
+      `npm audit` is clean for runtime packages; the remaining advisories are in dev tools only (Vitest's mock
+      server, a lint dependency).
+- [ ] Optional: a way to show an earlier thread's messages. The API keeps them in the checkpoints but has no route
+      to send them back, so reopening a conversation continues it without showing it.
 
 ### WP11: CI/CD: done in code
 
@@ -115,19 +107,23 @@ Done on `main_AWS` (TASKS_DONE.md, WP11): `deploy-aws.yml` (called by CI after e
 redeploy or a rollback), `build-data.yml`, the saved deploy context, the deploy role's CDK permissions and the
 smoke test through CloudFront. Its first run comes after the first manual deploy (§2.4). Left:
 
-- [ ] A `frontend` CI job (`npm ci`, lint, typecheck, build) and, in `deploy-aws.yml`, the SPA build, `s3 sync --delete` and the CloudFront invalidation: with WP10.
+- [x] A `frontend` CI job and, in `deploy-aws.yml`, the frontend build, `s3 sync --delete` and the CloudFront invalidation (with WP10).
 - [ ] A question in the post-deploy smoke test: needs a token, so it comes with WP13's HTTP adapter.
 - [ ] Optional: a DynamoDB Local integration job (`services:` container plus `DDB_LOCAL_ENDPOINT`), and a canary alias shift (`aws_codedeploy`), probably not worth it for a portfolio deploy.
 - **Done when:** a push deploys in under 10 minutes, and a rollback through the workflow works (§4).
 
-### WP12: observability
+### WP12: observability: done in code
 
-- [ ] Lambda log format JSON; `LOG_LEVEL` honored. The metric filters and alarms come from WP9.
-- [ ] `x-request-id` shown in the UI's "report a problem" link.
-- [ ] Optional Langfuse: attach the LangGraph Langfuse callback when `EnvSettings.langfuse_enabled`, with the redaction mask and PLAN.md §7.1's trace attributes (`bot`, `bundle_version`, `config_hash`, prompt versions, usage).
-- [ ] An optional per-answer "details" footer (path, model calls, cost) from the existing trace fields.
-- [ ] Log `demo_user_limit_reached` as its own event for the WP9 metric filter. Today the demo account's refusals log as `rate_limited` with `demo: true`.
-- **Done when:** a deliberate error appears in CloudWatch, triggers the alarm email, and can be found by request ID.
+Done on `main_AWS` (TASKS_DONE.md, WP12): Lambda log format JSON with the `INFO` level, `demo_user_limit_reached`
+and its metric filter, the request ID with "Report a problem" in the apps, the per-answer details footer, and
+optional Langfuse tracing (one trace per turn).
+
+- [x] Langfuse, one trace per turn (`sbc_api/tracing.py`), on when both keys are set.
+- [ ] Optional: a span per graph node with real timings (the turn's trace records each call's latency, not its
+      start time).
+- [ ] 👤 **Done when:** a deliberate error shows in CloudWatch, raises the alarm email, and is found by its request
+      ID. On the first deploy, also check that the API's lines stay JSON objects under the JSON log format (the
+      metric filters read `$.event`).
 
 ### WP13: portfolio readiness and docs
 
@@ -172,6 +168,9 @@ smoke test through CloudFront. Its first run comes after the first manual deploy
 | WP9 | `cdk deploy` of both stacks in a real account, and the eight `scripts/aws/*.sh` against AWS | 👤 (§2.4) |
 | WP9 | The `X-Sbc-Authorization` path end to end through CloudFront with a real Cognito token | 👤 + WP13 |
 | WP9 | The warmer's events reach `POST /events` through the Lambda Web Adapter (if `warmer=true`) | 👤 |
+| WP10 | Both apps at the CloudFront URL: Cognito sign-in (SRP), a Turnstile session, a streamed answer, a PDF citation, CSV export, phone width | 👤 after §2.4 |
+| WP12 | The JSON log format keeps the API's lines as JSON (metric filters match), and a deliberate error reaches the alarm email | 👤 after §2.4 |
+| WP12 | With Langfuse keys: a turn's trace arrives (session, user, model calls, cost) and the cold start with tracing on is measured | 👤 after §2.4 |
 
 ---
 
@@ -208,7 +207,7 @@ The AWS track hosts the app; these are features and evaluations the application 
 
 - **Tokens never go in `Authorization` behind CloudFront.** Origin access control overwrites it, so the apps use `X-Sbc-Authorization`. Direct calls to the Function URL aren't possible anyway (IAM auth).
 - **`PUBLIC_BASE_URL` isn't set on AWS.** Setting it would create a circular stack dependency, and nothing reads it yet.
-- **Limits reply in the stream.** A refused turn is an SSE `limit` event with HTTP 200, not a 429, so the frontend must handle `limit` (WP10). The PDF proxy does use 429.
+- **Limits reply in the stream.** A refused turn is an SSE `limit` event with HTTP 200, not a 429, and the apps show it as a notice (WP10). The PDF proxy does use 429.
 - **DynamoDB errors fail closed.** If DynamoDB can't be reached, a turn returns a 500, because limits can't be checked. That is deliberate (PLAN.md §3.5.6).
 - **Answers are sent whole.** They are not streamed token by token, because nothing passes before the verifier; users see status events, then the answer.
 - **Quarantine is checked after the turn.** The model is still called for a quarantined plan; only the answer is withheld. Checking before the turn would need the plan resolved first.

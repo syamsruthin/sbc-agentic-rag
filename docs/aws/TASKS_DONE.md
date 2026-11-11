@@ -2,7 +2,7 @@
 
 Everything finished so far on the AWS deployment track (PLAN.md revision 3), on branch `main_AWS`.
 
-- Status as of **2026-11-10**: after WP9 and the port of the generation eval (2026-11-05), a doc audit and WP11 (2026-11-10).
+- Status as of **2026-11-11**: after WP9 and the port of the generation eval (2026-11-05), a doc audit and WP11 (2026-11-10), and WP10 and WP12 (2026-11-11).
 - What's left is in [TODO.md](TODO.md).
 - The plan these tasks follow is [MIGRATION_PLAN.md](MIGRATION_PLAN.md).
 - The analysis behind it is [DEPLOYMENT_ANALYSIS.md](DEPLOYMENT_ANALYSIS.md).
@@ -28,16 +28,18 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
 | B | Branch policy: `main_AWS` not merged into `main` | `8adb851` | 2026-11-05 | PR #14 closed unmerged; CI runs on pushes to `main_AWS` |
 | WP9 | CDK stacks, operator scripts | `98a021a` | 2026-11-05 | `SbcFoundation` + `SbcApp`, 12 template tests, 8 scripts, CI `cdk` job; `X-Sbc-Authorization` fix; 4 more tests |
 | D2 | Doc audit against the code | `3ea8294` | 2026-11-10 | PLAN.md plan-resolution order (the change in PR #13), README status, MIGRATION_PLAN WP10/WP11/WP13 and §6.5, §8–§11 brought in line with WP9 as built, TODO and SPIKES notes |
-| WP11 | CI/CD: deploy and data-build workflows | this commit | 2026-11-10 | `deploy-aws.yml` (called by CI after every check), `build-data.yml`, saved deploy context, deploy role through the CDK, smoke test through CloudFront; 1 more template test |
+| WP11 | CI/CD: deploy and data-build workflows | `c0e47fb` | 2026-11-10 | `deploy-aws.yml` (called by CI after every check), `build-data.yml`, saved deploy context, deploy role through the CDK, smoke test through CloudFront; 1 more template test |
+| WP10 | Frontends | this commit | 2026-11-11 | `apps/` npm workspace: `chat-ui`, landing, Broker Assistant (Cognito), Plan Shopper (Turnstile); `deploy-web.sh`; CI `frontend` job and publishing in `deploy-aws.yml`; 11 frontend tests |
+| WP12 | Observability | this commit | 2026-11-11 | Lambda JSON log format, `demo_user_limit_reached` and its alarm, request ID in the apps, per-answer details, optional Langfuse (one trace per turn); 1 more template test, 7 tracing tests |
 | P | Port of the Phase 1 generation eval from `feat/phase-1-generation-eval` | `b69e3f8`, `e912d3a`, `fb21e97`; docs `25bbaca` and the follow-up | 2026-11-05 | `find_plans` list discovery, plan-reference and fast-path fixes, `evals/harness/generation.py`; 13 more tests |
 
 **Health at the time of writing:**
 
-- ruff check and ruff format pass on 189 files.
+- ruff check and ruff format pass on 189 files; the frontends pass ESLint and `tsc`.
 - mypy passes on 138 source files; `sbc_core`, `sbc_extract`, `sbc_tools` and `sbc_aws` are strict.
 - import-linter keeps all 7 contracts.
-- Unit tests: **432 passed**; CDK template tests: **13 passed**; shellcheck clean on every script; actionlint clean on every workflow.
-- The API image builds and passes `smoke.sh`, the compose stack runs on DynamoDB Local, and both CDK stacks synthesize.
+- Unit tests: **439 passed**; CDK template tests: **14 passed**; frontend unit tests: **11 passed**; shellcheck clean on every script; actionlint clean on every workflow.
+- The API image builds and passes `smoke.sh`, the compose stack runs on DynamoDB Local, both CDK stacks synthesize, and the three frontends build.
 - Deterministic eval gate: plan filter 1.0, resolution 1.0, 0 confident wrong-plan, service mapping 1.0, recall@5 1.0 on the fixture.
 - Integration tests: 5 passed on DynamoDB Local 2.6.1 with the corpus present (without corpus data, the 2 ingest
   regression tests skip).
@@ -398,6 +400,71 @@ Everything finished so far on the AWS deployment track (PLAN.md revision 3), on 
   `AWS_DEPLOY_ROLE_ARN` variable (docs/aws/TODO.md §2.4).
 - **Docs:** MIGRATION_PLAN (WP11 as built, status, layout, rollback, first-deploy outline), RUNBOOK §4 and §5,
   docs/aws/TODO.md, `infra/cdk/README.md`, `infra/README.md`, README.
+
+### WP10: Frontends (2026-11-11)
+
+- **Workspace:** `apps/` is one npm workspace (`package-lock.json`) with React 18.3, Vite 6.4, TypeScript 5.9,
+  Tailwind 3.4, ESLint 9 and Vitest 3. `npm run check` lints, typechecks, tests and builds; `scripts/assemble.mjs`
+  lays the builds out as CloudFront serves them (`apps/site/`: `/`, `/broker/`, `/shopper/`).
+- **`chat-ui`** (shared):
+  - `api.ts`: the token in `X-Sbc-Authorization`, `x-amz-content-sha256` on every POST, the API's `detail` and
+    `x-request-id` on errors, a 401 callback, and `warmUp()` (`/api/healthz` at load).
+  - `sse.ts`: SSE over `fetch` (chunk boundaries, CRLF, split UTF-8, keepalive comments; unknown events ignored).
+  - `useChat`: one thread per conversation, status lines, answer/clarify/limit/error, stop, and resume.
+  - Components: the chat panel, answers as Markdown with raw HTML off and a numbered source list, clarification
+    buttons (and "Pick a plan…" when the API asks for the picker), limit and error notices, thumbs with reason
+    codes, "Report a problem" with the request ID, the plan picker (catalog data labeled "catalog") and CSV export
+    (formula-looking cells prefixed with `'`).
+- **Broker:** Cognito SRP sign-in with TOTP, TOTP enrollment and new-password steps; tokens in memory with refresh;
+  filters for state, market, plan type and metal; up to 6 plans; CSV export; conversations from
+  `/api/broker/threads`, or this browser's own for the shared demo account. Local mode without a user pool.
+- **Shopper:** a state from the 17 with Individual plans, Turnstile, `POST /api/public/session`; up to 3 plans;
+  back to the start on a 401. Local mode without a site key.
+- **Landing:** demo login from `/landing/demo.json` with copy buttons, "Try these" links (`?q=`), and "How it
+  works" and "Quality and cost" pages. The quality page uses only recorded numbers (retrieval eval on golden 0.2.0,
+  measured cost per turn, the estimated idle AWS cost).
+- **Deploy:** `scripts/aws/deploy-web.sh` (stack outputs and the Turnstile site key from SSM; sync without
+  touching `landing/`; long cache for hashed assets, none for `index.html`; invalidation). `deploy-aws.yml` runs
+  it after the API smoke test, then `smoke-deployed.sh --web` (each page, its CSP header and script). The site
+  key is read by path, which the deploy role already allows.
+- **CI:** a `frontend` job (`npm ci`, lint, typecheck, tests, build) that the deploy waits for.
+- **Checked locally** against the API (`APP_ENV=local`, real `2027.1` bundle) through the landing dev server's
+  proxy: plan search and filters, a streamed broker turn (the OpenRouter key is used up, so it ended in the
+  fallback message) with details and a request ID matching the API's log line, a public session and plan list
+  (Colorado, 259 plans), the 503 for the unconfigured public bot, and phone width (no horizontal scroll). That run
+  found that the local API can't read the state from a session token, so the shopper now sends it too.
+- **Dependencies:** runtime packages audit clean (the first pins pulled an old `js-cookie` through the Cognito
+  library; moved to current patch releases). Dev-only advisories (Vitest, a typescript-eslint dependency) need
+  majors that need Node 20.19+.
+- **Not run:** anything on AWS (Cognito, Turnstile, CloudFront, S3).
+
+### WP12: Observability (2026-11-11)
+
+- **Lambda logs:** log format `JSON`, application and system level `INFO`, from one `LOG_LEVEL` constant that
+  also sets the app's `LOG_LEVEL`. Template test updated.
+- **`demo_user_limit_reached`:** the demo account's refusals log it instead of `rate_limited`; the
+  `DemoAccountLimited` filter matches it. A new template test checks the filters against the logged events.
+- **Details footer:** `sbc_api.sse.turn_details()` (path, model calls, cost, tools) is sent on answer events and
+  logged with each turn; cached answers don't carry it. Tests: the lookup's details, and the cache leaving them out.
+- **Request ID:** shown in the apps with "Report a problem" (WP10).
+- **Langfuse, one trace per turn** (the user's choice, 2026-11-11; `sbc_api/tracing.py`):
+  - Built after the turn from its recorded trace with the `langfuse` SDK alone (`langfuse>=5.0.4,<5.1`; no
+    `langchain`): the root `agent` observation (redacted question, verified answer, path, intent, plans, verifier
+    rejections, fallback, prompt versions), a `generation` or `embedding` per model call (model, tokens, cost,
+    latency) and a `tool` per tool call (name and success only).
+  - Trace attributes through `propagate_attributes`: bot and reply kind as tags (plus `cached`, `demo`), the
+    thread as the session, the hashed actor (as in the audit log) as the user, request ID, bundle version and
+    config hash.
+  - A mask runs the ingress redaction over every exported string (it also masks phone numbers and dates an SBC
+    quotes in an answer, in the trace only).
+  - On only when both keys are set; the SDK (and OpenTelemetry) is imported only then. Each response flushes the
+    tracer after its last event; a tracer error is logged as `trace_failed` and the turn goes on. Deep health shows
+    `tracing`.
+  - Rejected: the LangGraph callback, which needs the full `langchain` package and can't see the model calls.
+  - Tests (7): off without both keys, the mask, the exported spans (through an in-memory OpenTelemetry exporter:
+    attributes, masking, usage and cost, no tool arguments), a turn traced and flushed with a redacted question,
+    cached answers, a failing tracer, and deep health.
+- **Not run:** the JSON log format and the alarm on AWS.
 
 ---
 

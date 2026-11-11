@@ -6,9 +6,9 @@ Agentic RAG chatbots that answer questions about U.S. health plans and compare t
 Summary of Benefits and Coverage (SBC). Every number in an answer is the SBC's own wording, cited to the
 plan, section and page.
 
-> **Status: backend built, not yet deployed.** The SBC pipeline (9,692 plan-year-2027 SBCs converted to
-> Markdown and independently verified), the facts bundle, the agent and the API work today and run locally.
-> The web apps and the first AWS deployment are left; see [Status and roadmap](#status-and-roadmap). The full
+> **Status: built, not yet deployed.** The SBC pipeline (9,692 plan-year-2027 SBCs converted to
+> Markdown and independently verified), the facts bundle, the agent, the API and the web apps work today and
+> run locally. The first AWS deployment is left; see [Status and roadmap](#status-and-roadmap). The full
 > design is in [PLAN.md](PLAN.md).
 
 ## Two assistants, one core
@@ -114,11 +114,11 @@ packages/      Python workspace packages (imported as sbc_<name>)
   agent/         LangGraph graph, prompts, verifier, renderer
   aws/           AWS adapters (sbc_aws): SSM secrets, DynamoDB checkpointer and stores, S3 PDF cache
   api/           FastAPI app: SSE chat, auth, guards, plan picker, PDF proxy, admin
-apps/          landing/, broker/, shopper/, chat-ui/ (React; not built yet, AWS WP10)
+apps/          landing/, broker/, shopper/, chat-ui/ (React + Vite npm workspace, AWS WP10; see apps/README.md)
 evals/         golden datasets, judge calibration, harness
 tests/         unit/, integration/, contract/, load/
 infra/         Docker images and compose (docker/), AWS CDK app (cdk/: SbcFoundation + SbcApp stacks)
-scripts/aws/   bootstrap, deploy, secrets, images, users, demo password, offline build, post-deploy smoke test
+scripts/aws/   bootstrap, deploy, frontends, secrets, images, users, demo password, offline build, smoke tests
 spikes/        throwaway AWS experiments and their scripts (docs/aws/SPIKES.md)
 docs/          pipeline, agent graph, tools and answer-path notes; review sheets; ADRs; aws/ deployment track
 data/          fetched and generated SBC data (not committed)
@@ -180,6 +180,12 @@ curl -sN -X POST localhost:8080/api/broker/chat -H 'content-type: application/js
 Locally every request is a developer principal and the stores are in-process; set the `DDB_TABLE_*` variables
 (and `AWS_ENDPOINT_URL_DYNAMODB` for DynamoDB Local) to use DynamoDB instead.
 
+### Run the web apps locally
+
+With the API running as above, from `apps/`: `npm install`, then `npm run dev:broker`, `npm run dev:shopper`
+and `npm run dev:landing` in three terminals, and open http://localhost:5173. Locally the Broker Assistant
+skips sign-in and the Plan Shopper skips Turnstile; [apps/README.md](apps/README.md) has the details.
+
 To run the Lambda image itself on DynamoDB Local:
 
 ```bash
@@ -205,11 +211,11 @@ if any secret it needs is missing.
 | Repository setup and public-repo hygiene | Done |
 | Scaffolding: workspace, config, lint, types, tests, CI | Done (PR #1) |
 | Phase 0: extraction, facts bundle with search index, golden dataset | Done: eval bar met and human sign-offs recorded (2026-11-02); taxonomy v2 synonyms left |
-| Phase 1: Broker Assistant MVP (internal alpha) | In progress: tools, answer path, agent graph, the generation eval harness and the API (SSE chat, auth, guards, plan picker, PDF proxy) done; frontends, deployment, the full gating run and the model bake-off left |
+| Phase 1: Broker Assistant MVP (internal alpha) | In progress: tools, answer path, agent graph, the generation eval harness and the API (SSE chat, auth, guards, plan picker, PDF proxy) and the web apps done; deployment, the full gating run and the model bake-off left |
 | Phase 2: Broker beta (calculator, multi-turn, rankings) | Planned |
 | Phase 3: Plan Shopper (public) | Planned |
 | Phase 4: production hardening and GA | Planned |
-| AWS deployment track (branch `main_AWS`, the long-lived AWS branch; not merged into `main`) | WP0–WP9 and WP11 done (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers, CDK stacks, deploy and data-build workflows); first deploy, WP10, WP12–WP14 left |
+| AWS deployment track (branch `main_AWS`, the long-lived AWS branch; not merged into `main`) | WP0–WP12 done in code (config, AWS adapters, bundle PDF sources, API, auth, guards, PDF proxy, containers, CDK stacks, frontends, deploy and data-build workflows, observability with optional Langfuse); first deploy, WP13 and WP14 left |
 
 [TODO.md](TODO.md) has the detailed checklist; PLAN.md section 11 has each phase's acceptance criteria and
 eval bar. The AWS track's progress is in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_DONE.md) and

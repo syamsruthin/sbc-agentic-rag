@@ -23,6 +23,7 @@ def healthz(request: Request, deep: bool = False) -> dict[str, Any]:
             "plan_source": meta.get("plan_source"),
             "search": state.search_mode,
             "stores": state.stores.backend,
+            "tracing": state.tracer.name,
             "bots": {
                 bot.value: ("ready" if rt.agent is not None else f"unavailable: {rt.unavailable}")
                 for bot, rt in state.bots.items()

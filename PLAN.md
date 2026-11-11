@@ -791,6 +791,7 @@ Plan-filter correctness must be 100% in all three. Recall gates apply to the ful
   - latency per span.
 - **Privacy:** user text is redacted before it reaches Langfuse (masking hook).
 - **Correlation:** a request ID flows from browser to API (`x-request-id`, from the Lambda request ID) to Langfuse trace to CloudWatch log line and back in response headers, so a user's "report" button links straight to the trace.
+- **As built (AWS WP12, 2026-11-11):** the trace is built after each turn from what the graph records: the turn (redacted question, verified answer, path, intent, plans, verifier and fallback, prompt versions), every model call (model, tokens, cost, latency) and every tool call (name and success; no arguments, for privacy). It has no span per graph node yet, and per-call latency is metadata rather than span timing. The request ID is a trace attribute. See `packages/api/src/sbc_api/tracing.py`.
 
 ### 7.2 Dashboards
 
@@ -890,10 +891,11 @@ main_AWS: every check above passes (docs-only pushes stop here)
       → bundle from S3 (built by the Fargate task when the data changes; version pinned in the workflow)
       → build the arm64 image, push to ECR → cdk deploy SbcApp (CloudFormation publishes a version
         and moves the live alias) → smoke through CloudFront (deep health, a POST through OAC)
-      → sync the SPAs, invalidate CloudFront (with the frontends)
+      → build the frontends, s3 sync (never touching landing/demo.json), invalidate CloudFront
+        → smoke the apps through CloudFront
 ```
 
-As built (docs/aws/MIGRATION_PLAN.md WP11): `ci.yml` calls `deploy-aws.yml` after its checks. The deploy goes through the CDK because CloudFormation owns the `live` alias. A question in the smoke test needs a session token and waits for the deployed-API eval adapter (WP13), and the weighted canary is not built (optional).
+As built (docs/aws/MIGRATION_PLAN.md WP11, with the frontend steps from WP10): `ci.yml` calls `deploy-aws.yml` after its checks, including the `frontend` job. The deploy goes through the CDK because CloudFormation owns the `live` alias. A question in the smoke test needs a session token and waits for the deployed-API eval adapter (WP13), and the weighted canary is not built (optional).
 
 **Rollback:** deploy the previous image tag (the deploy workflow's `image_tag` input), or in an emergency move the `live` alias back by hand in under a minute and then deploy that tag, so the next deploy doesn't move it again. Code, facts and search index roll back together (§3.2.5). DynamoDB has no schema migrations; item shapes stay backward compatible for one release.
 

@@ -39,18 +39,38 @@ def event(name: str, data: dict[str, Any]) -> str:
     return f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
 
+def turn_details(reply: Reply) -> dict[str, Any] | None:
+    """Where an answer came from (the graph path, model calls, cost and tools), from the turn's trace; None
+    when there is no trace (a cached answer). It never holds user text. The apps show it in an optional
+    "Details" footer, and the API logs it with each turn (WP12)."""
+    trace = reply.trace
+    if not trace:
+        return None
+    usage = list(trace.get("usage", [])) + ([trace["classify_usage"]] if trace.get("classify_usage") else [])
+    return {
+        "path": trace.get("path"),
+        "llm_calls": len(usage),
+        "cost_usd": round(sum(u.get("cost_usd") or 0 for u in usage), 6),
+        "tools": [str(t.get("name")) for t in trace.get("tools", [])],
+    }
+
+
 def reply_payload(reply: Reply) -> tuple[str, dict[str, Any]]:
-    """The SSE event name and body for a finished turn."""
+    """The SSE event name and body for a finished turn, with :func:`turn_details` on answers when known."""
     if reply.kind == "clarify" and reply.clarification is not None:
         c = reply.clarification
         return "clarify", {
             "question": c.question, "open_plan_picker": c.open_plan_picker,
             "options": [{"label": o.label, "plan_key": o.plan_key} for o in c.options],
         }  # fmt: skip
-    return "answer", {
+    body: dict[str, Any] = {
         "kind": reply.kind, "markdown": reply.markdown, "plan_keys": list(reply.plan_keys),
         "citations": [dict(c) for c in reply.citations],
     }  # fmt: skip
+    details = turn_details(reply)
+    if details is not None:
+        body["details"] = details
+    return "answer", body
 
 
 def stream_turn(

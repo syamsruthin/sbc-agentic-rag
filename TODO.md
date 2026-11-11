@@ -134,12 +134,14 @@ work packages are tracked in detail in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_D
 - [x] Build that endpoint with the API, and point those plans' citations at it (AWS WP3 + WP7:
       `GET /api/sbc/{plan_key}.pdf`; the bundle's `plan_source` table holds the form fields and sha256; the real
       bundle `2027.2` still has to be rebuilt where the corpus lives)
-- [ ] Broker web app with plan picker
+- [x] Broker web app with plan picker (AWS WP10, `apps/broker`: Cognito sign-in, filters, comparisons with CSV
+      export; checked locally, not yet on AWS)
 - [x] Broker auth, as Amazon Cognito instead of Supabase (revision 3; AWS WP5): invite-only, TOTP MFA, groups,
       JWKS verification; anonymous public sessions after Turnstile. A real Cognito pool is created in WP9
 - [x] Guards (AWS WP6): rate limits, global daily cap, exact-answer cache, kill switches, quarantine, thread
       ownership, audit log, feedback, admin endpoints
-- [ ] Langfuse tracing (optional on the AWS track; AWS WP12)
+- [x] Langfuse tracing, optional (AWS WP12): one trace per turn with every model and tool call, redacted, on
+      when both keys are set (`sbc_api/tracing.py`)
 - [ ] Model bake-off report
 - [ ] Deployed: on the AWS track, the portfolio deployment (Lambda + CloudFront; AWS WP8–WP13)
 - [ ] MVP gating set (353 items of golden 0.2.0) passing all hard gates; the other 57 reported

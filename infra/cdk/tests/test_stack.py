@@ -63,11 +63,14 @@ def test_the_api_lambda_streams_behind_iam(stacks: dict[str, Template]) -> None:
             "Timeout": 60,
             "PackageType": "Image",
             "EphemeralStorage": {"Size": 1024},
+            # WP12: JSON logs; the metric filters read the API's "event" field.
+            "LoggingConfig": {"LogFormat": "JSON", "ApplicationLogLevel": "INFO", "SystemLogLevel": "INFO"},
             "Environment": {
                 "Variables": Match.object_like(
                     {
                         "APP_ENV": "dev",
                         "SSM_PREFIX": "/sbc/dev/",
+                        "LOG_LEVEL": "INFO",
                         "SBC_PORTFOLIO__DEMO_USER_IDS": '["11111111-2222-3333-4444-555555555555"]',
                     }
                 )
@@ -288,3 +291,14 @@ def test_alarms_stay_within_the_free_ten_and_costs_are_watched(stacks: dict[str,
             "ScheduleExpressionTimezone": "America/New_York",
         },
     )
+
+
+def test_metric_filters_match_the_events_the_api_logs(stacks: dict[str, Template]) -> None:
+    """Each alarm on an application event watches an ``event`` value the API writes (WP12)."""
+    patterns = {
+        f["Properties"]["MetricTransformations"][0]["MetricName"]: f["Properties"]["FilterPattern"]
+        for f in resources(stacks["app"], "AWS::Logs::MetricFilter").values()
+    }
+    assert patterns["DemoAccountLimited"] == '{ $.event = "demo_user_limit_reached" }'
+    assert patterns["GlobalCapReached"] == '{ $.event = "global_cap_reached" }'
+    assert patterns["AuditFailed"] == '{ $.event = "audit_failed" }'

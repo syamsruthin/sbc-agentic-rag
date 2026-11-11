@@ -1,0 +1,17 @@
+{
+  "name": "landing",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@sbc/chat-ui": "0.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

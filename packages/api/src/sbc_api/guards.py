@@ -67,7 +67,9 @@ def rate_limited(api: ApiState, principal: Principal, ip: str | None) -> dict[st
         decision = api.stores.limiter.hit(f"public:ip:{ip}", ip_windows(config.bot.rate_limits))
     if decision.allowed:
         return None
-    log.info("rate limited", extra={"event": "rate_limited", "bot": principal.bot.value, "scope": scope,
+    # The shared demo account's refusals get their own event: the DemoAccountLimited alarm watches it (WP12).
+    event = "demo_user_limit_reached" if principal.is_demo else "rate_limited"
+    log.info("rate limited", extra={"event": event, "bot": principal.bot.value, "scope": scope,
                                     "window": decision.window, "demo": principal.is_demo})  # fmt: skip
     return {"scope": scope, "retry_after_s": decision.retry_after_s, "message": TOO_MANY}
 

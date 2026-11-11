@@ -11,7 +11,9 @@ name: Deploy to AWS
 # (docs/aws/RUNBOOK.md section 4), which saves the stack's context in SSM for this workflow to reuse.
 # Changes that widen IAM fail here on purpose (`--require-approval broadening` with no terminal): deploy those
 # by hand with scripts/aws/deploy.sh.
-# The frontends (WP10) will add an SPA build, `s3 sync --delete` and a CloudFront invalidation here.
+# After the API, the deploy job builds the frontends (apps/, WP10) and publishes them with
+# scripts/aws/deploy-web.sh: `s3 sync --delete` (never touching landing/demo.json) and a CloudFront
+# invalidation. The Turnstile site key comes from SSM, saved by the first manual deploy-web.sh run.
 
 on:
   workflow_call:
@@ -107,11 +109,15 @@ jobs:
         run: |
           [[ "$TAG" =~ ^[0-9a-f]{12}-[0-9]{4}\.[0-9]+$ ]] || { echo "::error::bad image tag '$TAG'"; exit 1; }
           scripts/aws/deploy.sh app "$TAG"
-      - name: Smoke test through CloudFront
+      - name: Smoke test the API through CloudFront
         run: scripts/aws/smoke-deployed.sh "${TAG#*-}"
+      - name: Build and publish the frontends
+        run: scripts/aws/deploy-web.sh
+      - name: Smoke test the frontends
+        run: scripts/aws/smoke-deployed.sh --web
       - name: Summary
         run: |
           {
-            echo "### Deployed \`${TAG}\` to \`SbcApp-${SBC_ENV}\`"
+            echo "### Deployed \`${TAG}\` and the frontends to \`SbcApp-${SBC_ENV}\`"
             echo "Roll back by running this workflow with the previous tag (ECR keeps the last 3)."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,41 @@
+{
+  "name": "sbc-apps",
+  "private": true,
+  "description": "Frontends for sbc-agentic-rag: landing page, Broker Assistant, Plan Shopper and the shared chat-ui package (docs/aws/MIGRATION_PLAN.md WP10).",
+  "type": "module",
+  "engines": {
+    "node": ">=20.10"
+  },
+  "workspaces": [
+    "chat-ui",
+    "landing",
+    "broker",
+    "shopper"
+  ],
+  "scripts": {
+    "dev:landing": "npm run dev -w landing",
+    "dev:broker": "npm run dev -w broker",
+    "dev:shopper": "npm run dev -w shopper",
+    "lint": "eslint --max-warnings 0 .",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "vitest run",
+    "build": "npm run build -w landing -w broker -w shopper && node scripts/assemble.mjs",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "autoprefixer": "10.6.2",
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "5.2.0",
+    "globals": "16.5.0",
+    "postcss": "8.5.32",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "6.4.5",
+    "vitest": "3.2.7"
+  }
+}
