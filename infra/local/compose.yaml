@@ -69,7 +69,9 @@ services:
       args:
         BUNDLE_FILE: ${SBC_BUNDLE_FILE:-facts-2027.2.sqlite}
     depends_on: [dynamodb, aws, s3]
-    env_file: [../../.local/runtime.env]  # up.sh creates it (bootstrap fills it in)
+    # stack.env as the native API gets it (the portfolio limits above all); every host-specific value in it (the
+    # localhost endpoints, the bundle path) is replaced below by its Docker-side value. Then the generated values.
+    env_file: [./stack.env, ../../.local/runtime.env]
     environment:
       <<: *aws-in-docker
       DDB_TABLE_APP: sbc-local-app

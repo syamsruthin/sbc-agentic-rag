@@ -15,7 +15,9 @@ unhandled errors now keep their request ID and raise an `ApiErrors` alarm, Langf
 replay of model calls, so repeated local runs cost nothing) are done, and so is L2: the release bundle `2027.2`
 (1,381 preview-only plans, 0 missing, no new embeddings; retrieval eval as on 2027.1: full recall@5 0.920, every
 gate passes) with a live PDF proxy check, and L8: the offline build image ran `build-pipeline bundle` against the local
-bucket and produced the same bundle.
+bucket and produced the same bundle. L9 is done too: a 43-check smoke test through the edge (free in replay mode), the
+HTTP eval adapter (WP13), and a browser walkthrough; it found and fixed cached answers skipping the quarantine
+check. Left: the 30-item HTTP eval run.
 
 ## Checkpoints
 

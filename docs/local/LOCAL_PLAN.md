@@ -1,7 +1,7 @@
 # Local track: the whole application on a Mac, end to end
 
-Branch **`main_local`**, cut from `main_AWS` at `bc93183` on 2026-11-11. Status: **plan approved 2026-11-11**;
-implementation in progress (see the roadmap checkboxes).
+Branch **`main_local`**, cut from `main_AWS` at `bc93183` on 2026-11-11. Status: **L0–L9 done 2026-11-11**; one item
+waits for approval (the 30-item HTTP eval, section 11). Model spend for the whole track: about $0.40.
 
 The goal: run every feature of both assistants on one Mac (Apple Silicon, Docker Desktop) the way it will run on
 AWS, using local stand-ins for the AWS services, before the first AWS deploy. Anything that can only be proven in
@@ -143,7 +143,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 | **L6** ✅ | Observability: JSON logs, request-ID lookup, Langfuse | L3 | 0.5 |
 | **L7** ✅ | Model replay mode | L3 | 0.5 |
 | **L8** ✅ | Offline build image against the local bucket | L3, L2 | 0.5 |
-| **L9** | Verification: smoke test, HTTP eval, browser click-through | all | 1 |
+| **L9** ✅ | Verification: smoke test, HTTP eval, browser click-through | all | 1 |
 
 ### L0: prerequisites 👤
 
@@ -402,9 +402,9 @@ serves from it. This is the WP8 open check, minus ECS.
 
 ### L9: verification
 
-- `scripts/local/smoke.sh`: every route and guard in section 2 as `curl` checks with pass/fail output, against
+- `scripts/local/smoke.sh`: every route and guard in section 2 as checks with pass/fail output, against
   the edge (`:8088`), not the API port. It signs in through moto to get tokens.
-- `evals/harness/http.py`: the WP13 HTTP adapter (SSE events → `Reply`, reusing `generation.py`'s scoring) and a
+- `evals/harness/http_api.py`: the WP13 HTTP adapter (SSE events → `Reply`, reusing `generation.py`'s scoring) and a
   run of about 30 golden 0.2.0 items through the local API.
 - A pytest integration suite under `tests/integration/local/`, skipped unless the stack is up.
 - A browser click-through: landing → Shopper question → broker sign-in → comparison → PDF citation for a
@@ -413,7 +413,41 @@ serves from it. This is the WP8 open check, minus ECS.
 
 **Done when:** section 11 holds.
 
-## 6. Code changes, by file
+> **Status: done 2026-11-11, except the 30-item HTTP eval, which waits for your go-ahead (about $0.30–0.60 to
+> record, then free).** Model cost: $0.042 (recording the smoke test and 3 eval items).
+> - **Smoke test** (`scripts/local/smoke.py`, `make smoke`): 43 checks through the edge: health, the edge's
+>   routes, rewrite, headers and caching, the warmer, sign-in scopes (no token, tampered, `Authorization`
+>   dropped, cross-bot, admin-only), plan search and details, the Turnstile session and the public scope, a
+>   fast-path answer, a follow-up, an agent-loop comparison, clarify then choose, a Plan Shopper answer, the
+>   answer cache, threads, feedback, thread ownership, the request-ID log lookup, quarantine, the kill switch,
+>   the demo limit, and the PDF proxy (preview-only, direct link, unknown). Recorded once ($0.0304, 16 model
+>   calls), then **43/43 in replay with OpenRouter unreachable, in 6 s, natively and in the API image**. It
+>   refuses a live API unless given `--allow-live`. `tests/integration/local/test_smoke.py` runs it under
+>   `pytest -m integration` when the stack is up in replay mode.
+> - **Found and fixed:** (1) a cached answer skipped the quarantine check, so a plan quarantined after its answer
+>   was cached kept being answered for up to 24 hours (`routes/chat.py`; unit test). (2) The API image didn't get
+>   `stack.env`, so it ran with the default demo limit (15 a minute, not 5); compose now passes it, with the
+>   Docker-side values still winning.
+> - **The new recorded answers checked against the SBCs:** the comparison (BTCU8 and 0JF1 ER rows) and the
+>   choose-a-plan answer (BTCU8 deductible) quote the SBCs exactly. **For review, not fixed here:** the comparison
+>   ends with "For ER care, 0JF1 costs the member less", the model's own judgment, while the 0JF1 note it quotes
+>   says the ER physician fee isn't covered at non-IHCP providers; and the choose answer opens with "Here is the
+>   corrected answer" (wording from the verifier's retry). Both belong to the answer path (PLAN.md), not this track.
+> - **HTTP eval adapter** (`evals/harness/http_api.py`, `scripts/local/eval-http.sh`, `make eval-http`): golden
+>   items as SSE turns, scored with `generation.py`'s checks (the runner now takes any object with `ask`, an
+>   `Asker` protocol). Rate limits are waited out. Ungrounded numbers and tool selection can't be seen over HTTP
+>   and are reported as not scored, never as passed. 3 items recorded ($0.0112) and replayed: all gates pass,
+>   behavior 3/3. **Left (asks first):** the ~30-item run (`make eval-http` in record mode).
+> - **Browser walkthrough** in replay at :8088: sign-in, the comparison with **CSV export** (the download was
+>   captured in the page: the table's rows, the SBC wording; the cells keep the `[1]` markers), citations (the
+>   preview-only BTCU8 through `/api/sbc/…pdf#page=3`, 0JF1 straight to the insurer's PDF), and **clarify then
+>   choose** through the option buttons; no console errors. L5 covered the landing page, the Plan Shopper and
+>   phone widths.
+> - **Latency:** live fast-path turns took 7–10 s locally (8 s typical: three model calls over OpenRouter from
+>   this machine), above the 4 s p50 target, which is for AWS and needs measuring there (WP13). Replayed turns
+>   take under 1 s, which isolates the app's own time from the models'.
+> - `make up` from a stopped stack: 8 s.
+ Code changes, by file
 
 All changes are switched by configuration and keep today's behavior when the new settings are absent, so they can
 go to `main_AWS` unchanged (section 8).
@@ -428,7 +462,8 @@ go to `main_AWS` unchanged (section 8).
 | 6 ✅ | `packages/api/src/sbc_api/logging.py` | Optional `LOG_FILE` for a JSON-lines copy of the log |
 | 6a ✅ | `packages/api/src/sbc_api/app.py`, `infra/cdk/sbc_infra/constructs/ops.py` | Not planned; found in L6: unhandled errors keep their request ID (JSON `ERROR` line, header, body), and an `ApiErrors` alarm on `ERROR` lines |
 | 7 ✅ | `packages/core/src/sbc_core/replay.py` (new), `config.py`, `sbc_api/deps.py`, `routes/health.py`, `sbc_retrieval/text_search.py` | L7 replay mode: `LLM_MODE`, `ReplayGateway`, the `ModelGateway` protocol |
-| 8 | `evals/harness/http.py` | The HTTP eval adapter (WP13) |
+| 8 ✅ | `evals/harness/http_api.py`, `evals/harness/generation.py` (`Asker`) | The HTTP eval adapter (WP13) |
+| 8a ✅ | `packages/api/src/sbc_api/routes/chat.py` | Not planned; found in L9: cached answers get the quarantine check |
 | — | New: `infra/local/`, `scripts/local/`, `docs/local/`, `Makefile` | The stack, scripts and runbook |
 
 Each change gets unit tests; CI (`ruff`, `mypy`, `lint-imports`, `pytest tests/unit`, frontend checks) stays
@@ -489,11 +524,12 @@ Decided 2026-11-11 (Syamsruthin Kaliki):
 
 ## 11. Definition of done
 
-- `make up` (or `scripts/local/up.sh`) from a clean checkout plus `.env` brings the stack up in under 3 minutes;
-  `make down` and `make up` keep all state; `make down --wipe` resets it.
-- `make smoke` passes every check in section 2, through the edge, in both API modes (native and image).
-- The browser click-through in L9 works at desktop and phone widths.
-- The HTTP eval on ~30 golden items has no hard-gate failures.
-- `docs/local/RUNBOOK.md` explains setup, daily use, every script, the users, resetting, and troubleshooting; the
+- [x] `make up` (or `scripts/local/up.sh`) from a clean checkout plus `.env` brings the stack up in under 3 minutes
+  (8 s once the images are pulled); `make down` and `make up` keep all state; `make wipe` resets it.
+- [x] `make smoke` passes every check in section 2, through the edge, in both API modes (native and image): 43/43.
+- [x] The browser click-through works at desktop and phone widths (L5 and L9).
+- [ ] The HTTP eval on ~30 golden items has no hard-gate failures: the adapter works (3 items, all gates pass); the
+  30-item run waits for approval of its recording cost.
+- [x] `docs/local/RUNBOOK.md` explains setup, daily use, every script, the users, resetting, and troubleshooting; the
   README, `apps/README.md`, `docs/aws/RUNBOOK.md` §1, `docs/aws/TODO.md` and `.env.example` point to it.
-- CI is green on `main_local`.
+- [x] CI is green on `main_local` (every push so far).

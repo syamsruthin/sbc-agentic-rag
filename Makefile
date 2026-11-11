@@ -1,5 +1,5 @@
 # Shortcuts for the local stack (docs/local/RUNBOOK.md). Each target runs a script in scripts/local/.
-.PHONY: up up-image api api-record api-replay web web-dev down wipe status logs
+.PHONY: up up-image api api-record api-replay web web-dev smoke eval-http down wipe status logs
 
 up:        ## start the stand-ins and the edge; then `make api`
 	scripts/local/up.sh
@@ -15,6 +15,10 @@ web:       ## build the apps with the local settings (served at :8088)
 	scripts/local/web.sh
 web-dev:   ## the apps' Vite dev servers with the local settings (:5173)
 	scripts/local/web.sh --dev
+smoke:     ## the end-to-end smoke test (the API in replay mode: no cost)
+	scripts/local/smoke.sh
+eval-http: ## golden items through the API over HTTP (replay: no cost once recorded)
+	scripts/local/eval-http.sh --sample 30
 down:      ## stop the stack, keeping its state
 	scripts/local/down.sh
 wipe:      ## stop the stack and drop its state

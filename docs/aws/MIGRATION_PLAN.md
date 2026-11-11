@@ -864,7 +864,7 @@ The roles follow DEPLOYMENT_ANALYSIS.md §6.5: the API's execution role, the Git
 | Integration | API + DynamoDB Local through `compose.yaml`; checkpoint resume across processes | pytest `-m integration` | Locally, before each WP merge |
 | Eval (existing) | Deterministic CI gate on the fixture bundle | `evals.harness.ci_gate` | CI |
 | Eval (existing) | Golden 0.2.0 through the in-process agent graph (hard gates, behavior, tool selection, cost) | `evals.harness.generation` | Manually; needs OpenRouter credit |
-| Eval (new) | Golden subset through the deployed HTTP API | `evals/harness` HTTP adapter | Manually after deploys (WP13) |
+| Eval (new) | Golden subset through the deployed HTTP API | `evals/harness/http_api.py` (built on `main_local` L9) | Manually after deploys (WP13) |
 | E2E smoke | Landing → both bots → PDF link | Playwright (headless Chromium) | After deploy (optional CI job) |
 
 Each WP PR must keep `ruff`, `ruff format --check`, `mypy` (strict for `sbc_aws.*`), `lint-imports`, `pytest tests/unit`, gitleaks and the eval gate green. That is the same bar as today.

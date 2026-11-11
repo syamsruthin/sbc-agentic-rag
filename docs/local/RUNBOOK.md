@@ -126,6 +126,8 @@ library; and moto accepts any TOTP code. The local app client also allows `ADMIN
 | `scripts/local/bootstrap.sh [--turnstile pass\|block]` | — | Create the tables, the bucket, the user pool and users; mirror the secrets into the local Parameter Store; write `.local/runtime.env` (idempotent; `up.sh` runs it). It refuses to run unless every AWS endpoint points at a stand-in |
 | `scripts/local/token.sh <user>` | — | Print an access token for `admin`, `broker` or `demo-broker` |
 | `scripts/local/build.sh seed \| run <version> \| fetch <version>` | — | The offline build image against the local bucket (section 10) |
+| `scripts/local/smoke.sh [--record\|--allow-live]` | `make smoke` | The end-to-end smoke test: 43 checks through the edge (section 7) |
+| `scripts/local/eval-http.sh [args]` | `make eval-http` | Golden items through the API over HTTP (section 7) |
 | `scripts/local/web.sh [--dev]` | `make web`, `make web-dev` | Build the apps with the local `VITE_*` values into `apps/site/` (served by the edge) and write `/landing/demo.json` for `demo-broker`; `--dev` runs the three Vite dev servers instead (http://localhost:5173, `/api` straight to :8080) |
 | `scripts/local/status.sh` | `make status` | Which services answer |
 | `scripts/local/logs.sh [service…]` | `make logs` | Follow the containers' logs |
@@ -142,7 +144,29 @@ DDB_LOCAL_ENDPOINT=http://localhost:8000 uv run pytest -m integration tests/inte
 
 The integration tests use their own tables in the stack's DynamoDB Local, with scripted models.
 
-Full smoke test *(coming in L9)*.
+**The smoke test** checks every route and guard through the edge (43 checks; `scripts/local/smoke.py` lists
+them). It costs nothing with the API in replay mode, and refuses a live API unless given `--allow-live`:
+
+```bash
+make api-record          # once, after a change to prompts, models, the bundle or behavior settings
+scripts/local/smoke.sh --record                      # about $0.03 of model calls, saved
+make api-replay          # from then on
+make smoke                                            # 43 passed, 0 failed, about 6 s, $0
+uv run pytest -m integration tests/integration/local  # the same, as a test (skipped unless the stack is up in replay)
+```
+
+It clears the answer cache first (so the questions take the model path) and puts back the kill switch and the
+quarantine it changes. The demo account allows 5 turns a minute, so wait a minute between two runs.
+
+**The HTTP eval** runs golden items through the API the way the apps do, scored like the in-process generation
+eval (`evals/README.md`):
+
+```bash
+scripts/local/eval-http.sh --sample 3          # in record mode the first time (about $0.01 an item), then replay
+make eval-http                                 # --sample 30
+```
+
+Reports go to `.local/evals/`. Over HTTP, ungrounded numbers and tool selection show as not scored (–).
 
 ## 8. Logs, request IDs and tracing
 

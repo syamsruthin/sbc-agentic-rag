@@ -181,6 +181,23 @@ def test_answers_about_quarantined_plans_are_withheld(harness: Harness) -> None:
     assert (name, body["kind"], body["markdown"]) == ("answer", "message", guards.QUARANTINED)
 
 
+def test_a_cached_answer_about_a_plan_quarantined_since_is_withheld(harness: Harness) -> None:
+    """Found on main_local L9: the cache path skipped the quarantine check, so a plan quarantined after its
+    answer was cached kept being answered from the cache for up to 24 hours."""
+    first = app(harness, auth=Fixed("a"), broker=lookups(1))
+    assert last(post_sse(first, "/api/broker/chat", {"message": QUESTION}))[1]["kind"] == "answer"
+    harness.stores.switches.quarantine([GOLD], actor_hash="admin", reason="wrong number report")
+    chat = ScriptedChat()
+    second = app(harness, auth=Fixed("b"), broker=chat)
+    name, body = last(post_sse(second, "/api/broker/chat", {"message": QUESTION}))
+    assert (name, body["kind"], body["markdown"]) == ("answer", "message", guards.QUARANTINED)
+    assert "cached" not in body
+    assert chat.requests == []
+    harness.stores.switches.release([GOLD])
+    name, body = last(post_sse(second, "/api/broker/chat", {"message": QUESTION}))
+    assert (body["kind"], body["cached"]) == ("answer", True)
+
+
 def test_a_thread_belongs_to_whoever_started_it(harness: Harness) -> None:
     owner = app(harness, auth=Fixed("a"), broker=ScriptedChat(
         classified(intent="lookup", question_ids=["overall_deductible"])))  # fmt: skip

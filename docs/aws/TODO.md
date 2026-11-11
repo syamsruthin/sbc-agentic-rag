@@ -112,7 +112,7 @@ redeploy or a rollback), `build-data.yml`, the saved deploy context, the deploy 
 smoke test through CloudFront. Its first run comes after the first manual deploy (§2.4). Left:
 
 - [x] A `frontend` CI job and, in `deploy-aws.yml`, the frontend build, `s3 sync --delete` and the CloudFront invalidation (with WP10).
-- [ ] A question in the post-deploy smoke test: needs a token, so it comes with WP13's HTTP adapter.
+- [ ] A question in the post-deploy smoke test: needs a token, so it comes with WP13's HTTP adapter. (`main_local` L9's `scripts/local/smoke.py` asks questions through the edge with Cognito tokens; its checks are a starting point for `smoke-deployed.sh`.)
 - [ ] Optional: a DynamoDB Local integration job (`services:` container plus `DDB_LOCAL_ENDPOINT`), and a canary alias shift (`aws_codedeploy`), probably not worth it for a portfolio deploy.
 - **Done when:** a push deploys in under 10 minutes, and a rollback through the workflow works (§4).
 
@@ -140,7 +140,9 @@ optional Langfuse tracing (one trace per turn).
 - [ ] Check that the demo user's tokens **can't** change its password (`aws cognito-idp change-password` with a demo access token must fail).
 - [ ] An `evals/harness` HTTP adapter, and a run of about 30 golden 0.2.0 items through the deployed API. It can
       reuse `generation.py`'s scoring (SSE events → `Reply`); without the trace, it scores behavior, exact
-      match, plan filter and wrong-plan answers only (MIGRATION_PLAN WP13).
+      match, plan filter and wrong-plan answers only (MIGRATION_PLAN WP13). **The adapter is built** on
+      `main_local` L9 (`evals/harness/http_api.py`; `SBC_EVAL_BROKER_TOKEN`, `--base-url`) and checked against
+      the local API; left: the run against the deployed API.
 - [ ] The interviewer click-through on a cold system: landing → Shopper question → Broker sign-in → comparison → PDF citation (including a preview-only plan).
 - [ ] **`docs/aws/RUNBOOK.md`:** sections 1–7 exist. Left: fixes from the first deploy (§4), the Lambda measurements (§2) and the full teardown (§8).
 - [ ] README "Live demo" section with the URL and demo-login instructions.
@@ -216,7 +218,7 @@ The AWS track hosts the app; these are features and evaluations the application 
 - **Limits reply in the stream.** A refused turn is an SSE `limit` event with HTTP 200, not a 429, and the apps show it as a notice (WP10). The PDF proxy does use 429.
 - **DynamoDB errors fail closed.** If DynamoDB can't be reached, a turn returns a 500, because limits can't be checked. That is deliberate (PLAN.md §3.5.6).
 - **Answers are sent whole.** They are not streamed token by token, because nothing passes before the verifier; users see status events, then the answer.
-- **Quarantine is checked after the turn.** The model is still called for a quarantined plan; only the answer is withheld. Checking before the turn would need the plan resolved first.
+- **Quarantine is checked after the turn.** The model is still called for a quarantined plan; only the answer is withheld. Checking before the turn would need the plan resolved first. Cached answers are checked too: before `main_local` L9 the cache path skipped quarantine, so a plan quarantined after its answer was cached kept being answered for up to 24 hours.
 - **A cached answer still writes the audit record and the thread,** but not a LangGraph trace of its own.
 - **Plain local runs** use a developer principal for both bots, in-process stores, no Turnstile check and a per-process session secret. (The full local stack on `main_local` signs in for real against a Cognito stand-in, checks Turnstile with Cloudflare's test keys and uses DynamoDB Local; docs/local/LOCAL_PLAN.md.) They never reach real users, because outside `APP_ENV=local` the API requires the real configuration.
 - **The test helper `tests/unit/api/test_guards.py::app()`** changes frozen config objects with `object.__setattr__` to set limits. That is fine for tests, but it is not a pattern for the app.

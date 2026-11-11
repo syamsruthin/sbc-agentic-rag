@@ -43,7 +43,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from evals.harness.golden import GoldenItem, load_golden
 from sbc_agent.graph import ABUSE, OUT_OF_SCOPE, TOO_LONG, Agent, Reply
@@ -52,7 +52,23 @@ PHASE2_TOOLS = frozenset({"estimate_cost", "rank_plans"})
 REFUSALS = frozenset({OUT_OF_SCOPE, ABUSE, TOO_LONG})
 DISCLAIMER_MARK = "This summary isn't a guarantee of coverage or cost"
 Behavior = Literal["answer", "clarify", "refuse", "no_answer"]
-AgentFor = Callable[[str], Agent]
+
+
+class Asker(Protocol):
+    """What the runner needs from an agent: :class:`sbc_agent.graph.Agent`, or the HTTP adapter's stand-in
+    (``evals.harness.http_api.HttpAgent``)."""
+
+    def ask(
+        self,
+        thread_id: str,
+        message: str,
+        *,
+        ui_selected: tuple[str, ...] = (),
+        user_state: str | None = None,
+    ) -> Reply: ...
+
+
+AgentFor = Callable[[str], Asker]
 """Bot name ("broker" or "public") -> an agent; called once per item."""
 
 _CITATION_MARK = re.compile(r"\[\d+\]")
