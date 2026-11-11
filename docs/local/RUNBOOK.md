@@ -117,7 +117,8 @@ library; and moto accepts any TOTP code. The local app client also allows `ADMIN
 | Script | Make | What |
 |---|---|---|
 | `scripts/local/up.sh [--image]` | `make up`, `make up-image` | Start the stack, wait for it, bootstrap, print status |
-| `scripts/local/api.sh` | `make api` | The API natively on :8080 with reload; logs to the console and `.local/logs/api.jsonl` |
+| `scripts/local/api.sh` | `make api` | The API natively on :8080 with reload; its JSON log lines go to the console and `.local/logs/api.jsonl` (`LOG_FILE`) |
+| `scripts/local/find-request.sh <id>` | — | Every log line of one request, by its request ID (from `.local/logs/api.jsonl` and the API container) |
 | `scripts/local/bootstrap.sh [--turnstile pass\|block]` | — | Create the tables, the bucket, the user pool and users; mirror the secrets into the local Parameter Store; write `.local/runtime.env` (idempotent; `up.sh` runs it). It refuses to run unless every AWS endpoint points at a stand-in |
 | `scripts/local/token.sh <user>` | — | Print an access token for `admin`, `broker` or `demo-broker` |
 | `scripts/local/web.sh [--dev]` | `make web`, `make web-dev` | Build the apps with the local `VITE_*` values into `apps/site/` (served by the edge) and write `/landing/demo.json` for `demo-broker`; `--dev` runs the three Vite dev servers instead (http://localhost:5173, `/api` straight to :8080) |
@@ -138,7 +139,26 @@ The integration tests use their own tables in the stack's DynamoDB Local, with s
 
 Full smoke test *(coming in L9)*.
 
-## 8. Troubleshooting
+## 8. Logs, request IDs and tracing
+
+Every API response carries `x-request-id`; the apps show it under "Report a problem", and chat streams send it in
+their first (`thread`) event. Each request writes one JSON `request` line, each turn a `turn` line (path, model
+calls, cost, fallback reason), and each error an `ERROR` line with its traceback, all with that `request_id`:
+
+```bash
+scripts/local/find-request.sh <request-id>
+jq -c 'select(.level == "ERROR")' .local/logs/api.jsonl | tail -5          # recent errors
+jq -c 'select(.event == "turn") | {request_id, bot, path, cost_usd}' .local/logs/api.jsonl | tail -5
+```
+
+An unhandled error answers 500 with `{"detail": …, "request_id": …}`. On AWS the same lines go to CloudWatch, and
+the `ApiErrors` alarm emails on any `ERROR` line.
+
+**Langfuse Cloud** (optional): put `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` (plus
+`LANGFUSE_HOST=https://us.cloud.langfuse.com` for a US-region project), run `scripts/local/bootstrap.sh` and restart
+the API; deep health then shows `"tracing": "langfuse"`, and each turn sends one redacted trace.
+
+## 9. Troubleshooting
 
 - **`Docker isn't running`:** start Docker Desktop and wait for it to say it's running.
 - **A port is taken:** `lsof -i :8088` (or the port in question), or set the matching `SBC_PORT_*`.
@@ -146,6 +166,9 @@ Full smoke test *(coming in L9)*.
   `scripts/local/bootstrap.sh`, and restart the API.
 - **Every answer is "I couldn't answer this from the SBC…":** look at the `turn` line in `.local/logs/api.jsonl`;
   `fallback: model_unavailable … HTTP 403: Key limit exceeded` means the OpenRouter key is out of credit.
+- **A 500:** its body has the `request_id`; `scripts/local/find-request.sh <id>` shows the error line with the
+  traceback. A stopped stand-in (`make status`) is the usual cause: the API fails closed when DynamoDB is
+  unreachable.
 - **401 on every API call:** send a token (`scripts/local/token.sh`) in `X-Sbc-Authorization`, not `Authorization`.
 - **The broker app at :8088 can't sign in, or the site shows "The frontends are not built yet":** run
   `make web`. Also after `npm run check` in `apps/` (CI's frontend check), which rebuilds `apps/site` without

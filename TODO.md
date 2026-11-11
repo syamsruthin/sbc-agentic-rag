@@ -10,7 +10,8 @@ The local track (branch `main_local`, from `main_AWS`) runs the whole applicatio
 for the AWS services before the first deploy; its roadmap (L0–L9) and progress are in
 [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md). L1 (the stack and its scripts) and L3 (bootstrap, secrets from the local
 Parameter Store, the API on the stand-ins) L4 (real sign-in against a Cognito stand-in, Turnstile test keys)
-and L5 (the apps built with the local settings and checked in a browser) are done.
+L5 (the apps built with the local settings and checked in a browser) and L6 (JSON log file, request-ID lookup;
+unhandled errors now keep their request ID and raise an `ApiErrors` alarm) are done.
 
 ## Checkpoints
 

@@ -196,9 +196,11 @@ and start a Plan Shopper session (it needs step 11).
 
 - **Budget:** `monthlyBudgetUsd` (default $10) with email at 50/80/100% actual and 100% forecast, plus daily
   Cost Anomaly Detection (needs `alarmEmail`). Expected AWS bill ≈ $0.30–2 a month (DEPLOYMENT_ANALYSIS §17.8).
-- **Alarms (8, inside the free 10), to the SNS topic `sbc-<env>-alerts`:** Lambda errors, throttles, p95
+- **Alarms (9, inside the free 10), to the SNS topic `sbc-<env>-alerts`:** Lambda errors, throttles, p95
   duration > 20 s; and from the API's JSON logs: `global_cap_reached`, `pdf_hash_mismatch`, `audit_failed`, the
-  demo account hitting its limits, and any `PlanFilterViolationError` (P1).
+  demo account hitting its limits, any `PlanFilterViolationError` (P1), and `ApiErrors`, any `ERROR` line (an
+  HTTP 500 through the Lambda Web Adapter isn't a Lambda error, so `lambda-errors` misses it). Each error line has
+  the `request_id` the apps show under "Report a problem"; find it with a Logs Insights query on `request_id`.
 - **The hard LLM cap** is the OpenRouter key credit limits, not AWS.
 
 ## 8. Teardown

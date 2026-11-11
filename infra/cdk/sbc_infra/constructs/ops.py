@@ -32,6 +32,9 @@ LOG_EVENTS = {
         "The shared demo account hit its limits",
     ),
     "PlanFilterViolation": ('"PlanFilterViolationError"', "A search returned a chunk outside its plans (P1)"),
+    # An HTTP 500 through the Lambda Web Adapter is a successful invocation, so lambda-errors never sees it:
+    # watch the API's own ERROR lines (unhandled errors, failed or timed-out turns), each with its request_id.
+    "ApiErrors": ('{ $.level = "ERROR" }', "The API logged an error: find it by its request_id"),
 }
 
 

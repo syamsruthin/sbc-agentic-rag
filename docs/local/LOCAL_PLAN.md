@@ -140,7 +140,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 | **L3** ✅ | AWS stand-ins + bootstrap, API on them | L1 | 1 |
 | **L4** ✅ | Real auth: Cognito (moto) and Turnstile test keys | L3 | 1 |
 | **L5** ✅ | Frontends built and served behind the edge | L4 | 0.5 |
-| **L6** | Observability: JSON logs, request-ID lookup, Langfuse | L3 | 0.5 |
+| **L6** ✅ | Observability: JSON logs, request-ID lookup, Langfuse | L3 | 0.5 |
 | **L7** | Optional: model replay mode | L3 | 0.5 |
 | **L8** | Offline build image against the local bucket | L3, L2 | 0.5 |
 | **L9** | Verification: smoke test, HTTP eval, browser click-through | all | 1 |
@@ -302,6 +302,22 @@ CSV export, a Shopper session and answer all work, at desktop and phone widths.
 **Done when:** a deliberate error is found by its request ID; with Langfuse on, a turn's trace shows its model and
 tool calls and cost.
 
+> **Status: done 2026-11-11, except the Langfuse trace, which waits for your Langfuse Cloud keys 👤.** No model cost.
+> - `LOG_FILE` (code change 6): the API writes the same JSON lines to `.local/logs/api.jsonl`; `api.sh` sets it
+>   and runs uvicorn with `--no-access-log`, as the image does, so the file holds JSON only.
+>   `scripts/local/find-request.sh <id>` prints one request's lines from that file and from the API container.
+> - **Found and fixed (affects AWS too):** a deliberate error (DynamoDB Local stopped mid-request; the turn fails
+>   closed) gave a bare 500 with no `x-request-id`, and the only log was uvicorn's plain-text traceback without
+>   the request ID. And on Lambda an HTTP 500 is a successful invocation, so the `lambda-errors` alarm would never
+>   fire. Now the request-ID middleware catches it: a JSON `ERROR` line (`unhandled_error`, `request_id`, route,
+>   traceback), and a 500 with the ID in the header and body (the apps already show the header's ID under
+>   "Report a problem"). A new CloudWatch alarm, `ApiErrors` (`{ $.level = "ERROR" }`, 9 of the 10 free),
+>   covers it and failed or timed-out turns. Re-run locally: `find-request.sh` shows both lines for the ID.
+> - **Langfuse 👤:** create a Langfuse Cloud Hobby project and put `LANGFUSE_PUBLIC_KEY` and
+>   `LANGFUSE_SECRET_KEY` in `.env` (and `LANGFUSE_HOST=https://us.cloud.langfuse.com` for a US-region project;
+>   the default is the EU region). Then `scripts/local/bootstrap.sh`, restart the API, and deep health shows
+>   `"tracing": "langfuse"`. One cached-miss turn (about $0.007) checks the trace.
+
 ### L7 (optional): model replay mode
 
 A `ChatModel` that records each OpenRouter exchange (redacted, keyed by a hash of the request) and replays it, set
@@ -345,7 +361,8 @@ go to `main_AWS` unchanged (section 8).
 | 3 ✅ | `packages/core/src/sbc_core/config.py`, `sbc_api/auth/cognito.py` | Optional `COGNITO_JWKS_URL` overriding the derived JWKS URL (moto's tokens already use the real issuer format) |
 | 4 ✅ | `apps/broker/src/auth.ts` | Optional `VITE_COGNITO_ENDPOINT` passed to `CognitoUserPool`; with it set, `USER_PASSWORD_AUTH` instead of SRP (moto can't finish SRP) |
 | 5 | `infra/docker/s3_sync.py` | Honor `AWS_ENDPOINT_URL_S3` (check whether boto3 already does; then only a test) |
-| 6 | `packages/api/src/sbc_api/logging.py` | Optional `LOG_FILE` for a JSON-lines copy of the log |
+| 6 ✅ | `packages/api/src/sbc_api/logging.py` | Optional `LOG_FILE` for a JSON-lines copy of the log |
+| 6a ✅ | `packages/api/src/sbc_api/app.py`, `infra/cdk/sbc_infra/constructs/ops.py` | Not planned; found in L6: unhandled errors keep their request ID (JSON `ERROR` line, header, body), and an `ApiErrors` alarm on `ERROR` lines |
 | 7 | `packages/core/src/sbc_core/llm.py` or a new module | L7 replay mode (only if chosen) |
 | 8 | `evals/harness/http.py` | The HTTP eval adapter (WP13) |
 | — | New: `infra/local/`, `scripts/local/`, `docs/local/`, `Makefile` | The stack, scripts and runbook |

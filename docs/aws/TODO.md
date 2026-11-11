@@ -125,8 +125,10 @@ optional Langfuse tracing (one trace per turn).
 - [x] Langfuse, one trace per turn (`sbc_api/tracing.py`), on when both keys are set.
 - [ ] Optional: a span per graph node with real timings (the turn's trace records each call's latency, not its
       start time).
+- [x] Unhandled errors keep their request ID (JSON `ERROR` line, response header and body) and raise the new
+      `ApiErrors` alarm (9 of 10): fixed on `main_local` L6, where a 500 couldn't be traced by its ID.
 - [ ] 👤 **Done when:** a deliberate error shows in CloudWatch, raises the alarm email, and is found by its request
-      ID. On the first deploy, also check that the API's lines stay JSON objects under the JSON log format (the
+      ID (checked locally on `main_local`: stop DynamoDB Local, then `scripts/local/find-request.sh <id>`). On the first deploy, also check that the API's lines stay JSON objects under the JSON log format (the
       metric filters read `$.event`).
 
 ### WP13: portfolio readiness and docs

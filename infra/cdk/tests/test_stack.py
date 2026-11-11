@@ -302,3 +302,4 @@ def test_metric_filters_match_the_events_the_api_logs(stacks: dict[str, Template
     assert patterns["DemoAccountLimited"] == '{ $.event = "demo_user_limit_reached" }'
     assert patterns["GlobalCapReached"] == '{ $.event = "global_cap_reached" }'
     assert patterns["AuditFailed"] == '{ $.event = "audit_failed" }'
+    assert patterns["ApiErrors"] == '{ $.level = "ERROR" }'
