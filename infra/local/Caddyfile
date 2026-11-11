@@ -38,7 +38,7 @@
 	}
 
 	handle {
-		root * /srv/site
+		root * /srv/apps/site
 		redir /broker /broker/ 301
 		redir /shopper /shopper/ 301
 

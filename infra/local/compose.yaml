@@ -52,7 +52,9 @@ services:
       SBC_MOTO_PUBLIC: http://localhost:${SBC_PORT_MOTO:-5050}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../../apps/site:/srv/site:ro
+      # The apps folder, not apps/site: the build deletes and recreates apps/site, which would leave a mount of
+      # that folder pointing at the deleted one.
+      - ../../apps:/srv/apps:ro
     ports: ["127.0.0.1:${SBC_PORT_EDGE:-8088}:8088"]
     extra_hosts: ["host.docker.internal:host-gateway"]
 

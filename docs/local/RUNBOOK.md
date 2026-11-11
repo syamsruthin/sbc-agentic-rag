@@ -10,17 +10,19 @@ can and can't prove are in [LOCAL_PLAN.md](LOCAL_PLAN.md). This runbook grows wi
 - [uv](https://docs.astral.sh/uv/) and `uv sync` done in the repository.
 - A facts bundle in `bundles/` (`FACTS_BUNDLE_PATH` in `infra/local/stack.env`; today `facts-2027.1.sqlite`).
 - `.env` with `OPENROUTER_API_KEY_BROKER` and `OPENROUTER_API_KEY_PUBLIC` for answers (keys with credit).
-- Node 22 for the frontends *(used from L5)*.
+- Node.js for the frontends: 20.10 works, 22 is recommended (Node 20 is end of life).
 
 ## 2. Start and stop
 
 ```bash
 make up      # or scripts/local/up.sh: stand-ins, edge, tables
 make api     # or scripts/local/api.sh: the API natively with reload, in its own terminal
+make web     # or scripts/local/web.sh: build the apps with the local settings
 make status
 ```
 
-Open http://localhost:8088. Stop with `make down` (keeps all state) or `make wipe` (drops it).
+Open http://localhost:8088. Sign in to the Broker Assistant as one of the users in section 5; the Plan Shopper
+asks for a state and shows Cloudflare's test widget ("for testing only"), which always passes. Stop with `make down` (keeps all state) or `make wipe` (drops it).
 
 To run the API image Lambda runs instead of the native API:
 
@@ -118,6 +120,7 @@ library; and moto accepts any TOTP code. The local app client also allows `ADMIN
 | `scripts/local/api.sh` | `make api` | The API natively on :8080 with reload; logs to the console and `.local/logs/api.jsonl` |
 | `scripts/local/bootstrap.sh [--turnstile pass\|block]` | — | Create the tables, the bucket, the user pool and users; mirror the secrets into the local Parameter Store; write `.local/runtime.env` (idempotent; `up.sh` runs it). It refuses to run unless every AWS endpoint points at a stand-in |
 | `scripts/local/token.sh <user>` | — | Print an access token for `admin`, `broker` or `demo-broker` |
+| `scripts/local/web.sh [--dev]` | `make web`, `make web-dev` | Build the apps with the local `VITE_*` values into `apps/site/` (served by the edge) and write `/landing/demo.json` for `demo-broker`; `--dev` runs the three Vite dev servers instead (http://localhost:5173, `/api` straight to :8080) |
 | `scripts/local/status.sh` | `make status` | Which services answer |
 | `scripts/local/logs.sh [service…]` | `make logs` | Follow the containers' logs |
 | `scripts/local/down.sh [--wipe]` | `make down`, `make wipe` | Stop; `--wipe` drops the volumes and `.local/runtime.env` |
@@ -144,7 +147,11 @@ Full smoke test *(coming in L9)*.
 - **Every answer is "I couldn't answer this from the SBC…":** look at the `turn` line in `.local/logs/api.jsonl`;
   `fallback: model_unavailable … HTTP 403: Key limit exceeded` means the OpenRouter key is out of credit.
 - **401 on every API call:** send a token (`scripts/local/token.sh`) in `X-Sbc-Authorization`, not `Authorization`.
-- **The broker app at :8088 can't sign in:** it has to be built with the local `VITE_*` values *(L5:
-  `scripts/local/web.sh`)*.
+- **The broker app at :8088 can't sign in, or the site shows "The frontends are not built yet":** run
+  `make web`. Also after `npm run check` in `apps/` (CI's frontend check), which rebuilds `apps/site` without
+  the local settings. Rebuild after `make wipe` (the build carries the pool and client IDs; they only change if moto's
+  seed or the users change).
+- **Signed out after a reload:** by design, the broker app keeps its tokens in memory only, as on AWS.
+- **The Turnstile box is empty for a moment:** the widget loads from Cloudflare; it needs internet access.
 - **Start over:** `make wipe && make up`. The passwords and the session secret in `.local/` are kept; delete
   `.local/users.env` too for new passwords.

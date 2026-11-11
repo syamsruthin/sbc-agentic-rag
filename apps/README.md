@@ -61,6 +61,9 @@ dev servers, so the paths match CloudFront's.
 - **Model calls** need `OPENROUTER_API_KEY_BROKER` and `OPENROUTER_API_KEY_PUBLIC` with credit; without them, plan
   search works but questions end in an error or a fallback message.
 - The landing page's demo login shows "not available" locally: `/landing/demo.json` exists only in the web bucket.
+- **The full local stack** (docs/local/RUNBOOK.md) builds the apps with real local sign-in and Turnstile test keys
+  instead: `scripts/local/web.sh` (served at http://localhost:8088, with `/landing/demo.json`), or
+  `scripts/local/web.sh --dev` for these dev servers with the same settings.
 
 ## Checks and build
 

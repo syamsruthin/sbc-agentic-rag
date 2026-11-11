@@ -139,7 +139,7 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 | **L2** | Bundle `2027.2` built locally | L0 credit (cents) | 0.5 (mostly waiting) |
 | **L3** ✅ | AWS stand-ins + bootstrap, API on them | L1 | 1 |
 | **L4** ✅ | Real auth: Cognito (moto) and Turnstile test keys | L3 | 1 |
-| **L5** | Frontends built and served behind the edge | L4 | 0.5 |
+| **L5** ✅ | Frontends built and served behind the edge | L4 | 0.5 |
 | **L6** | Observability: JSON logs, request-ID lookup, Langfuse | L3 | 0.5 |
 | **L7** | Optional: model replay mode | L3 | 0.5 |
 | **L8** | Offline build image against the local bucket | L3, L2 | 0.5 |
@@ -271,6 +271,25 @@ block keys.
 
 **Done when:** at `http://localhost:8088` the landing demo login, a broker sign-in, plan search, a streamed answer,
 CSV export, a Shopper session and answer all work, at desktop and phone widths.
+
+> **Status: done 2026-11-11, except CSV export and the clarification buttons, which move to L9.** Model cost:
+> $0.0137 (two fast-path answers).
+> - `scripts/local/web.sh` builds with the local `VITE_*` values (pool and client IDs, `VITE_COGNITO_ENDPOINT`,
+>   Cloudflare's test site key) in about 5 s and writes `apps/site/landing/demo.json` for `demo-broker`, as
+>   `rotate-demo-password.sh` does on AWS. `--dev` runs the three Vite dev servers with the same values.
+> - **Fixed on the way:** the edge mounted `apps/site`, which the build deletes and recreates, so after a rebuild
+>   the container kept serving the deleted folder (404s). It now mounts `apps/` and serves `apps/site` from it.
+> - In the browser pane at :8088, no console errors: the landing page shows the demo login from `demo.json`; the
+>   broker app signs in (`broker`, through the Cognito stand-in) and lists 9,690 plans; "What is the deductible on
+>   BTCU8?" streams a verified answer ($0.0073; the SBC's wording exactly), with sources, details and the request
+>   ID; feedback is stored (204); the Conversations tab lists the thread. The Plan Shopper's Turnstile test widget
+>   passes, the session opens for Ohio with its 70 Individual plans, and "What does a primary care visit cost?" on
+>   01M7 answers ($0.0064; every value matches the SBC, including "HMO" from its header).
+> - Phone width (375 px): landing, Plan Shopper and the broker sign-in fit with no horizontal scroll.
+> - **The answer cache missed** for a question asked earlier: its key includes the configuration hash, and L4
+>   added the demo user's ID to the configuration. That is by design; repeats are cached for 24 hours now.
+> - **Moved to L9:** CSV export and the clarification buttons need agent turns ($0.02–0.04 each), so they are
+>   checked with the L7 replay mode instead of new paid calls (they have unit tests in `apps/chat-ui` meanwhile).
 
 ### L6: observability
 

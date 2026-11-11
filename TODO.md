@@ -9,8 +9,8 @@ work packages are tracked in detail in [docs/aws/TASKS_DONE.md](docs/aws/TASKS_D
 The local track (branch `main_local`, from `main_AWS`) runs the whole application on one machine with stand-ins
 for the AWS services before the first deploy; its roadmap (L0–L9) and progress are in
 [docs/local/LOCAL_PLAN.md](docs/local/LOCAL_PLAN.md). L1 (the stack and its scripts) and L3 (bootstrap, secrets from the local
-Parameter Store, the API on the stand-ins) and L4 (real sign-in against a Cognito stand-in, Turnstile test keys)
-are done.
+Parameter Store, the API on the stand-ins) L4 (real sign-in against a Cognito stand-in, Turnstile test keys)
+and L5 (the apps built with the local settings and checked in a browser) are done.
 
 ## Checkpoints
 
