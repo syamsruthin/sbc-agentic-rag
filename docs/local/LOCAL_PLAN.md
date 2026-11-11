@@ -149,10 +149,11 @@ Ten phases, done in order. Each ends with a commit to `main_local` and the doc a
 
 - [x] Start Docker Desktop; give it at least 4 GB of memory. (Running since 2026-11-11.)
 - [ ] Node 22 (`brew install node@22`, or nvm). Node 20.10 is end of life and the AWS track wants 22 too.
-- [ ] **OpenRouter:** raise the broker key's limit (it is at $5.09 of $5) or create a new one, and create the
-      public key (`OPENROUTER_API_KEY_PUBLIC`). Both go in `.env`; L3 moves them into local SSM.
+- [x] **OpenRouter:** credit added and both variables set in `.env` (2026-11-11); L3 moves them into local SSM.
+      **Open before AWS:** the two variables hold the same key. The deploy needs two keys with their own credit
+      limits (each bot's hard cost cap, docs/aws/TODO.md §2.1).
 - [ ] Optional: AWS CLI v2 (`brew install awscli`) to inspect local tables and buckets with `--endpoint-url`.
-- [ ] Clean the stale Supabase variables out of `.env` (nothing reads them).
+- [x] Clean the stale Supabase variables out of `.env` (nothing reads them).
 
 **Done when:** `docker info` answers, `node -v` prints v22, `uv run sbc-llm-smoke` passes all four checks.
 
@@ -215,10 +216,13 @@ a streamed answer works; after `down` and `up` the thread is still listed and co
 >   stack's DynamoDB Local.
 > - A kill switch set through `POST /api/admin/kill-switch` survives `down`/`up` and still blocks the turn; a
 >   thread written by the native API is listed by the API image.
-> - A real turn runs end to end (classify, resolve, answer, checkpoints, thread list) and ends in the safe fallback
->   message, because the broker key is out of credit (`HTTP 403: Key limit exceeded`, logged in the `turn` line).
->   **Left for when there is credit:** a streamed answer, and a thread continued after a restart. The public bot
->   stays `unavailable` until `OPENROUTER_API_KEY_PUBLIC` exists.
+> - Before credit was added, a turn ran end to end and ended in the safe fallback message
+>   (`HTTP 403: Key limit exceeded`, logged in the `turn` line).
+> - **With credit (2026-11-11):** both bots `ready` (`secrets_loaded` 3); `sbc-llm-smoke` passes all four checks.
+>   "What is the deductible on BTCU8?" through the edge: fast path, 3 model calls, $0.0068, about 8 s, the SBC's
+>   wording exactly. After `down`/`up`, the follow-up "And what is its out-of-pocket limit?" on the same thread
+>   resolved BTCU8 from the restored checkpoint: $0.0111, the SBC's wording exactly. Total spent on these
+>   checks: about $0.02.
 > - **Expired items:** every app store (answer and embedding caches, threads, feedback) checks the expiry time
 >   when it reads, and rate-limit counters are keyed by time window, so DynamoDB Local keeping expired items
 >   changes nothing for them. Only checkpoints differ: an expired thread stays resumable by its ID locally,
@@ -345,10 +349,10 @@ Decided 2026-11-11 (Syamsruthin Kaliki):
 2. **Replay mode (L7): build it.** It also covers the TODO for keyless CI replay of the generation eval.
 3. **Commits: one per phase**, straight to `main_local`, pushed to `origin/main_local`.
 
-Still open 👤:
-
-4. **OpenRouter credit:** how much to allow for local testing. The L2 embeddings cost cents; a full gating run
-   is about $5; daily manual testing is about $0.003 per fast-path turn and $0.02–0.04 per agent turn.
+4. **OpenRouter credit: spend as little as possible** (2026-11-11). Free checks first (tests with scripted
+   models, BM25-only evals); at most one paid turn per thing to prove, with its cost recorded; ask before anything
+   larger (the full gating run is about $5). Measured: $0.007–0.011 per fast-path turn. The L7 replay mode then
+   carries the repeated UI and smoke runs.
 
 ## 10. Risks
 
